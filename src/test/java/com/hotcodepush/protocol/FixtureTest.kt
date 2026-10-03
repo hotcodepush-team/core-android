@@ -142,7 +142,7 @@ class FixtureTest {
         }
     }
 
-    /** Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form; whether the signature verifies is the signing milestone's. */
+    /** Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form; `SigningTest` verifies them. */
     @Test
     fun shouldDecodeTheManifestOfEverySignatureFixture() {
         val cases = cases("signatures.json", "manifests")

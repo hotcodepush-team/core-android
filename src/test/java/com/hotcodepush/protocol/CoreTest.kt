@@ -264,6 +264,31 @@ class CoreTest {
     }
 
     @Test
+    fun shouldApplyAManifestSignedByAListedKey() = runBlocking {
+        val fixture = SignatureFixtures()
+        val harness = Harness(Fixture.configuration(publicKeys = listOf(fixture.publicKey("ed25519-b"), fixture.publicKey("ed25519-a"))))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(signature = fixture.sign(v2.envelope.manifest, "ed25519-a")).toJson())
+        harness.core.handleAppStart()
+        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+    }
+
+    @Test
+    fun shouldRefuseAManifestSignedByAKeyTheAppDoesNotHold() = runBlocking {
+        val fixture = SignatureFixtures()
+        val harness = Harness(Fixture.configuration(publicKeys = listOf(fixture.publicKey("ed25519-b"))))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(signature = fixture.sign(v2.envelope.manifest, "ed25519-a")).toJson())
+        harness.core.handleAppStart()
+        val result = harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(FailedReason.INVALID_SIGNATURE.name, result.reason)
+        assertTrue(result.message?.contains("does not hold") == true)
+        assertEquals(FailedReason.INVALID_SIGNATURE, harness.listener.failed.single().reason)
+    }
+
+    @Test
     fun shouldAdoptAReleaseCarryingTheRunningBundleWithoutAReload() = runBlocking {
         val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)

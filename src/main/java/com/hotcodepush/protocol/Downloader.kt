@@ -58,12 +58,21 @@ class Downloader(
         return envelope to manifest
     }
 
+    /** The manifest's bytes against the index, and, once the app holds signing keys, its signature under the key it names. */
     internal fun verifyManifestSignature(envelope: ManifestEnvelope, expectedSha256: String) {
         if (Hashing.sha256Hex(envelope.manifest) != expectedSha256) throw DownloadFailure.VerificationFailed("The manifest's hash does not match the index")
-        if (configuration.publicKeys.isNotEmpty()) {
-            // TODO(milestone 3, code signing): verify the ed25519 signature over the manifest bytes against `publicKeys`.
-            throw DownloadFailure.InvalidSignature("Signature verification is not available in this SDK version")
-        }
+        if (configuration.publicKeys.isEmpty()) return
+        val refusal = SignatureVerifier.verifyManifestSignature(envelope.manifest, envelope.signature, configuration.publicKeys) ?: return
+        throw DownloadFailure.InvalidSignature(resolveSignatureRefusalMessage(refusal, envelope.signature))
+    }
+
+    private fun resolveSignatureRefusalMessage(refusal: SignatureRefusal, signature: Signature?): String = when (refusal) {
+        SignatureRefusal.UNSIGNED -> "The manifest is unsigned and the app accepts only signed manifests"
+        SignatureRefusal.UNKNOWN_SCHEME -> "The signature's scheme is not one this SDK accepts"
+        SignatureRefusal.UNKNOWN_KEY -> "The signature names the key ${signature?.keyId}, which the app does not hold"
+        SignatureRefusal.SCHEME_MISMATCH -> "The signature's scheme is not the scheme of the key it names"
+        SignatureRefusal.SCHEME_UNAVAILABLE -> "This device cannot verify ${signature?.value?.substringBefore(':')} signatures: Android 13 is the floor for Ed25519 in this SDK version"
+        SignatureRefusal.INVALID -> "The manifest's signature does not verify under the key it names"
     }
 
     internal fun resolveMissingFiles(manifest: BundleManifest): List<BundleManifest.File> = manifest.files.filter { !files.hasFile(it.sha256) && !embedded.has(it.sha256) }
