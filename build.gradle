@@ -37,6 +37,7 @@ android {
     }
     testOptions {
         unitTests.returnDefaultValues = true
+        unitTests.includeAndroidResources = true
     }
 }
 
@@ -58,6 +59,7 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20250517'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2'
+    testImplementation 'org.robolectric:robolectric:4.17'
 }
 
 // The release AAR as a Maven publication, which JitPack builds for a commit as com.github.hotcodepush-team:protocol-android:<sha>.

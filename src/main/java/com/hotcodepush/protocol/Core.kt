@@ -38,6 +38,7 @@ class Core(
     private val downloader = Downloader(configuration, files, embedded, http, temporaryDirectory)
     private val httpClient = http
     private val lock = Mutex()
+    private val log = SessionLog()
 
     private var readyTimer: ScheduledTask? = null
     private var intervalTimer: ScheduledTask? = null
@@ -159,6 +160,7 @@ class Core(
                 scheduleIntervalSync(configuration.checkInterval)
             }
         }
+        log.record(LogEntry.ofCycle(result, trigger, clock.now()))
         if (result.status == SyncStatus.FAILED) {
             val reason = result.reason?.let { name -> FailedReason.entries.firstOrNull { it.name == name } }
             if (reason != null) listener.updateFailed(UpdateFailedEvent(result.release, reason, result.message ?: "", trigger))
@@ -312,6 +314,9 @@ class Core(
     }
 
     // State
+
+    /** Everything the debug screen shows: the device, the configuration, the state and this session's log. */
+    fun debugSnapshot(): DebugSnapshot = DebugSnapshot(clock.now(), deviceResult(), configuration, device.isDebugBuild, getState(), log.entries())
 
     fun getState(): StateResult {
         val cached = state.cachedIndex
@@ -594,6 +599,7 @@ class Core(
 
     private fun enqueueDeviceEvent(event: DeviceEvent) {
         state.unsentEvents = (state.unsentEvents + event).takeLast(200)
+        LogEntry.ofDeviceEvent(event, clock.now())?.let(log::record)
     }
 
     /** One batch to the events endpoint, the outbox and the report when it changed: the 202 clears what was sent, anything else keeps it for the next sync. */
@@ -608,6 +614,7 @@ class Core(
         }
         val url = "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/events"
         val response = runCatching { httpClient.post(url, mapOf("Content-Type" to "application/json"), request.toJson().toString().toByteArray()) }.getOrNull()
+        log.record(LogEntry.ofReport(request.events.size, response?.status, clock.now()))
         val acknowledged = response?.takeIf { it.status == 202 }?.let { runCatching { DeviceEventsResponse.fromJson(org.json.JSONObject(String(it.body, Charsets.UTF_8))) }.getOrNull() }
         lock.withLock {
             isSendingDeviceEvents = false
