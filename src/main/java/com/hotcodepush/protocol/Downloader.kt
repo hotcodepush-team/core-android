@@ -26,23 +26,24 @@ class Downloader(
     private val temporaryDirectory: File,
 ) {
     suspend fun downloadRelease(target: IndexRelease, currentBundleId: String?, progress: (Long, Long) -> Unit): DownloadOutcome {
-        val manifest = fetchBundleManifest(target)
+        val (envelope, manifest) = fetchBundleManifest(target)
         val missing = resolveMissingFiles(manifest)
-        val pack = if (missing.isEmpty()) null else resolvePack(manifest, currentBundleId, missing)
+        val pack = if (missing.isEmpty()) null else resolvePack(envelope, currentBundleId, missing)
         verifyFreeSpace(missing.sumOf { it.sizeBytes } + (pack?.first?.sizeBytes ?: 0))
         var bytes = 0L
         var packKind = PackKind.FILES
         if (pack != null) {
             val (source, kind) = pack
-            bytes += downloadPack(source, manifest.bundleId, missing.associate { it.sha256 to it.sizeBytes }, progress)
+            bytes += downloadPack(source, envelope.bundleId, missing.associate { it.sha256 to it.sizeBytes }, progress)
             packKind = kind
         }
         for (file in resolveMissingFiles(manifest)) bytes += downloadFile(file)
-        files.writeManifest(manifest)
+        files.writeManifest(manifest, envelope.bundleId)
         return DownloadOutcome(manifest, bytes, packKind)
     }
 
-    internal suspend fun fetchBundleManifest(target: IndexRelease): BundleManifest {
+    /** The envelope with its manifest decoded, once the manifest's bytes match the index and the envelope names the release's bundle. */
+    internal suspend fun fetchBundleManifest(target: IndexRelease): Pair<ManifestEnvelope, BundleManifest> {
         val url = resolvePinnedUrl(target.manifestUrl)
         val response = try {
             http.get(url, emptyMap())
@@ -53,8 +54,8 @@ class Downloader(
         val envelope = runCatching { ManifestEnvelope.fromJson(org.json.JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()
         val manifest = envelope?.let { runCatching { it.decodeManifest() }.getOrNull() } ?: throw DownloadFailure.VerificationFailed("The manifest could not be parsed")
         verifyManifestSignature(envelope, target.manifestSha256)
-        if (manifest.bundleId != target.bundleId) throw DownloadFailure.VerificationFailed("The manifest names another bundle")
-        return manifest
+        if (envelope.bundleId != target.bundleId) throw DownloadFailure.VerificationFailed("The manifest names another bundle")
+        return envelope to manifest
     }
 
     internal fun verifyManifestSignature(envelope: ManifestEnvelope, expectedSha256: String) {
@@ -68,10 +69,9 @@ class Downloader(
     internal fun resolveMissingFiles(manifest: BundleManifest): List<BundleManifest.File> = manifest.files.filter { !files.hasFile(it.sha256) && !embedded.has(it.sha256) }
 
     /** The delta pack against the running bundle where one exists, the full pack otherwise; nothing when the pack would cost more than the files. */
-    internal fun resolvePack(manifest: BundleManifest, currentBundleId: String?, missing: List<BundleManifest.File>): Pair<BundleManifest.Pack, PackKind>? {
-        manifest.deltas.firstOrNull { it.baseBundleId == currentBundleId }?.let { return BundleManifest.Pack(it.url, it.sizeBytes) to PackKind.DELTA }
-        val pack = manifest.pack
-        if (pack != null && missing.size > 1) return pack to PackKind.FULL
+    internal fun resolvePack(envelope: ManifestEnvelope, currentBundleId: String?, missing: List<BundleManifest.File>): Pair<ManifestEnvelope.Pack, PackKind>? {
+        envelope.deltas.firstOrNull { it.baseBundleId == currentBundleId }?.let { return ManifestEnvelope.Pack(it.url, it.sizeBytes) to PackKind.DELTA }
+        if (missing.size > 1) return envelope.pack to PackKind.FULL
         return null
     }
 
@@ -85,7 +85,7 @@ class Downloader(
      * Streams the pack to disk, resuming what an earlier attempt left and never past its size in the manifest, then inflates
      * each wanted entry up to its file's size: an entry is always the gzip bytes the bucket serves.
      */
-    internal suspend fun downloadPack(source: BundleManifest.Pack, bundleId: String, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): Long {
+    internal suspend fun downloadPack(source: ManifestEnvelope.Pack, bundleId: String, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): Long {
         val pinnedUrl = resolvePinnedUrl(source.url)
         val file = File(temporaryDirectory, "$bundleId-${Hashing.sha256Hex(source.url).take(16)}.pack")
         try {

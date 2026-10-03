@@ -3,6 +3,7 @@ package com.hotcodepush.protocol
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import java.net.URI
 
 /** The channel's index for a platform: `/apps/{appId}/channels/{channelId}/{platform}/v1/index.json`. */
 data class ChannelIndex(
@@ -14,7 +15,6 @@ data class ChannelIndex(
     val isPaused: Boolean,
     val cappedAt: Long?,
     val revokedReleaseIds: List<String>,
-    val rollBackToEmbedded: RollBackToEmbedded?,
     val releases: List<IndexRelease>,
 ) {
     fun toJson(): JSONObject = JSONObject()
@@ -26,32 +26,30 @@ data class ChannelIndex(
         .put("isPaused", isPaused)
         .put("cappedAt", cappedAt?.let(Iso8601::format) ?: JSONObject.NULL)
         .put("revokedReleaseIds", JSONArray(revokedReleaseIds))
-        .put("rollBackToEmbedded", rollBackToEmbedded?.toJson() ?: JSONObject.NULL)
         .put("releases", JSONArray(releases.map { it.toJson() }))
 
     companion object {
         const val SCHEMA = 1
+        val PLATFORMS = listOf("android", "ios")
 
-        fun fromJson(json: JSONObject): ChannelIndex = ChannelIndex(
-            schema = json.getInt("schema"),
-            sequence = json.getInt("sequence"),
-            appId = json.getString("appId"),
-            channelId = json.getString("channelId"),
-            platform = json.getString("platform"),
-            isPaused = json.optBoolean("isPaused", false),
-            cappedAt = json.optNullableString("cappedAt")?.let(Iso8601::parse),
-            revokedReleaseIds = json.optJSONArray("revokedReleaseIds").toStringList(),
-            rollBackToEmbedded = json.optJSONObject("rollBackToEmbedded")?.let(RollBackToEmbedded::fromJson),
-            releases = json.getJSONArray("releases").map { IndexRelease.fromJson(it) },
-        )
-    }
-}
-
-data class RollBackToEmbedded(val aboveNumber: Int, val signature: Signature?) {
-    fun toJson(): JSONObject = JSONObject().put("aboveNumber", aboveNumber).put("signature", signature?.toJson() ?: JSONObject.NULL)
-
-    companion object {
-        fun fromJson(json: JSONObject) = RollBackToEmbedded(json.getInt("aboveNumber"), json.optJSONObject("signature")?.let(Signature::fromJson))
+        /** Every field of the format is present, a nullable one as `null`; another schema major or platform fails the whole index. */
+        fun fromJson(json: JSONObject): ChannelIndex {
+            val schema = json.getWireInt("schema", minimum = 0)
+            if (schema != SCHEMA) throw JSONException("The index has schema $schema, this reader reads $SCHEMA")
+            val platform = json.getWireString("platform")
+            if (platform !in PLATFORMS) throw JSONException("Not a platform: $platform")
+            return ChannelIndex(
+                schema = schema,
+                sequence = json.getWireInt("sequence", minimum = 0),
+                appId = json.getWireString("appId", WireRule.NON_EMPTY),
+                channelId = json.getWireString("channelId", WireRule.NON_EMPTY),
+                platform = platform,
+                isPaused = json.getWireBoolean("isPaused"),
+                cappedAt = json.getNullableTimestamp("cappedAt"),
+                revokedReleaseIds = json.getJSONArray("revokedReleaseIds").toWireStringList(WireRule.IDENTIFIER),
+                releases = json.getJSONArray("releases").map { IndexRelease.fromJson(it) },
+            )
+        }
     }
 }
 
@@ -87,18 +85,18 @@ data class IndexRelease(
 
     companion object {
         fun fromJson(json: JSONObject) = IndexRelease(
-            id = json.getString("id", WireRule.IDENTIFIER),
-            number = json.getInt("number"),
-            createdAt = Iso8601.parse(json.getString("createdAt")),
-            isMandatory = json.getBoolean("isMandatory"),
-            notes = json.optNullableString("notes"),
-            rollout = json.getInt("rollout"),
+            id = json.getWireString("id", WireRule.IDENTIFIER),
+            number = json.getWireInt("number", minimum = 1),
+            createdAt = json.getTimestamp("createdAt"),
+            isMandatory = json.getWireBoolean("isMandatory"),
+            notes = json.getNullableWireString("notes"),
+            rollout = json.getWireInt("rollout", minimum = 0, maximum = 100),
             conditions = json.getJSONArray("conditions").map { Condition.fromJson(it) },
-            bundleId = json.getString("bundleId", WireRule.IDENTIFIER),
-            bundleVersion = json.getString("bundleVersion"),
-            manifestUrl = json.getString("manifestUrl"),
-            manifestSha256 = json.getString("manifestSha256", WireRule.SHA256),
-            sizeBytes = json.getLong("sizeBytes"),
+            bundleId = json.getWireString("bundleId", WireRule.IDENTIFIER),
+            bundleVersion = json.getWireString("bundleVersion"),
+            manifestUrl = json.getWireString("manifestUrl", WireRule.URL),
+            manifestSha256 = json.getWireString("manifestSha256", WireRule.SHA256),
+            sizeBytes = json.getWireLong("sizeBytes", minimum = 0),
         )
     }
 }
@@ -139,13 +137,13 @@ sealed class Condition {
     }
 
     companion object {
-        fun fromJson(json: JSONObject): Condition = when (val type = json.getString("type")) {
-            "binary" -> Binary(json.getString("range"))
-            "runtime" -> Runtime(json.getString("version"))
-            "fingerprint" -> Fingerprint(json.getString("hash"))
-            "os" -> Os(json.getString("range"))
-            "device" -> Device(json.getJSONArray("hashedIds").toStringList())
-            "attribute" -> Attribute(json.getString("key"), json.getString("valueSha256"))
+        fun fromJson(json: JSONObject): Condition = when (val type = json.getWireString("type")) {
+            "binary" -> Binary(json.getWireString("range", WireRule.NON_EMPTY))
+            "runtime" -> Runtime(json.getWireString("version", WireRule.NON_EMPTY))
+            "fingerprint" -> Fingerprint(json.getWireString("hash", WireRule.NON_EMPTY))
+            "os" -> Os(json.getWireString("range", WireRule.NON_EMPTY))
+            "device" -> Device(json.getJSONArray("hashedIds").toWireStringList())
+            "attribute" -> Attribute(json.getWireString("key", WireRule.NON_EMPTY), json.getWireString("valueSha256", WireRule.SHA256))
             else -> Unknown(type)
         }
     }
@@ -157,75 +155,189 @@ data class ChannelsIndex(val schema: Int, val channels: List<Entry>) {
 
     companion object {
         fun fromJson(json: JSONObject) = ChannelsIndex(
-            schema = json.getInt("schema"),
-            channels = json.getJSONArray("channels").map { Entry(it.getString("id"), it.getString("name")) },
+            schema = json.getWireInt("schema", minimum = 0),
+            channels = json.getJSONArray("channels").map { Entry(it.getWireString("id"), it.getWireString("name")) },
         )
     }
 }
 
+/** A signature as the envelope carries it: the signing key's fingerprint and the self-describing `<scheme>:<base64>` value. */
 data class Signature(val keyId: String, val value: String) {
     fun toJson(): JSONObject = JSONObject().put("keyId", keyId).put("value", value)
 
     companion object {
-        fun fromJson(json: JSONObject) = Signature(json.getString("keyId"), json.getString("value"))
+        fun fromJson(json: JSONObject) = Signature(json.getWireString("keyId", WireRule.NON_EMPTY), json.getWireString("value", WireRule.SIGNATURE_VALUE))
     }
 }
 
-/** The envelope at `/apps/{appId}/bundles/{bundleId}/manifest.json`; the signature covers the `manifest` bytes. */
-data class ManifestEnvelope(val manifest: String, val signature: Signature?) {
-    fun decodeManifest(): BundleManifest = BundleManifest.fromJson(JSONObject(manifest))
-
-    fun toJson(): JSONObject = JSONObject().put("manifest", manifest).put("signature", signature?.toJson() ?: JSONObject.NULL)
-
-    companion object {
-        fun fromJson(json: JSONObject) = ManifestEnvelope(json.getString("manifest"), json.optJSONObject("signature")?.let(Signature::fromJson))
-    }
-}
-
-data class BundleManifest(
+/**
+ * The document at `/apps/{appId}/bundles/{bundleId}/manifest.json`: the manifest as the signed string, its signature, the
+ * reserved encryption slot and, unsigned beside them, the server's facts — the bundle's id and creation time, and the pack,
+ * the deltas and the patches as stored.
+ */
+data class ManifestEnvelope(
     val bundleId: String,
-    val appId: String,
-    val version: String,
     val createdAt: Long,
-    val files: List<File>,
-    val pack: Pack?,
+    val manifest: String,
+    val signature: Signature?,
+    val pack: Pack,
     val deltas: List<Delta>,
+    val patches: List<Patch>,
 ) {
-    data class File(val path: String, val sha256: String, val sizeBytes: Long) {
-        fun toJson(): JSONObject = JSONObject().put("path", path).put("sha256", sha256).put("sizeBytes", sizeBytes)
-    }
-
     data class Pack(val url: String, val sizeBytes: Long) {
         fun toJson(): JSONObject = JSONObject().put("url", url).put("sizeBytes", sizeBytes)
+
+        companion object {
+            fun fromJson(json: JSONObject) = Pack(json.getWireString("url", WireRule.URL), json.getWireLong("sizeBytes", minimum = 0))
+        }
     }
 
     data class Delta(val baseBundleId: String, val url: String, val sizeBytes: Long) {
         fun toJson(): JSONObject = JSONObject().put("baseBundleId", baseBundleId).put("url", url).put("sizeBytes", sizeBytes)
+
+        companion object {
+            fun fromJson(json: JSONObject) = Delta(json.getWireString("baseBundleId", WireRule.IDENTIFIER), json.getWireString("url", WireRule.URL), json.getWireLong("sizeBytes", minimum = 0))
+        }
     }
+
+    /** A patch as stored: the manifest's entry with where its bytes are and how many. */
+    data class Patch(val path: String, val fromSha256: String, val toSha256: String, val format: String, val url: String, val sizeBytes: Long) {
+        fun toJson(): JSONObject = JSONObject()
+            .put("path", path)
+            .put("fromSha256", fromSha256)
+            .put("toSha256", toSha256)
+            .put("format", format)
+            .put("url", url)
+            .put("sizeBytes", sizeBytes)
+
+        companion object {
+            fun fromJson(json: JSONObject) = Patch(
+                path = json.getWireString("path", WireRule.RELATIVE_PATH),
+                fromSha256 = json.getWireString("fromSha256", WireRule.SHA256),
+                toSha256 = json.getWireString("toSha256", WireRule.SHA256),
+                format = json.getWireString("format", WireRule.NON_EMPTY),
+                url = json.getWireString("url", WireRule.URL),
+                sizeBytes = json.getWireLong("sizeBytes", minimum = 0),
+            )
+        }
+    }
+
+    fun decodeManifest(): BundleManifest = BundleManifest.fromJson(JSONObject(manifest))
 
     fun toJson(): JSONObject = JSONObject()
         .put("bundleId", bundleId)
-        .put("appId", appId)
-        .put("version", version)
         .put("createdAt", Iso8601.format(createdAt))
-        .put("files", JSONArray(files.map { it.toJson() }))
-        .put("pack", pack?.toJson() ?: JSONObject.NULL)
+        .put("manifest", manifest)
+        .put("signature", signature?.toJson() ?: JSONObject.NULL)
+        .put("encryption", JSONObject.NULL)
+        .put("pack", pack.toJson())
         .put("deltas", JSONArray(deltas.map { it.toJson() }))
+        .put("patches", JSONArray(patches.map { it.toJson() }))
+
+    companion object {
+        fun fromJson(json: JSONObject): ManifestEnvelope {
+            if (!json.has("encryption") || !json.isNull("encryption")) throw JSONException("The encryption slot is reserved and null")
+            return ManifestEnvelope(
+                bundleId = json.getWireString("bundleId", WireRule.IDENTIFIER),
+                createdAt = json.getTimestamp("createdAt"),
+                manifest = json.getWireString("manifest", WireRule.NON_EMPTY),
+                signature = json.getNullableObject("signature")?.let(Signature::fromJson),
+                pack = Pack.fromJson(json.getJSONObject("pack")),
+                deltas = json.getJSONArray("deltas").map(Delta::fromJson),
+                patches = json.getJSONArray("patches").map(Patch::fromJson),
+            )
+        }
+    }
+}
+
+/**
+ * The bundle manifest, the content the CLI knows before the upload and signs as canonical JSON: the files with their hashes
+ * and sizes, the patches it computed, the platforms, the bundle version, the fingerprint and the signing key's id.
+ */
+data class BundleManifest(
+    val appId: String,
+    val bundleVersion: String,
+    val files: List<File>,
+    val fingerprint: String? = null,
+    /** The fingerprint of the key that signed the manifest, `null` when unsigned. */
+    val keyId: String? = null,
+    val patches: List<Patch> = emptyList(),
+    val platforms: List<String>,
+) {
+    data class File(val path: String, val sha256: String, val sizeBytes: Long) {
+        fun toJson(): JSONObject = JSONObject().put("path", path).put("sha256", sha256).put("sizeBytes", sizeBytes)
+
+        companion object {
+            fun fromJson(json: JSONObject) = File(json.getWireString("path", WireRule.RELATIVE_PATH), json.getWireString("sha256", WireRule.SHA256), json.getWireLong("sizeBytes", minimum = 0))
+        }
+    }
+
+    /** A patch the bundle offers: the file at `path` from the bytes of `fromSha256` to those of `toSha256`; a format the reader does not know means the full file. */
+    data class Patch(val path: String, val fromSha256: String, val toSha256: String, val format: String) {
+        fun toJson(): JSONObject = JSONObject().put("path", path).put("fromSha256", fromSha256).put("toSha256", toSha256).put("format", format)
+
+        companion object {
+            fun fromJson(json: JSONObject) = Patch(
+                path = json.getWireString("path", WireRule.RELATIVE_PATH),
+                fromSha256 = json.getWireString("fromSha256", WireRule.SHA256),
+                toSha256 = json.getWireString("toSha256", WireRule.SHA256),
+                format = json.getWireString("format", WireRule.NON_EMPTY),
+            )
+        }
+    }
+
+    fun toJson(): JSONObject = JSONObject()
+        .put("appId", appId)
+        .put("bundleVersion", bundleVersion)
+        .put("files", JSONArray(files.map { it.toJson() }))
+        .put("fingerprint", fingerprint ?: JSONObject.NULL)
+        .put("keyId", keyId ?: JSONObject.NULL)
+        .put("patches", JSONArray(patches.map { it.toJson() }))
+        .put("platforms", JSONArray(platforms))
 
     companion object {
         fun fromJson(json: JSONObject) = BundleManifest(
-            bundleId = json.getString("bundleId", WireRule.IDENTIFIER),
-            appId = json.getString("appId"),
-            version = json.getString("version"),
-            createdAt = Iso8601.parse(json.getString("createdAt")),
-            files = json.getJSONArray("files").map { File(it.getString("path", WireRule.RELATIVE_PATH), it.getString("sha256", WireRule.SHA256), it.optLong("sizeBytes", 0)) },
-            pack = json.optJSONObject("pack")?.let { Pack(it.getString("url"), it.optLong("sizeBytes", 0)) },
-            deltas = json.optJSONArray("deltas").map { Delta(it.getString("baseBundleId"), it.getString("url"), it.optLong("sizeBytes", 0)) },
+            appId = json.getWireString("appId", WireRule.NON_EMPTY),
+            bundleVersion = json.getWireString("bundleVersion"),
+            files = json.getJSONArray("files").map(File::fromJson),
+            fingerprint = json.getNullableWireString("fingerprint", WireRule.NON_EMPTY),
+            keyId = json.getNullableWireString("keyId", WireRule.NON_EMPTY),
+            patches = json.getJSONArray("patches").map(Patch::fromJson),
+            platforms = json.getJSONArray("platforms").toWireStringList(WireRule.NON_EMPTY),
         )
     }
 }
 
-/** What a value may hold before it names a file or a directory: nothing that climbs out of its directory. */
+/** The embedded bundle's manifest in the resource file: the bundle manifest without patches, since nothing is ever patched into the embedded bundle. */
+data class EmbeddedBundleManifest(
+    val appId: String,
+    val bundleVersion: String,
+    val files: List<BundleManifest.File>,
+    val fingerprint: String? = null,
+    val keyId: String? = null,
+    val platforms: List<String>,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("appId", appId)
+        .put("bundleVersion", bundleVersion)
+        .put("files", JSONArray(files.map { it.toJson() }))
+        .put("fingerprint", fingerprint ?: JSONObject.NULL)
+        .put("keyId", keyId ?: JSONObject.NULL)
+        .put("platforms", JSONArray(platforms))
+
+    companion object {
+        fun fromJson(json: JSONObject) = EmbeddedBundleManifest(
+            appId = json.getWireString("appId", WireRule.NON_EMPTY),
+            bundleVersion = json.getWireString("bundleVersion"),
+            files = json.getJSONArray("files").map(BundleManifest.File::fromJson),
+            fingerprint = json.getNullableWireString("fingerprint", WireRule.NON_EMPTY),
+            keyId = json.getNullableWireString("keyId", WireRule.NON_EMPTY),
+            platforms = json.getJSONArray("platforms").toWireStringList(WireRule.NON_EMPTY),
+        )
+    }
+}
+
+/** What a value may hold before it names a file, a directory or a host: nothing that climbs out of its directory, nothing off the wire's format. */
 internal enum class WireRule {
     /** Letters, digits, `_` and `-`, at most 64: a bundle id names a directory. */
     IDENTIFIER,
@@ -233,24 +345,80 @@ internal enum class WireRule {
     /** 64 lowercase hexadecimal characters: a file hash names a file. */
     SHA256,
 
-    /** Relative and `/`-separated, with no empty, `.` or `..` segment, no backslash and no NUL. */
-    RELATIVE_PATH;
+    /** Relative and `/`-separated, with no empty, `.` or `..` segment, no backslash and no NUL; split on code units, so `..` cannot hide behind a combining mark. */
+    RELATIVE_PATH,
+
+    /** At least one character. */
+    NON_EMPTY,
+
+    /** An absolute URL with a scheme and a host. */
+    URL,
+
+    /** The scheme, a colon and the base64 of the signature. */
+    SIGNATURE_VALUE;
 
     fun accepts(value: String): Boolean = when (this) {
         IDENTIFIER -> identifierPattern.matches(value)
         SHA256 -> sha256Pattern.matches(value)
         RELATIVE_PATH -> '\\' !in value && '\u0000' !in value && value.split('/').none { it.isEmpty() || it == "." || it == ".." }
+        NON_EMPTY -> value.isNotEmpty()
+        URL -> runCatching { URI(value) }.getOrNull()?.let { !it.scheme.isNullOrEmpty() && !it.host.isNullOrEmpty() } ?: false
+        SIGNATURE_VALUE -> signatureValuePattern.matches(value)
     }
 }
 
 private val identifierPattern = Regex("[A-Za-z0-9_-]{1,64}")
 private val sha256Pattern = Regex("[0-9a-f]{64}")
+private val signatureValuePattern = Regex("[a-z0-9_-]+:[A-Za-z0-9+/]+=*")
 
-/** A string the rule accepts; anything else fails the decode before it can name a file or a directory. */
-internal fun JSONObject.getString(key: String, rule: WireRule): String = getString(key).also { if (!rule.accepts(it)) throw JSONException("Not a valid $key: $it") }
+/** A string, never a number or a boolean read as one, that the rule accepts; anything else fails the decode before it can name a file, a directory or a host. */
+internal fun JSONObject.getWireString(key: String, rule: WireRule? = null): String {
+    val value = get(key) as? String ?: throw JSONException("$key is not a string")
+    if (rule != null && !rule.accepts(value)) throw JSONException("Not a valid $key: $value")
+    return value
+}
+
+/** A key that must be present, `null` when it holds nothing: the wire carries every field, so an absent one is a broken document, never an empty value. */
+internal fun JSONObject.getNullableWireString(key: String, rule: WireRule? = null): String? {
+    if (!has(key)) throw JSONException("$key is absent; the wire carries it as null when there is none")
+    return if (isNull(key)) null else getWireString(key, rule)
+}
+
+internal fun JSONObject.getNullableObject(key: String): JSONObject? {
+    if (!has(key)) throw JSONException("$key is absent; the wire carries it as null when there is none")
+    return if (isNull(key)) null else getJSONObject(key)
+}
+
+internal fun JSONObject.getWireBoolean(key: String): Boolean = get(key) as? Boolean ?: throw JSONException("$key is not a boolean")
+
+/** A whole number within its bounds; a fraction, a string or a number outside them fails the decode. */
+internal fun JSONObject.getWireLong(key: String, minimum: Long, maximum: Long = Long.MAX_VALUE): Long {
+    val value = when (val number = get(key)) {
+        is Int -> number.toLong()
+        is Long -> number
+        else -> throw JSONException("$key is not a whole number")
+    }
+    if (value < minimum || value > maximum) throw JSONException("$key is out of bounds: $value")
+    return value
+}
+
+internal fun JSONObject.getWireInt(key: String, minimum: Int, maximum: Int = Int.MAX_VALUE): Int = getWireLong(key, minimum.toLong(), maximum.toLong()).toInt()
+
+internal fun JSONObject.getTimestamp(key: String): Long = parseTimestamp(getWireString(key))
+
+internal fun JSONObject.getNullableTimestamp(key: String): Long? = getNullableWireString(key)?.let(::parseTimestamp)
+
+private fun parseTimestamp(value: String): Long = runCatching { Iso8601.parse(value) }.getOrElse { throw JSONException("Not an ISO 8601 timestamp in UTC: $value") }
 
 internal fun JSONObject.optNullableString(key: String): String? = if (isNull(key)) null else optString(key)
 
 internal fun JSONArray?.toStringList(): List<String> = this?.let { array -> List(array.length()) { array.getString(it) } } ?: emptyList()
+
+/** The strings of the array, each one the rule accepts; a number or a boolean among them fails the decode. */
+internal fun JSONArray.toWireStringList(rule: WireRule? = null): List<String> = List(length()) { index ->
+    val value = get(index) as? String ?: throw JSONException("An entry is not a string")
+    if (rule != null && !rule.accepts(value)) throw JSONException("Not a valid entry: $value")
+    value
+}
 
 internal fun <T> JSONArray?.map(transform: (JSONObject) -> T): List<T> = this?.let { array -> List(array.length()) { transform(array.getJSONObject(it)) } } ?: emptyList()

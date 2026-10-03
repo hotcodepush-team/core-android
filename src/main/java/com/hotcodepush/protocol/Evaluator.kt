@@ -35,18 +35,27 @@ sealed class Evaluation {
     data class Skipped(val release: IndexRelease?, val reason: SkippedReason, val condition: ConditionType? = null) : Evaluation()
 }
 
+/** The outcome with the verdicts behind it, newest release first; an index the device does not evaluate — older than the applied one, or capped — leaves them empty. */
+data class IndexEvaluation(val outcome: Evaluation, val verdicts: List<ReleaseVerdict>)
+
 /** The device protocol's evaluation, the same rules as `@hotcodepush/protocol`'s, pinned by its fixture suite. */
 object Evaluator {
     private const val EMBEDDED_RELEASE_NUMBER = 0
 
-    fun evaluate(index: ChannelIndex, device: DeviceInfo): Evaluation {
+    fun evaluate(index: ChannelIndex, device: DeviceInfo): Evaluation = evaluation(index, device).outcome
+
+    fun evaluation(index: ChannelIndex, device: DeviceInfo): IndexEvaluation {
         val currentIndexRelease = device.currentRelease?.let { current -> index.releases.firstOrNull { it.id == current.id } }
         val applied = device.appliedIndexSequence
-        if (applied != null && index.sequence < applied) return Evaluation.UpToDate(currentIndexRelease)
-        if (isDeviceBeyondCap(index, device)) return Evaluation.Skipped(null, SkippedReason.SPENDING_CAP_REACHED)
+        if (applied != null && index.sequence < applied) return IndexEvaluation(Evaluation.UpToDate(currentIndexRelease), emptyList())
+        if (isDeviceBeyondCap(index, device)) return IndexEvaluation(Evaluation.Skipped(null, SkippedReason.SPENDING_CAP_REACHED), emptyList())
         val verdicts = index.releases.sortedByDescending { it.number }.map { verdict(it, index, device) }
+        return IndexEvaluation(outcome(verdicts, index, device, currentIndexRelease), verdicts)
+    }
+
+    private fun outcome(verdicts: List<ReleaseVerdict>, index: ChannelIndex, device: DeviceInfo, currentIndexRelease: IndexRelease?): Evaluation {
         val currentNumber = device.currentRelease?.number ?: EMBEDDED_RELEASE_NUMBER
-        val isCurrentRevoked = device.currentRelease?.let { isRevoked(it.id, it.number, index) } ?: false
+        val isCurrentRevoked = device.currentRelease?.let { isRevoked(it.id, index) } ?: false
         val newerVerdict = verdicts.firstOrNull { it.release.number > currentNumber && it.reason != SkippedReason.RELEASE_REVOKED }
         val newerEligible = verdicts.firstOrNull { it.isEligible && it.release.number > currentNumber }
         val olderEligible = verdicts.firstOrNull { it.isEligible && it.release.number < currentNumber }
@@ -62,7 +71,7 @@ object Evaluator {
     }
 
     fun verdict(release: IndexRelease, index: ChannelIndex, device: DeviceInfo): ReleaseVerdict {
-        if (isRevoked(release.id, release.number, index)) return ReleaseVerdict(release, false, SkippedReason.RELEASE_REVOKED)
+        if (isRevoked(release.id, index)) return ReleaseVerdict(release, false, SkippedReason.RELEASE_REVOKED)
         if (release.createdAt < device.builtAt) return ReleaseVerdict(release, false, SkippedReason.OLDER_THAN_BINARY)
         if (release.bundleId in device.failedBundleIds) return ReleaseVerdict(release, false, SkippedReason.FAILED_BEFORE)
         release.conditions.firstOrNull { !isSatisfied(it, device) }?.let { failed ->
@@ -102,6 +111,5 @@ object Evaluator {
     internal fun isMandatoryTransitively(target: IndexRelease, currentNumber: Int, verdicts: List<ReleaseVerdict>): Boolean =
         verdicts.any { it.release.isMandatory && it.release.number > currentNumber && it.release.number <= target.number }
 
-    internal fun isRevoked(id: String, number: Int, index: ChannelIndex): Boolean =
-        id in index.revokedReleaseIds || (index.rollBackToEmbedded?.let { number <= it.aboveNumber } ?: false)
+    internal fun isRevoked(id: String, index: ChannelIndex): Boolean = id in index.revokedReleaseIds
 }

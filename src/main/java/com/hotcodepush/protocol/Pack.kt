@@ -15,12 +15,14 @@ class GzipSizeException(maximumBytes: Long) : Exception("The content inflates pa
 /** Reads the pack format: an uncompressed ustar archive whose entries are named by their content hash and whose end is two zero blocks. */
 object PackReader {
     private const val BLOCK_SIZE = 512
+    private val checksumField = 148 until 156
 
     fun entries(bytes: ByteArray): List<PackEntry> = buildList { forEachEntry(ByteArrayInputStream(bytes), bytes.size.toLong()) { add(it) } }
 
     /**
      * Reads the `length` bytes of the input entry after entry up to the two end-of-archive blocks: a pack that ends before them is refused,
-     * anything after them is ignored, and an entry the header claims larger than what is left is refused before anything is allocated for it.
+     * a header whose checksum does not add up is refused, anything after the end is ignored, and an entry the header claims larger than
+     * what is left is refused before anything is allocated for it.
      */
     fun forEachEntry(input: InputStream, length: Long, body: (PackEntry) -> Unit) {
         val header = ByteArray(BLOCK_SIZE)
@@ -32,6 +34,7 @@ object PackReader {
                 if (input.readFully(header) < BLOCK_SIZE || !header.isZero()) throw PackFormatException("A zero block is not followed by the second end-of-archive block")
                 return
             }
+            verifyChecksum(header)
             val name = field(header, 0, 100)
             val size = field(header, 124, 12).toIntOrNull(8)?.takeIf { it >= 0 } ?: throw PackFormatException("Invalid size field")
             val padding = (BLOCK_SIZE - size % BLOCK_SIZE) % BLOCK_SIZE
@@ -42,6 +45,13 @@ object PackReader {
             body(PackEntry(name, content))
             if (padding > 0 && input.readFully(ByteArray(padding)) < padding) throw PackFormatException("Truncated pack")
         }
+    }
+
+    /** The ustar checksum: the sum of the header's bytes with the checksum field read as spaces, stored in octal. */
+    private fun verifyChecksum(header: ByteArray) {
+        val expected = field(header, checksumField.first, checksumField.count()).toIntOrNull(8) ?: throw PackFormatException("Invalid checksum field")
+        val actual = header.indices.sumOf { index -> if (index in checksumField) 0x20 else header[index].toInt() and 0xff }
+        if (actual != expected) throw PackFormatException("The header's checksum does not add up")
     }
 
     private fun field(header: ByteArray, start: Int, length: Int): String {

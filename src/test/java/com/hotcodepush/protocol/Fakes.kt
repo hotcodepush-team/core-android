@@ -147,7 +147,7 @@ object Fixture {
 
     data class Published(val release: IndexRelease, val manifest: BundleManifest, val envelope: ManifestEnvelope, val pack: ByteArray)
 
-    fun embeddedManifest() = BundleManifest("embedded", APP_ID, "1.0.0", BUILT_AT, listOf(BundleManifest.File("index.html", Hashing.sha256Hex(embeddedIndexHtml), embeddedIndexHtml.size.toLong())), null, emptyList())
+    fun embeddedManifest() = EmbeddedBundleManifest(appId = APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File("index.html", Hashing.sha256Hex(embeddedIndexHtml), embeddedIndexHtml.size.toLong())), platforms = listOf("android"))
 
     fun configuration(installStrategy: InstallStrategy = InstallStrategy.NEXT_START, mandatoryInstallStrategy: MandatoryInstallStrategy = MandatoryInstallStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, autoCheck: Boolean = false, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<String> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, enabledInDebugBuilds: Boolean = true): Configuration {
         val json = JSONObject()
@@ -180,15 +180,15 @@ object Fixture {
         val sha256 = Hashing.sha256Hex(content)
         val js = "js-$bundleId".toByteArray()
         val pack = PackWriter.pack(listOf(PackEntry(sha256, Gzip.compress(content)), PackEntry(Hashing.sha256Hex(js), Gzip.compress(js))))
-        val manifest = BundleManifest(bundleId, APP_ID, "1.$number.0", createdAt, listOf(BundleManifest.File("index.html", sha256, content.size.toLong()), BundleManifest.File("assets/app.js", Hashing.sha256Hex(js), js.size.toLong())), BundleManifest.Pack("$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/pack", pack.size.toLong()), emptyList())
+        val manifest = BundleManifest(appId = APP_ID, bundleVersion = "1.$number.0", files = listOf(BundleManifest.File("index.html", sha256, content.size.toLong()), BundleManifest.File("assets/app.js", Hashing.sha256Hex(js), js.size.toLong())), platforms = listOf("android"))
         val manifestJson = manifest.toJson().toString()
-        val envelope = ManifestEnvelope(manifestJson, null)
-        val release = IndexRelease("r$number", number, createdAt, isMandatory, "notes $number", rollout, conditions, bundleId, manifest.version, "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json", Hashing.sha256Hex(manifestJson), content.size.toLong())
+        val envelope = ManifestEnvelope(bundleId, createdAt, manifestJson, null, ManifestEnvelope.Pack("$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/pack", pack.size.toLong()), emptyList(), emptyList())
+        val release = IndexRelease("r$number", number, createdAt, isMandatory, "notes $number", rollout, conditions, bundleId, manifest.bundleVersion, "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json", Hashing.sha256Hex(manifestJson), content.size.toLong())
         return Published(release, manifest, envelope, pack)
     }
 
-    fun index(sequence: Int, releases: List<IndexRelease>, revoked: List<String> = emptyList(), isPaused: Boolean = false, cappedAt: Long? = null, rollBackToEmbedded: RollBackToEmbedded? = null) =
-        ChannelIndex(ChannelIndex.SCHEMA, sequence, APP_ID, CHANNEL_ID, "android", isPaused, cappedAt, revoked, rollBackToEmbedded, releases)
+    fun index(sequence: Int, releases: List<IndexRelease>, revoked: List<String> = emptyList(), isPaused: Boolean = false, cappedAt: Long? = null) =
+        ChannelIndex(ChannelIndex.SCHEMA, sequence, APP_ID, CHANNEL_ID, "android", isPaused, cappedAt, revoked, releases)
 }
 
 /** A core over fakes, in a fresh temporary directory. */
@@ -218,11 +218,11 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
         http.stubJson(Fixture.eventsUrl(), JSONObject().put("reportedAt", reportedAt), status = 202)
     }
 
-    fun publish(releases: List<Fixture.Published>, sequence: Int, revoked: List<String> = emptyList(), isPaused: Boolean = false, cappedAt: Long? = null, rollBackToEmbedded: RollBackToEmbedded? = null, etag: String = "\"e1\"") {
-        http.stubJson(Fixture.indexUrl(), Fixture.index(sequence, releases.map { it.release }, revoked, isPaused, cappedAt, rollBackToEmbedded).toJson(), headers = mapOf("ETag" to etag))
+    fun publish(releases: List<Fixture.Published>, sequence: Int, revoked: List<String> = emptyList(), isPaused: Boolean = false, cappedAt: Long? = null, etag: String = "\"e1\"") {
+        http.stubJson(Fixture.indexUrl(), Fixture.index(sequence, releases.map { it.release }, revoked, isPaused, cappedAt).toJson(), headers = mapOf("ETag" to etag))
         for (entry in releases) {
             http.stubJson(entry.release.manifestUrl, entry.envelope.toJson())
-            http.stub(entry.manifest.pack!!.url, body = entry.pack)
+            http.stub(entry.envelope.pack.url, body = entry.pack)
         }
     }
 }

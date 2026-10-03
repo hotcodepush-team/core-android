@@ -1,9 +1,11 @@
 package com.hotcodepush.protocol
 
+import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
 import java.util.Base64
@@ -30,6 +32,14 @@ class FixtureTest {
         }
     }
 
+    private data class ExpectedVerdict(val releaseId: String, val isEligible: Boolean, val reason: String?, val condition: String?) {
+        companion object {
+            fun of(verdict: ReleaseVerdict) = ExpectedVerdict(verdict.release.id, verdict.isEligible, verdict.reason?.name, verdict.condition?.wire)
+
+            fun fromJson(json: JSONObject) = ExpectedVerdict(json.getString("releaseId"), json.getBoolean("isEligible"), json.optNullableString("reason"), json.optNullableString("condition"))
+        }
+    }
+
     private fun deviceInfo(json: JSONObject) = DeviceInfo(
         appliedIndexSequence = if (json.isNull("appliedIndexSequence")) null else json.getInt("appliedIndexSequence"),
         attributes = json.getJSONObject("attributes").let { attributes -> attributes.keys().asSequence().associateWith { attributes.getString(it) } },
@@ -47,28 +57,70 @@ class FixtureTest {
 
     private fun load(path: String): JSONObject = JSONObject(File(fixturesDirectory, path).readText())
 
+    private fun cases(path: String, key: String): List<JSONObject> {
+        val cases = load(path).getJSONArray(key)
+        assertTrue(key, cases.length() > 0)
+        return List(cases.length()) { cases.getJSONObject(it) }
+    }
+
+    private fun assertAccepted(path: String, key: String, document: String, decode: (JSONObject) -> Any) {
+        for (case in cases(path, key)) {
+            try {
+                decode(case.getJSONObject(document))
+            } catch (exception: Exception) {
+                fail("$key: ${case.getString("name")}: $exception")
+            }
+        }
+    }
+
+    private fun assertRefused(path: String, key: String, document: String, decode: (JSONObject) -> Any) {
+        for (case in cases(path, key)) {
+            assertThrows("$key: ${case.getString("name")}", JSONException::class.java) { decode(case.getJSONObject(document)) }
+        }
+    }
+
     @Test
     fun shouldMatchEveryEvaluationFixture() {
         val files = File(fixturesDirectory, "evaluation").listFiles { file -> file.name.endsWith(".json") }?.sortedBy { it.name } ?: emptyList()
         assertTrue("no evaluation fixtures at $fixturesDirectory", files.isNotEmpty())
         var count = 0
+        var verdictCount = 0
         for (file in files) {
             val cases = JSONObject(file.readText()).getJSONArray("cases")
             for (index in 0 until cases.length()) {
                 val case = cases.getJSONObject(index)
-                val actual = Expected.of(Evaluator.evaluate(ChannelIndex.fromJson(case.getJSONObject("index")), deviceInfo(case.getJSONObject("device"))))
-                assertEquals("${file.name}: ${case.getString("name")}", Expected.fromJson(case.getJSONObject("expected")), actual)
+                val name = "${file.name}: ${case.getString("name")}"
+                val evaluation = Evaluator.evaluation(ChannelIndex.fromJson(case.getJSONObject("index")), deviceInfo(case.getJSONObject("device")))
+                assertEquals(name, Expected.fromJson(case.getJSONObject("expected")), Expected.of(evaluation.outcome))
                 count++
+                if (case.has("verdicts")) {
+                    val verdicts = case.getJSONArray("verdicts").let { array -> List(array.length()) { ExpectedVerdict.fromJson(array.getJSONObject(it)) } }
+                    assertEquals(name, verdicts, evaluation.verdicts.map(ExpectedVerdict::of))
+                    verdictCount++
+                }
             }
         }
         assertTrue(count > 50)
+        assertTrue(verdictCount >= 16)
+    }
+
+    @Test
+    fun shouldAcceptEveryAcceptedWireRulesFixture() {
+        assertAccepted("wire-rules.json", "acceptedIndexes", "index", ChannelIndex::fromJson)
+        assertAccepted("wire-rules.json", "acceptedManifests", "manifest", BundleManifest::fromJson)
+        assertAccepted("wire-rules.json", "acceptedEnvelopes", "envelope", ManifestEnvelope::fromJson)
+    }
+
+    @Test
+    fun shouldRefuseEveryRefusedWireRulesFixture() {
+        assertRefused("wire-rules.json", "refusedIndexes", "index", ChannelIndex::fromJson)
+        assertRefused("wire-rules.json", "refusedManifests", "manifest", BundleManifest::fromJson)
+        assertRefused("wire-rules.json", "refusedEnvelopes", "envelope", ManifestEnvelope::fromJson)
     }
 
     @Test
     fun shouldMatchEveryVersionRangeFixture() {
-        val cases = load("version-ranges.json").getJSONArray("cases")
-        for (index in 0 until cases.length()) {
-            val case = cases.getJSONObject(index)
+        for (case in cases("version-ranges.json", "cases")) {
             val version = VersionRange.parseVersion(case.getString("version"))!!
             val expected = if (case.isNull("satisfied")) null else case.getBoolean("satisfied")
             assertEquals("${case.getString("version")} in ${case.getString("range")}", expected, VersionRange.isVersionInRange(version, case.getString("range")))
@@ -77,22 +129,40 @@ class FixtureTest {
 
     @Test
     fun shouldMatchEveryRolloutBucketFixture() {
-        val cases = load("rollout-buckets.json").getJSONArray("cases")
-        for (index in 0 until cases.length()) {
-            val case = cases.getJSONObject(index)
+        for (case in cases("rollout-buckets.json", "cases")) {
             assertEquals(case.toString(), case.getInt("bucket"), Hashing.rolloutBucket(case.getString("deviceId"), case.getString("releaseId")))
         }
     }
 
     @Test
     fun shouldReadEveryResourceFileFixture() {
-        val cases = load("resource-files.json").getJSONArray("cases")
-        assertTrue(cases.length() > 0)
-        for (index in 0 until cases.length()) {
-            val case = cases.getJSONObject(index)
+        for (case in cases("resource-files.json", "cases")) {
             val configuration = Configuration.fromJson(case.getJSONObject("resourceFile"))
-            assertEquals(case.getString("name"), BundleManifest.fromJson(case.getJSONObject("embeddedBundleManifest")), configuration.embeddedBundleManifest)
+            assertEquals(case.getString("name"), EmbeddedBundleManifest.fromJson(case.getJSONObject("embeddedBundleManifest")), configuration.embeddedBundleManifest)
         }
+    }
+
+    /** Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form; whether the signature verifies is the signing milestone's. */
+    @Test
+    fun shouldDecodeTheManifestOfEverySignatureFixture() {
+        val cases = cases("signatures.json", "manifests")
+        assertTrue(cases.size > 5)
+        for (case in cases) {
+            val envelope = case.getJSONObject("envelope")
+            BundleManifest.fromJson(JSONObject(envelope.getString("manifest")))
+            envelope.getNullableObject("signature")?.let(Signature::fromJson)
+        }
+    }
+
+    /** The bounds are the writer's: a reader takes a release with more conditions, and a device condition with more ids, than the API accepts. */
+    @Test
+    fun shouldReadPastTheWriterBoundsFixture() {
+        val bounds = load("bounds.json")
+        val hashedIds = (0..bounds.getInt("deviceConditionMaxHashedIds")).map { Hashing.sha256Hex("device-$it") }
+        val conditions = (0..bounds.getInt("releaseMaxConditions")).map { Condition.Device(hashedIds) }
+        val release = IndexRelease("r1", 1, Fixture.BUILT_AT, false, null, 100, conditions, "b1", "1.0.0", "${Fixture.FILES_BASE_URL}/manifest.json", Hashing.sha256Hex("manifest"), 1)
+        val index = Fixture.index(1, listOf(release))
+        assertEquals(index, ChannelIndex.fromJson(index.toJson()))
     }
 
     @Test
@@ -113,10 +183,7 @@ class FixtureTest {
 
     @Test
     fun shouldRefuseEveryRefusedPackFixture() {
-        val cases = load("packs.json").getJSONArray("refusedPacks")
-        assertTrue(cases.length() > 0)
-        for (index in 0 until cases.length()) {
-            val case = cases.getJSONObject(index)
+        for (case in cases("packs.json", "refusedPacks")) {
             val pack = Base64.getDecoder().decode(case.getString("packBase64"))
             assertThrows(case.getString("name"), PackFormatException::class.java) { PackReader.entries(pack) }
         }

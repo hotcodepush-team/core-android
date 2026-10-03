@@ -25,8 +25,8 @@ class DownloaderTest {
     @Test
     fun shouldRefuseAPackUrlOffTheConfiguredHosts() {
         val harness = DownloaderHarness()
-        val manifest = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs), packUrl = "https://elsewhere.test/pack").manifest
-        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(manifest))?.reason)
+        val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
+        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, packUrl = "https://elsewhere.test/pack"))?.reason)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
     }
 
@@ -37,6 +37,14 @@ class DownloaderTest {
         assertEquals(FailedReason.VERIFICATION_FAILED, failure?.reason)
         assertTrue(harness.files.bundleIds().isEmpty())
         assertFalse(File(harness.root, "escape.html").exists())
+    }
+
+    @Test
+    fun shouldRefuseAnEnvelopeNamingAnotherBundle() {
+        val harness = DownloaderHarness()
+        val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
+        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, bundleId = "b3"))?.reason)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
     }
 
     @Test
@@ -58,11 +66,10 @@ class DownloaderTest {
     }
 
     @Test
-    fun shouldRefuseAPackWhoseLengthDiffersFromTheManifest() {
+    fun shouldRefuseAPackWhoseLengthDiffersFromTheEnvelope() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
-        val manifest = bundle.manifest.copy(pack = BundleManifest.Pack(DownloaderHarness.PACK_URL, bundle.pack.size + 1L))
-        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(manifest, bundle.pack))?.reason)
+        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, packSizeBytes = bundle.pack.size + 1L))?.reason)
         assertEquals(emptyList<String>(), File(harness.root, "tmp").list()?.toList())
     }
 
@@ -71,7 +78,7 @@ class DownloaderTest {
         val harness = DownloaderHarness()
         val archive = Gzip.compress("console.log('precompressed')".toByteArray())
         val sha256 = Hashing.sha256Hex(archive)
-        val manifest = BundleManifest(DownloaderHarness.BUNDLE_ID, Fixture.APP_ID, "1.2.0", Fixture.BUILT_AT, listOf(BundleManifest.File("assets/app.js.gz", sha256, archive.size.toLong())), null, emptyList())
+        val manifest = DownloaderHarness.manifest(listOf(BundleManifest.File("assets/app.js.gz", sha256, archive.size.toLong())))
         harness.http.stub("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/files/$sha256", body = archive)
         assertNull(harness.downloadFailure(harness.publish(manifest)))
         assertArrayEquals(archive, harness.files.file(sha256).readBytes())
@@ -81,7 +88,7 @@ class DownloaderTest {
     fun shouldRefuseAPackEntryThatIsNotGzip() {
         val harness = DownloaderHarness()
         val pack = PackWriter.pack(listOf(indexHtml, appJs).map { PackEntry(Hashing.sha256Hex(it), it) })
-        val manifest = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs)).manifest.copy(pack = BundleManifest.Pack(DownloaderHarness.PACK_URL, pack.size.toLong()))
+        val manifest = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs)).manifest
         assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(manifest, pack))?.reason)
         assertFalse(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
     }
@@ -90,7 +97,7 @@ class DownloaderTest {
     fun shouldRefuseASingleFileLargerThanItsSize() {
         val harness = DownloaderHarness()
         val sha256 = Hashing.sha256Hex(indexHtml)
-        val manifest = BundleManifest(DownloaderHarness.BUNDLE_ID, Fixture.APP_ID, "1.2.0", Fixture.BUILT_AT, listOf(BundleManifest.File("index.html", sha256, indexHtml.size - 1L)), null, emptyList())
+        val manifest = DownloaderHarness.manifest(listOf(BundleManifest.File("index.html", sha256, indexHtml.size - 1L)))
         harness.http.stub("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/files/$sha256", body = indexHtml)
         assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(harness.publish(manifest))?.reason)
         assertFalse(harness.files.hasFile(sha256))
@@ -106,12 +113,13 @@ class DownloaderHarness {
     val files = FileStore(File(root, "store"))
     val downloader = Downloader(Fixture.configuration(), files, InMemoryEmbeddedBundle(), http, File(root, "tmp"))
 
-    /** Serves the manifest, and its pack when given, where the index entry says they are and returns that entry. */
-    fun publish(manifest: BundleManifest, pack: ByteArray? = null, manifestUrl: String = MANIFEST_URL): IndexRelease {
+    /** Serves the envelope, and its pack when given, where the index entry says they are and returns that entry. */
+    fun publish(manifest: BundleManifest, pack: ByteArray? = null, packUrl: String = PACK_URL, packSizeBytes: Long? = null, bundleId: String = BUNDLE_ID, manifestUrl: String = MANIFEST_URL): IndexRelease {
         val json = manifest.toJson().toString()
-        http.stubJson(manifestUrl, ManifestEnvelope(json, null).toJson())
-        if (pack != null) manifest.pack?.let { http.stub(it.url, body = pack) }
-        return IndexRelease("r2", 2, manifest.createdAt, false, null, 100, emptyList(), manifest.bundleId, manifest.version, manifestUrl, Hashing.sha256Hex(json), 0)
+        val envelope = ManifestEnvelope(bundleId, Fixture.BUILT_AT, json, null, ManifestEnvelope.Pack(packUrl, packSizeBytes ?: pack?.size?.toLong() ?: 0), emptyList(), emptyList())
+        http.stubJson(manifestUrl, envelope.toJson())
+        if (pack != null) http.stub(packUrl, body = pack)
+        return IndexRelease("r2", 2, Fixture.BUILT_AT, false, null, 100, emptyList(), BUNDLE_ID, manifest.bundleVersion, manifestUrl, Hashing.sha256Hex(json), 0)
     }
 
     fun downloadFailure(release: IndexRelease): DownloadFailure? = runBlocking {
@@ -129,11 +137,13 @@ class DownloaderHarness {
         const val PACK_URL = "${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/bundles/$BUNDLE_ID/pack"
 
         /** The manifest of these files and the pack that carries them, each entry the gzip bytes the bucket serves. */
-        fun bundle(files: Map<String, ByteArray>, packUrl: String = PACK_URL): Bundle {
+        fun bundle(files: Map<String, ByteArray>): Bundle {
             val sorted = files.toSortedMap()
             val pack = PackWriter.pack(sorted.values.map { PackEntry(Hashing.sha256Hex(it), Gzip.compress(it)) })
             val entries = sorted.map { (path, content) -> BundleManifest.File(path, Hashing.sha256Hex(content), content.size.toLong()) }
-            return Bundle(BundleManifest(BUNDLE_ID, Fixture.APP_ID, "1.2.0", Fixture.BUILT_AT, entries, BundleManifest.Pack(packUrl, pack.size.toLong()), emptyList()), pack)
+            return Bundle(manifest(entries), pack)
         }
+
+        fun manifest(files: List<BundleManifest.File>) = BundleManifest(appId = Fixture.APP_ID, bundleVersion = "1.2.0", files = files, platforms = listOf("android"))
     }
 }

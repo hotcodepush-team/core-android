@@ -34,8 +34,8 @@ class FileStore(val rootDirectory: File) {
         runCatching { BundleManifest.fromJson(org.json.JSONObject(file.readText())) }.getOrNull()
     }
 
-    fun writeManifest(manifest: BundleManifest) {
-        val file = manifestFile(manifest.bundleId)
+    fun writeManifest(manifest: BundleManifest, bundleId: String) {
+        val file = manifestFile(bundleId)
         file.parentFile?.mkdirs()
         file.writeText(manifest.toJson().toString())
     }

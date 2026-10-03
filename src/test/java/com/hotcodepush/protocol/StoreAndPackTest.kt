@@ -87,10 +87,10 @@ class FileStoreTest {
     @Test
     fun shouldCollectWhatNoKeptBundleLists() {
         val files = FileStore(Files.createTempDirectory("fs").toFile())
-        val kept = BundleManifest("kept", "a", "1", 0, listOf(BundleManifest.File("a", Hashing.sha256Hex("a"), 1)), null, emptyList())
-        val gone = BundleManifest("gone", "a", "1", 0, listOf(BundleManifest.File("b", Hashing.sha256Hex("b"), 1)), null, emptyList())
-        files.writeManifest(kept)
-        files.writeManifest(gone)
+        val kept = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File("a", Hashing.sha256Hex("a"), 1)), platforms = listOf("android"))
+        val gone = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File("b", Hashing.sha256Hex("b"), 1)), platforms = listOf("android"))
+        files.writeManifest(kept, "kept")
+        files.writeManifest(gone, "gone")
         files.writeFile("a".toByteArray(), Hashing.sha256Hex("a"))
         files.writeFile("b".toByteArray(), Hashing.sha256Hex("b"))
         files.deleteUnusedFiles(setOf("kept"))
@@ -105,7 +105,7 @@ class FileStoreTest {
         val files = FileStore(File(root, "store"))
         val embedded = InMemoryEmbeddedBundle().apply { this.files[Hashing.sha256Hex("embedded")] = "embedded".toByteArray() }
         files.writeFile("new".toByteArray(), Hashing.sha256Hex("new"))
-        val manifest = BundleManifest("b", "a", "1", 0, listOf(BundleManifest.File("index.html", Hashing.sha256Hex("new"), 3), BundleManifest.File("assets/logo.svg", Hashing.sha256Hex("embedded"), 8)), null, emptyList())
+        val manifest = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File("index.html", Hashing.sha256Hex("new"), 3), BundleManifest.File("assets/logo.svg", Hashing.sha256Hex("embedded"), 8)), platforms = listOf("android"))
         val www = File(root, "www")
         BundleProjection.project(manifest, files, embedded, www)
         assertEquals("new", File(www, "index.html").readText())

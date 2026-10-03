@@ -247,7 +247,7 @@ class CoreTest {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
-        harness.http.stubJson(v2.release.manifestUrl, ManifestEnvelope(v2.envelope.manifest + " ", null).toJson())
+        harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(manifest = v2.envelope.manifest + " ").toJson())
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(SyncStatus.FAILED, result.status)
@@ -409,7 +409,7 @@ class CoreTest {
     fun shouldResolveAChannelNameThroughTheChannelsIndex() = runBlocking {
         val harness = Harness()
         harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "c-staging").put("name", "staging"))))
-        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/c-staging/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "c-staging", "android", false, null, emptyList(), null, emptyList()).toJson())
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/c-staging/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "c-staging", "android", false, null, emptyList(), emptyList()).toJson())
         harness.core.setChannel(ChannelChoice.Name("staging"))
         assertEquals(SyncResult.upToDate(null), harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(ChannelResult("c-staging", "staging", ChannelSource.RUNTIME), harness.core.channel())
@@ -738,15 +738,46 @@ class CoreTest {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         val deltaUrl = "${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/bundles/b2/deltas/embedded"
-        val manifest = v2.manifest.copy(deltas = listOf(BundleManifest.Delta("embedded", deltaUrl, v2.pack.size.toLong())))
-        val manifestJson = manifest.toJson().toString()
-        val release = v2.release.copy(manifestSha256 = Hashing.sha256Hex(manifestJson))
-        harness.http.stubJson(Fixture.indexUrl(), Fixture.index(1, listOf(release)).toJson(), headers = mapOf("ETag" to "\"e1\""))
-        harness.http.stubJson(release.manifestUrl, ManifestEnvelope(manifestJson, null).toJson())
+        harness.publish(listOf(v2), 1)
+        harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(deltas = listOf(ManifestEnvelope.Delta("embedded", deltaUrl, v2.pack.size.toLong()))).toJson())
         harness.http.stub(deltaUrl, body = v2.pack)
         harness.core.handleAppStart()
         assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertTrue(harness.http.requests.any { it.first == deltaUrl })
         assertEquals(PackKind.DELTA.wire, StateStore(harness.store).unsentEvents.first { it.type == "downloaded" }.packKind)
+    }
+
+    @Test
+    fun shouldDiscardADownloadedReleaseRevokedBeforeTheStartThatWouldInstallIt() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.publish(listOf(v2), 2, revoked = listOf("r1"), etag = "\"e2\"")
+        assertEquals(SyncResult.upToDate(null), harness.core.sync(SyncTrigger.MANUAL))
+        harness.loader.served = "b2"
+        harness.restart()
+        harness.core.handleAppStart()
+        val status = harness.core.getState()
+        assertNull(status.currentRelease)
+        assertNull(status.nextRelease)
+        assertTrue(harness.loader.hasPersisted)
+        assertNull(harness.loader.persisted)
+        assertEquals(listOf<String?>(null), harness.loader.loaded)
+    }
+
+    @Test
+    fun shouldDiscardADownloadedReleaseThatLeftTheIndexInsteadOfApplyingIt() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.MANUAL))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.MANUAL), harness.core.sync(SyncTrigger.MANUAL))
+        harness.publish(emptyList(), 2, etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(ApplyResult(ApplyStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertNull(harness.core.getState().nextRelease)
     }
 }

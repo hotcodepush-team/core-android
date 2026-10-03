@@ -59,6 +59,7 @@ class Core(
         state.lastRollback = null
         if (state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest()) dropStoredReleases()
         if (isCurrentReleaseUnconfirmed()) rollbackCurrentRelease(RollbackReason.CRASHED, null)
+        discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
         if (next != null && shouldSwitchAtStart(next)) switchToNextRelease()
         loadBundle()
@@ -102,6 +103,7 @@ class Core(
     suspend fun handleAppResume() = lock.withLock {
         val backgroundDuration = backgroundedAt?.let { (clock.now() - it) / 1000.0 }
         backgroundedAt = null
+        discardNextReleaseThatLeftTheIndex()
         if (backgroundDuration != null && configuration.installStrategy == InstallStrategy.NEXT_RESUME && state.nextRelease != null && backgroundDuration >= configuration.installOnResumeAfter) {
             installNextRelease()
             return
@@ -141,6 +143,7 @@ class Core(
 
     /** The third stage: apply the downloaded update now and reload the app. */
     suspend fun applyUpdate(): ApplyResult = lock.withLock {
+        discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease ?: return ApplyResult(ApplyStatus.NOTHING_TO_APPLY, state.currentRelease)
         switchToNextRelease()
         reloadApp()
@@ -370,6 +373,17 @@ class Core(
         state.nextRelease = release
     }
 
+    /** A downloaded release that has left the cached index since — revoked, or gone from it — is never installed: it is dropped and the served bundle stays the running one. */
+    private fun discardNextReleaseThatLeftTheIndex() {
+        val next = state.nextRelease ?: return
+        val index = state.cachedIndex?.body ?: return
+        if (!hasLeftIndex(next, index)) return
+        state.nextRelease = null
+        loader.persistServedBundle(state.currentRelease?.bundleId)
+    }
+
+    private fun hasLeftIndex(release: Release, index: ChannelIndex): Boolean = release.id in index.revokedReleaseIds || index.releases.none { it.id == release.id }
+
     private fun switchToNextRelease() {
         val next = state.nextRelease ?: return
         state.currentRelease = next
@@ -545,7 +559,6 @@ class Core(
             200 -> {
                 val index = runCatching { ChannelIndex.fromJson(org.json.JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()
                     ?: return IndexFetch.Invalid("The channel index could not be parsed")
-                if (index.schema != ChannelIndex.SCHEMA) return IndexFetch.Invalid("The channel index has schema ${index.schema}, this SDK reads ${ChannelIndex.SCHEMA}")
                 if (cached != null && index.sequence < cached.body.sequence) return IndexFetch.Index(cached.body)
                 lock.withLock { state.cachedIndex = CachedIndex(response.header("ETag"), clock.now(), index) }
                 IndexFetch.Index(index)
@@ -609,7 +622,7 @@ class Core(
     private fun buildDeviceReport(): DeviceReport? {
         val channel = channel()
         if (channel.id.isEmpty()) return null
-        val report = DeviceReport(state.attributes, device.binaryBuild, device.binaryVersion, channel.id, channel.source, configuration.embeddedBundleId, configuration.fingerprint, device.osVersion, state.currentRelease?.id)
+        val report = DeviceReport(state.attributes, device.binaryBuild, device.binaryVersion, channel.id, channel.source, configuration.embeddedBundleId, configuration.fingerprint, device.osVersion, state.currentRelease?.id, runtimeVersion = null)
         val reportedAt = state.reportedAt
         val isAcknowledged = report == state.acknowledgedReport && reportedAt != null && resolveMonth(reportedAt) == resolveMonth(clock.now())
         return if (isAcknowledged) null else report
