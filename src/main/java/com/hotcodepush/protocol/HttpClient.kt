@@ -19,11 +19,14 @@ interface HttpClient {
 
     /**
      * Downloads to the file, appending from its current size with a `Range` request when it exists; what arrived stays
-     * when the connection drops, for the next attempt to resume. Past `maximumBytes`, or on a status other than 200 or 206,
-     * it stops and deletes the file.
+     * when the connection drops, for the next attempt to resume. Past `maximumBytes` it stops and deletes the file; on a
+     * status other than 200 or 206 — a redirect included, which it never follows — it deletes the file and throws `HttpStatusException`.
      */
     suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit)
 }
+
+/** A download answered with a status other than 200 or 206; a redirect is one, since a download follows none. */
+class HttpStatusException(val status: Int) : Exception("HTTP $status")
 
 class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : HttpClient {
     override suspend fun get(url: String, headers: Map<String, String>): HttpResponse = send(request(url, headers).build())
@@ -40,10 +43,10 @@ class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : Htt
     override suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit) {
         val existing = if (file.isFile) file.length() else 0L
         val request = Request.Builder().url(url).apply { if (existing > 0) header("Range", "bytes=$existing-") }.build()
-        client.newCall(request).execute().use { response ->
+        downloadClient.newCall(request).execute().use { response ->
             if (response.code != 200 && response.code != 206) {
                 file.delete()
-                throw DownloadFailure.DownloadFailed("HTTP ${response.code} for ${url.substringAfterLast('/')}")
+                throw HttpStatusException(response.code)
             }
             file.parentFile?.mkdirs()
             val append = response.code == 206 && existing > 0
@@ -66,6 +69,9 @@ class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : Htt
             }
         }
     }
+
+    /** The same pools and interceptors, following no redirect: a download stays on the URL the core pinned. */
+    private val downloadClient: OkHttpClient by lazy { client.newBuilder().followRedirects(false).followSslRedirects(false).build() }
 
     companion object {
         /** One client per process, as OkHttp asks: its pools and threads outlive every activity. */

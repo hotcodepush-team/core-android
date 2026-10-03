@@ -49,7 +49,20 @@ class HttpClientTest {
     fun shouldDeleteThePartialFileOnAnotherStatus() {
         file.writeText("abc")
         val client = client { request -> response(request, 416, ByteArray(0).toResponseBody()) }
-        assertEquals(FailedReason.DOWNLOAD_FAILED, (download(client, 8) as? DownloadFailure)?.reason)
+        assertEquals(416, (download(client, 8) as? HttpStatusException)?.status)
+        assertFalse(file.exists())
+    }
+
+    @Test
+    fun shouldAnswerARedirectWithItsStatusAndNeverFollowIt() {
+        file.writeText("abc")
+        val requested = mutableListOf<String>()
+        val client = client { request ->
+            requested += request.url.toString()
+            response(request, 302, ByteArray(0).toResponseBody()).newBuilder().header("Location", "https://files.test/apps/a/bundles/b2/full").build()
+        }
+        assertEquals(302, (download(client, 8) as? HttpStatusException)?.status)
+        assertEquals(listOf(url), requested)
         assertFalse(file.exists())
     }
 

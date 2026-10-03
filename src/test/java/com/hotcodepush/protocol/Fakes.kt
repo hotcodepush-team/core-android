@@ -38,7 +38,8 @@ class FakeHttpClient : HttpClient {
     override suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit) {
         requests += url to emptyMap()
         if (isOffline) throw java.io.IOException("offline")
-        val stub = stubs[url]?.takeIf { it.status == 200 } ?: throw DownloadFailure.DownloadFailed("HTTP 404")
+        val stub = stubs[url] ?: throw HttpStatusException(404)
+        if (stub.status != 200) throw HttpStatusException(stub.status)
         if (stub.body.size > maximumBytes) throw DownloadFailure.DownloadFailed("${url.substringAfterLast('/')} is larger than its $maximumBytes bytes")
         file.parentFile?.mkdirs()
         file.writeBytes(stub.body)

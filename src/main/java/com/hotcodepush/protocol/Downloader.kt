@@ -17,6 +17,12 @@ sealed class DownloadFailure(message: String) : Exception(message) {
 
 data class DownloadOutcome(val manifest: BundleManifest, val bytes: Long, val packKind: PackKind)
 
+/** Where a pack comes from: its URL, its size where the envelope states one, the most bytes it may hold and how the bytes arrive. */
+internal data class PackSource(val url: String, val sizeBytes: Long?, val maximumBytes: Long, val kind: PackKind)
+
+/** The bytes a pack cost and the kind that finally arrived, since a streamed delta may give way to the full pack. */
+internal data class PackOutcome(val bytes: Long, val kind: PackKind)
+
 /** Manifest, signature, missing files, pack, verification, files to disk — each step one function. */
 class Downloader(
     private val configuration: Configuration,
@@ -29,13 +35,13 @@ class Downloader(
         val (envelope, manifest) = fetchBundleManifest(target)
         val missing = resolveMissingFiles(manifest)
         val pack = if (missing.isEmpty()) null else resolvePack(envelope, currentBundleId, missing)
-        verifyFreeSpace(missing.sumOf { it.sizeBytes } + (pack?.first?.sizeBytes ?: 0))
+        verifyFreeSpace(missing.sumOf { it.sizeBytes } + (pack?.maximumBytes ?: 0))
         var bytes = 0L
         var packKind = PackKind.FILES
         if (pack != null) {
-            val (source, kind) = pack
-            bytes += downloadPack(source, envelope.bundleId, missing.associate { it.sha256 to it.sizeBytes }, progress)
-            packKind = kind
+            val outcome = downloadPack(pack, envelope, missing.associate { it.sha256 to it.sizeBytes }, progress)
+            bytes += outcome.bytes
+            packKind = outcome.kind
         }
         for (file in resolveMissingFiles(manifest)) bytes += downloadFile(file)
         files.writeManifest(manifest, envelope.bundleId)
@@ -77,12 +83,23 @@ class Downloader(
 
     internal fun resolveMissingFiles(manifest: BundleManifest): List<BundleManifest.File> = manifest.files.filter { !files.hasFile(it.sha256) && !embedded.has(it.sha256) }
 
-    /** The delta pack against the running bundle where one exists, the full pack otherwise; nothing when the pack would cost more than the files. */
-    internal fun resolvePack(envelope: ManifestEnvelope, currentBundleId: String?, missing: List<BundleManifest.File>): Pair<ManifestEnvelope.Pack, PackKind>? {
-        envelope.deltas.firstOrNull { it.baseBundleId == currentBundleId }?.let { return ManifestEnvelope.Pack(it.url, it.sizeBytes) to PackKind.DELTA }
-        if (missing.size > 1) return envelope.pack to PackKind.FULL
-        return null
+    /**
+     * The delta pack the bucket holds against the running bundle; for any other base the device runs, the delta the updates
+     * host streams, never larger than the full pack whose entries it shares; without a base the full pack; nothing when one
+     * file is cheaper than a pack.
+     */
+    internal fun resolvePack(envelope: ManifestEnvelope, currentBundleId: String?, missing: List<BundleManifest.File>): PackSource? {
+        envelope.deltas.firstOrNull { it.baseBundleId == currentBundleId }?.let { return PackSource(it.url, it.sizeBytes, it.sizeBytes, PackKind.DELTA) }
+        if (missing.size <= 1) return null
+        if (currentBundleId != null) return PackSource(resolveStreamedDeltaUrl(envelope.bundleId, currentBundleId), null, envelope.pack.sizeBytes, PackKind.STREAMED)
+        return resolveFullPack(envelope)
     }
+
+    private fun resolveFullPack(envelope: ManifestEnvelope) = PackSource(envelope.pack.url, envelope.pack.sizeBytes, envelope.pack.sizeBytes, PackKind.FULL)
+
+    /** The updates host's delta, assembled on demand for a base the bucket has no delta for. */
+    internal fun resolveStreamedDeltaUrl(bundleId: String, baseBundleId: String): String =
+        "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/bundles/$bundleId/deltas/$baseBundleId"
 
     /** The download needs its bytes on disk at its peak: every missing file and the pack they arrive in. */
     internal fun verifyFreeSpace(requiredBytes: Long) {
@@ -91,21 +108,36 @@ class Downloader(
     }
 
     /**
-     * Streams the pack to disk, resuming what an earlier attempt left and never past its size in the manifest, then inflates
-     * each wanted entry up to its file's size: an entry is always the gzip bytes the bucket serves.
+     * The pack's wanted entries in the store and how they arrived. A streamed delta the updates host does not serve — its
+     * redirect to the full pack above twenty objects or for a base the bucket no longer knows, a limit, an error — gives
+     * way to the full pack: slower, never failed.
      */
-    internal suspend fun downloadPack(source: ManifestEnvelope.Pack, bundleId: String, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): Long {
+    internal suspend fun downloadPack(source: PackSource, envelope: ManifestEnvelope, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): PackOutcome = try {
+        PackOutcome(downloadPackEntries(source, envelope.bundleId, wanted, progress), source.kind)
+    } catch (refusal: HttpStatusException) {
+        if (source.kind != PackKind.STREAMED) throw DownloadFailure.DownloadFailed("HTTP ${refusal.status} for the pack")
+        downloadPack(resolveFullPack(envelope), envelope, wanted, progress)
+    }
+
+    /**
+     * Streams the pack to disk, resuming what an earlier attempt left and never past its bound, then inflates each wanted
+     * entry up to its file's size: an entry is always the gzip bytes the bucket serves. A pack whose size the envelope
+     * states holds exactly that many bytes; a streamed one has no size to hold it to.
+     */
+    internal suspend fun downloadPackEntries(source: PackSource, bundleId: String, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): Long {
         val pinnedUrl = resolvePinnedUrl(source.url)
         val file = File(temporaryDirectory, "$bundleId-${Hashing.sha256Hex(source.url).take(16)}.pack")
         try {
-            http.download(pinnedUrl, file, source.sizeBytes, progress)
+            http.download(pinnedUrl, file, source.maximumBytes, progress)
         } catch (failure: DownloadFailure) {
             throw failure
+        } catch (refusal: HttpStatusException) {
+            throw refusal
         } catch (exception: Exception) {
             throw DownloadFailure.DownloadFailed("The pack could not be downloaded: ${exception.message}")
         }
         try {
-            if (file.length() != source.sizeBytes) throw DownloadFailure.VerificationFailed("The pack holds ${file.length()} of its ${source.sizeBytes} bytes")
+            if (source.sizeBytes != null && file.length() != source.sizeBytes) throw DownloadFailure.VerificationFailed("The pack holds ${file.length()} of its ${source.sizeBytes} bytes")
             file.inputStream().buffered().use { input ->
                 PackReader.forEachEntry(input, file.length()) { entry ->
                     val sizeBytes = wanted[entry.sha256] ?: return@forEachEntry

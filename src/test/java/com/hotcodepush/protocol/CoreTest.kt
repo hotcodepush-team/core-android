@@ -773,6 +773,26 @@ class CoreTest {
     }
 
     @Test
+    fun shouldTakeTheStreamedDeltaWhenTheDeviceIsTwoReleasesBehind() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.notifyReady()
+        val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
+        val v4 = Fixture.release(3, "b4", "<html>v4</html>".toByteArray())
+        val streamedUrl = "${Fixture.UPDATES_BASE_URL}/v1/apps/${Fixture.APP_ID}/bundles/b4/deltas/b2"
+        harness.publish(listOf(v4, v3, v2), 2, etag = "\"e2\"")
+        harness.http.stubJson(v4.release.manifestUrl, v4.envelope.copy(deltas = listOf(ManifestEnvelope.Delta("b3", "${v4.envelope.pack.url}-delta-b3", v4.pack.size.toLong()))).toJson())
+        harness.http.stub(streamedUrl, body = v4.pack)
+        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertTrue(harness.http.requests.any { it.first == streamedUrl })
+        assertTrue(harness.http.requests.none { it.first == v4.envelope.pack.url })
+        assertEquals(PackKind.STREAMED.wire, StateStore(harness.store).unsentEvents.last { it.type == "downloaded" }.packKind)
+    }
+
+    @Test
     fun shouldDiscardADownloadedReleaseRevokedBeforeTheStartThatWouldInstallIt() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
