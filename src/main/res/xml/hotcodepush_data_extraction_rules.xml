@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and later: the SDK's store and served trees download again, so they stay out of the backup and the device transfer. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="hotcodepush/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="hotcodepush/" />
+    </device-transfer>
+</data-extraction-rules>

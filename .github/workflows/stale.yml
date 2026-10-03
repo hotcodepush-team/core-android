@@ -1,0 +1,15 @@
+name: Stale
+
+on:
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    uses: hotcodepush-team/.github/.github/workflows/stale.yml@main

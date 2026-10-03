@@ -1,0 +1,24 @@
+name: Sync labels
+
+on:
+  workflow_dispatch:
+    inputs:
+      prune:
+        description: Delete labels that are not in the manifests
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 6 * * 1'
+  push:
+    branches: [main]
+    paths: ['.github/workflows/labels.yml']
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    uses: hotcodepush-team/.github/.github/workflows/labels.yml@main
+    with:
+      sets: common release platform-mobile
+      prune: ${{ inputs.prune == true }}

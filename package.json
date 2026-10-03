@@ -1,0 +1,15 @@
+{
+  "name": "@hotcodepush/protocol-android-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The protocol fixtures the Android library's tests read; nothing of this file ships",
+  "license": "MIT",
+  "scripts": {
+    "lint": "./gradlew lint --console=plain",
+    "test": "./gradlew test --console=plain",
+    "verify": "./gradlew lint test assembleRelease --console=plain"
+  },
+  "devDependencies": {
+    "@hotcodepush/protocol": "https://pkg.pr.new/hotcodepush-team/protocol-js/@hotcodepush/protocol@ada56e8c8a86bc7a6fda7fa2442e5dc6cde85b44"
+  }
+}
