@@ -1,20 +1,21 @@
 # CLAUDE.md
 
-`com.hotcodepush:protocol-android`, the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader, the file store and the state machine every HotCodePush SDK on Android runs, held to the fixture suite of `@hotcodepush/protocol`.
+`com.hotcodepush:protocol-android`, the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader, the signature check, the file store, the state machine and the debug screen every HotCodePush SDK on Android runs, held to the fixture suite of `@hotcodepush/protocol`.
 `@hotcodepush/protocol` (`protocol-js`) and the Swift package `HotCodePushProtocol` (`protocol-ios`) implement the same functions and types; a change to one is a change to the other two.
 The Capacitor SDK consumes it at a pinned commit through JitPack until its publish decision — `com.github.hotcodepush-team:protocol-android:<sha>` from `https://jitpack.io` — never a branch; it is not the supported API, apps use the SDK for their framework.
-Stack: Kotlin 2.2 on the Android Gradle plugin, minSdk 23, OkHttp and coroutines, JUnit 4 on the JVM, Java 21, Node 24 for the fixtures.
+Stack: Kotlin 2.2 on the Android Gradle plugin, minSdk 23, OkHttp with Okio and coroutines, JUnit 4 and Robolectric on the JVM, Java 21, Node 24 for the fixtures.
 
 The plan is the private `handbook` repo, checked out beside this one: `../handbook/docs/`.
-Its `sdk-api.md` (the SDK surface, the state and the functions, statuses and reasons) and `architecture.md` (_The device protocol_, _Packs_, _Evolving the wire format_, _Testing_) are binding here.
+Its `sdk-api.md` (the SDK surface, the state and the functions, statuses and reasons) and `architecture.md` (_The device protocol_, _Signing_, _Packs_, _Debugging_, _Evolving the wire format_, _Testing_) are binding here.
 When code and plan disagree, stop and surface it; never improvise.
 
 ## Layout
 
 ```
-src/main/java/com/hotcodepush/protocol   the library: no framework import; the manifest carries INTERNET and the backup and data-extraction rules
+src/main/java/com/hotcodepush/protocol   the library: no framework import, Android's UI classes in DebugScreen.kt alone; the manifest carries INTERNET, the backup and data-extraction rules and the debug screen's activity
 src/main/res/xml                         the rules that keep the store out of backups and device transfers
-src/test/java/com/hotcodepush/protocol   JUnit on the JVM; FixtureTest reads node_modules/@hotcodepush/protocol/fixtures after npm ci
+src/main/res/values, values-v29          the debug screen's strings and its theme, day and night from API 29
+src/test/java/com/hotcodepush/protocol   JUnit on the JVM; FixtureTest and SigningTest read node_modules/@hotcodepush/protocol/fixtures after npm ci; Robolectric runs the debug screen's activity
 build.gradle                             the library module and the Maven publication JitPack builds
 package.json                             private, only the pinned @hotcodepush/protocol the fixtures come from
 ```
@@ -42,7 +43,10 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - Every key in the store is `hotcodepush.<name>`; three identity keys survive everything, the rest is a cache dropped on an unknown `stateVersion`.
 - Statuses and reasons are `SCREAMING_SNAKE_CASE` from the one catalog; a method throws a plain error only for a programming mistake.
 - `java.time` sits above the API floor: timestamps live as epoch milliseconds and travel through `Iso8601`.
-- Nothing here writes a cryptographic primitive or parses a standard format by hand beyond ustar and gzip: `java.security`, `java.util.zip` and `org.json` do that.
+- The signature allow-list is pinned at `ed25519` and `rsa-v1_5-sha256`, the two the fixtures verify: the manifest string is verified as received under the key its `keyId` names, through `java.security` alone — RSA on every Android, Ed25519 from API 33 — and where the platform has no verifier the manifest is refused, never accepted.
+- A download stays on the URL the core pinned and never follows a redirect; a streamed delta the updates host does not serve gives way to the envelope's full pack.
+- The debug screen shows what `DebugReport` renders, section for section and label for label what the Swift package renders, and the share text is the same sections: a fact joins both through `DebugReport`, never the screen alone. The session log lives in memory, the newest two hundred lines, never on disk and never on the wire.
+- Nothing here writes a cryptographic primitive or parses a standard format by hand beyond ustar and gzip: `java.security`, `java.util.zip`, `org.json` and Okio's Base64 do that.
 
 ## Naming
 
