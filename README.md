@@ -52,7 +52,7 @@ npm ci                       # the protocol fixtures the tests read
 ./gradlew lint test
 ```
 
-`npm run verify` adds the release build; `./gradlew publishToMavenLocal` builds the Maven publication JitPack serves.
+`npm run verify` adds the release build; `./gradlew connectedDebugAndroidTest` runs the signature fixtures against the providers of a running emulator or an attached device; `./gradlew publishToMavenLocal` builds the Maven publication JitPack serves.
 
 ## License
 

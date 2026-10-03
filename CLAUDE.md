@@ -16,18 +16,20 @@ src/main/java/com/hotcodepush/protocol   the library: no framework import, Andro
 src/main/res/xml                         the rules that keep the store out of backups and device transfers
 src/main/res/values, values-v29          the debug screen's strings and its theme, day and night from API 29
 src/test/java/com/hotcodepush/protocol   JUnit on the JVM; FixtureTest and SigningTest read node_modules/@hotcodepush/protocol/fixtures after npm ci; Robolectric runs the debug screen's activity
+src/androidTest/java/com/hotcodepush/protocol   the tests that need a device: the signature fixtures against the device's own providers, the fixtures packaged as assets
 build.gradle                             the library module and the Maven publication JitPack builds
 package.json                             private, only the pinned @hotcodepush/protocol the fixtures come from
 ```
 
 ## Commands
 
-| Command          | Does                                                     |
-| ---------------- | -------------------------------------------------------- |
-| `npm ci`         | installs the protocol package the fixtures are read from |
-| `npm run lint`   | `./gradlew lint`                                         |
-| `npm test`       | `./gradlew test`                                         |
-| `npm run verify` | the lint, the tests and the release build                |
+| Command                               | Does                                                               |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| `npm ci`                              | installs the protocol package the fixtures are read from           |
+| `npm run lint`                        | `./gradlew lint`                                                   |
+| `npm test`                            | `./gradlew test`                                                   |
+| `npm run verify`                      | the lint, the tests and the release build                          |
+| `./gradlew connectedDebugAndroidTest` | the on-device tests, on every running emulator and attached device |
 
 `ci.yml` runs the lint, the tests and `assembleRelease` on every push and pull request; `./gradlew publishToMavenLocal` is what JitPack runs for a commit.
 No releases yet: the version stays `0.0.0`, and release-please and the Maven Central publication arrive with the publish decision.
