@@ -7,16 +7,20 @@ import java.security.NoSuchAlgorithmException
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
 
-/** The signature schemes the verifier accepts, pinned: a prefix outside the list verifies nothing. */
+/**
+ * The signature schemes this core verifies: a pinned allow-list the value's prefix selects within and never extends.
+ * Ed25519 is the platform's default; `rsa-v1_5-sha256` belongs to the Expo bridge, whose clients verify the Expo-format
+ * manifest themselves, so a key or a signature of that scheme verifies nothing here.
+ */
 enum class SigningScheme(val wire: String) {
-    ED25519("ed25519"), RSA_V1_5_SHA256("rsa-v1_5-sha256");
+    ED25519("ed25519");
 
     companion object {
         fun fromWire(value: String): SigningScheme? = entries.firstOrNull { it.wire == value }
     }
 }
 
-/** A key or a signature as it travels, `<scheme>:<base64>` decoded: raw bytes for ed25519, SPKI DER for RSA. */
+/** A key or a signature as it travels, `<scheme>:<base64>` decoded: the raw bytes of an Ed25519 key or signature. */
 class SelfDescribingBytes(val scheme: SigningScheme, val bytes: ByteArray)
 
 object SigningKeys {
@@ -56,8 +60,8 @@ enum class SignatureRefusal {
 
 /**
  * Verifies an envelope's signature over the UTF-8 bytes of its `manifest` string, as received and never re-serialized,
- * under the configured key the signature's `keyId` names, with `java.security`'s verifiers: RSA on every Android,
- * Ed25519 where the platform has it, Android 13 and the JVM from 15.
+ * under the configured key the signature's `keyId` names, with `java.security`'s Ed25519 verifier where the platform
+ * has it, Android 13 and the JVM from 15.
  */
 object SignatureVerifier {
     /** The SubjectPublicKeyInfo header of an Ed25519 key, RFC 8410: the raw 32 bytes follow it. */
@@ -72,10 +76,8 @@ object SignatureVerifier {
         val value = SigningKeys.parse(signature.value) ?: return SignatureRefusal.UNKNOWN_SCHEME
         val publicKey = resolvePublicKey(publicKeys, signature.keyId) ?: return SignatureRefusal.UNKNOWN_KEY
         if (publicKey.scheme != value.scheme) return SignatureRefusal.SCHEME_MISMATCH
-        val message = manifest.toByteArray(Charsets.UTF_8)
         return when (publicKey.scheme) {
-            SigningScheme.ED25519 -> verifyEd25519(message, value.bytes, publicKey.bytes)
-            SigningScheme.RSA_V1_5_SHA256 -> verify("RSA", "SHA256withRSA", publicKey.bytes, message, value.bytes)
+            SigningScheme.ED25519 -> verifyEd25519(manifest.toByteArray(Charsets.UTF_8), value.bytes, publicKey.bytes)
         }
     }
 
@@ -90,15 +92,15 @@ object SignatureVerifier {
         val encodedKey = ED25519_SPKI_PREFIX + rawPublicKey
         var refusal: SignatureRefusal = SignatureRefusal.SCHEME_UNAVAILABLE
         for (algorithm in ED25519_ALGORITHM_NAMES) {
-            refusal = verify(algorithm, algorithm, encodedKey, message, signatureBytes) ?: return null
+            refusal = verify(algorithm, encodedKey, message, signatureBytes) ?: return null
             if (refusal != SignatureRefusal.SCHEME_UNAVAILABLE) return refusal
         }
         return refusal
     }
 
-    private fun verify(keyAlgorithm: String, signatureAlgorithm: String, encodedKey: ByteArray, message: ByteArray, signatureBytes: ByteArray): SignatureRefusal? = try {
-        val publicKey = KeyFactory.getInstance(keyAlgorithm).generatePublic(X509EncodedKeySpec(encodedKey))
-        val verifier = Signature.getInstance(signatureAlgorithm)
+    private fun verify(algorithm: String, encodedKey: ByteArray, message: ByteArray, signatureBytes: ByteArray): SignatureRefusal? = try {
+        val publicKey = KeyFactory.getInstance(algorithm).generatePublic(X509EncodedKeySpec(encodedKey))
+        val verifier = Signature.getInstance(algorithm)
         verifier.initVerify(publicKey)
         verifier.update(message)
         if (verifier.verify(signatureBytes)) null else SignatureRefusal.INVALID

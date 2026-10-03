@@ -12,7 +12,8 @@ import org.junit.runner.RunWith
 
 /**
  * The signature fixtures against the device's own `java.security` providers, which the JVM tests cannot stand in for:
- * a device with Ed25519 verifies the suite case for case, and one without refuses every Ed25519 signature, never accepts one.
+ * a device with Ed25519 verifies the suite case for case within the allow-list, one without refuses every Ed25519
+ * signature, never accepts one, and the Expo bridge's RSA scheme verifies on neither.
  */
 @RunWith(AndroidJUnit4::class)
 class SignaturesOnDeviceTest {
@@ -21,20 +22,20 @@ class SignaturesOnDeviceTest {
     }
 
     @Test
-    fun shouldMatchEverySignatureFixtureWhereTheDeviceVerifiesTheScheme() {
+    fun shouldMatchEverySignatureFixtureWithinTheAllowListWhereTheDeviceVerifiesTheScheme() {
         assertTrue(manifests.size > 5)
         for (case in manifests) {
             val refusal = verify(case)
             if (refusal == SignatureRefusal.SCHEME_UNAVAILABLE) continue
-            assertEquals(case.getString("name"), case.getBoolean("isValid"), refusal == null)
+            assertEquals(case.getString("name"), case.getBoolean("isValid") && resolveScheme(case) == SigningScheme.ED25519.wire, refusal == null)
         }
     }
 
     @Test
-    fun shouldVerifyRsaOnEveryDeviceAndEd25519WhereThePlatformHasIt() {
+    fun shouldRefuseRsaOnEveryDeviceAndVerifyEd25519WhereThePlatformHasIt() {
         val refusalsOfValidCases = manifests.filter { it.getBoolean("isValid") }.associate { resolveScheme(it) to verify(it) }
-        assertEquals(null, refusalsOfValidCases["rsa-v1_5-sha256"])
-        assertEquals(if (SignatureVerifier.isEd25519Available) null else SignatureRefusal.SCHEME_UNAVAILABLE, refusalsOfValidCases["ed25519"])
+        assertEquals(SignatureRefusal.UNKNOWN_SCHEME, refusalsOfValidCases["rsa-v1_5-sha256"])
+        assertEquals(if (SignatureVerifier.isEd25519Available) null else SignatureRefusal.SCHEME_UNAVAILABLE, refusalsOfValidCases[SigningScheme.ED25519.wire])
     }
 
     /** Android 13 brought Ed25519 to the platform's providers; before Android 10 they were fixed at the release and had none; between the two a system update may have added it. */
@@ -50,5 +51,5 @@ class SignaturesOnDeviceTest {
         return SignatureVerifier.verifyManifestSignature(envelope.getString("manifest"), signature, case.getJSONArray("publicKeys").toStringList())
     }
 
-    private fun resolveScheme(case: JSONObject): String = case.getJSONObject("envelope").getJSONObject("signature").getString("value").substringBefore(':')
+    private fun resolveScheme(case: JSONObject): String? = case.getJSONObject("envelope").getNullableObject("signature")?.getString("value")?.substringBefore(':')
 }

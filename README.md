@@ -36,7 +36,7 @@ An SDK opens the debug screen from any context. The screen shows the device, the
 DebugScreen.show(context, core)
 ```
 
-Once the resource file lists `publicKeys`, the downloader refuses a manifest that is unsigned or whose signature does not verify against them, before it fetches a byte of the bundle. Ed25519 is verified by the platform's own implementation, which Android has from version 13 (API 33); an older device refuses a signed update.
+Once the resource file lists `publicKeys`, the downloader refuses a manifest that is unsigned or whose Ed25519 signature does not verify against them, before it fetches a byte of the bundle. Ed25519 is verified by the platform's own implementation, which Android has from version 13 (API 33); an older device refuses a signed update.
 
 The library is the foundation of the HotCodePush SDKs, not their supported API: an app uses the SDK for its framework.
 
