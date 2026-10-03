@@ -15,7 +15,7 @@ When code and plan disagree, stop and surface it; never improvise.
 src/main/java/com/hotcodepush/protocol   the library: no framework import, Android's UI classes in DebugScreen.kt alone; the manifest carries INTERNET, the backup and data-extraction rules and the debug screen's activity
 src/main/res/xml                         the rules that keep the store out of backups and device transfers
 src/main/res/values, values-v29          the debug screen's strings and its theme, day and night from API 29
-src/test/java/com/hotcodepush/protocol   JUnit on the JVM; FixtureTest and SigningTest read node_modules/@hotcodepush/protocol/fixtures after npm ci; Robolectric runs the debug screen's activity
+src/test/java/com/hotcodepush/protocol   JUnit on the JVM; FixtureTest and SigningTest read node_modules/@hotcodepush/protocol/fixtures after npm ci, DeviceEventsContractTest runs the package's schema with node; Robolectric runs the debug screen's activity
 src/androidTest/java/com/hotcodepush/protocol   the tests that need a device: the signature fixtures against the device's own providers, the fixtures packaged as assets
 build.gradle                             the library module and the Maven publication JitPack builds
 package.json                             private, only the pinned @hotcodepush/protocol the fixtures come from
@@ -38,6 +38,7 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 ## Rules
 
 - The wire format is additive only and parsed strictly, with no `org.json` coercion: a string is a string, a boolean a boolean, a whole number whole; every v1 field is present, a nullable one as `null`, an absent one refuses the document; a field, a condition type or a platform the reader does not know is kept, and an unknown condition fails closed.
+- What the device sends is `DeviceEventsRequestSchema`'s, key for key: a nullable key travels as `null`, never absent — a rollback's `toReleaseId` to the embedded bundle — and only an optional key is left out; `DeviceEventsContractTest` runs the installed package's schema over the encoded batch through Node.
 - A value is checked before it names anything: ids are identifiers, hashes lowercase sha256, paths relative with no `.` or `..` segment — split on code units, so nothing hides behind a combining mark — timestamps UTC with a `Z`, URLs absolute, and the pack's ustar headers carry a checksum that must add up.
 - The evaluator is `@hotcodepush/protocol`'s, case for case: the outcome and the verdicts behind it come from the fixtures, never from a reading of the plan.
 - A downloaded release that has left the cached index — revoked, or gone from it — is discarded before it would install, never applied.

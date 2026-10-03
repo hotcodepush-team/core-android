@@ -18,20 +18,29 @@ data class DeviceEvent(
     /** The app's `rollback({ reason })` on `REPORTED_BY_APP`: printable, at most 256 characters. */
     val detail: String? = null,
 ) {
-    fun toJson(): JSONObject = JSONObject()
-        .put("type", type)
-        .putIfNotNull("releaseId", releaseId)
-        .putIfNotNull("bundleId", bundleId)
-        .putIfNotNull("status", status)
-        .putIfNotNull("reason", reason)
-        .putIfNotNull("condition", condition?.wire)
-        .putIfNotNull("bytes", bytes)
-        .putIfNotNull("packKind", packKind)
-        .putIfNotNull("fromReleaseId", fromReleaseId)
-        .putIfNotNull("toReleaseId", toReleaseId)
-        .putIfNotNull("detail", detail)
+    /**
+     * The keys of the event's type as the protocol's schema reads them: an optional key is left out when it holds
+     * nothing, a nullable one is always there, so a rollback's `toReleaseId` is `null` for the embedded bundle, never absent.
+     */
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+            .put("type", type)
+            .putIfNotNull("releaseId", releaseId)
+            .putIfNotNull("bundleId", bundleId)
+            .putIfNotNull("status", status)
+            .putIfNotNull("reason", reason)
+            .putIfNotNull("condition", condition?.wire)
+            .putIfNotNull("bytes", bytes)
+            .putIfNotNull("packKind", packKind)
+            .putIfNotNull("fromReleaseId", fromReleaseId)
+            .putIfNotNull("detail", detail)
+        if (type == ROLLED_BACK) json.put("toReleaseId", toReleaseId ?: JSONObject.NULL)
+        return json
+    }
 
     companion object {
+        private const val ROLLED_BACK = "rolledBack"
+
         fun checked(releaseId: String, status: SyncStatus, reason: SkippedReason? = null, condition: ConditionType? = null) =
             DeviceEvent("checked", releaseId = releaseId, status = status.wire, reason = reason?.name, condition = condition)
 
@@ -44,7 +53,7 @@ data class DeviceEvent(
 
         fun failed(releaseId: String, reason: String, detail: String? = null) = DeviceEvent("failed", releaseId = releaseId, reason = reason, detail = detail)
 
-        fun rolledBack(fromReleaseId: String, toReleaseId: String?) = DeviceEvent("rolledBack", fromReleaseId = fromReleaseId, toReleaseId = toReleaseId)
+        fun rolledBack(fromReleaseId: String, toReleaseId: String?) = DeviceEvent(ROLLED_BACK, fromReleaseId = fromReleaseId, toReleaseId = toReleaseId)
 
         fun fromJson(json: JSONObject) = DeviceEvent(
             type = json.getString("type"),
