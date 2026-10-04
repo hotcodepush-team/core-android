@@ -1,6 +1,6 @@
 # protocol-android
 
-`com.hotcodepush:protocol-android` is the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader with its signature check, the state machine and the debug screen behind every HotCodePush SDK on Android, held to the same fixture suite as the JavaScript and iOS clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
+`com.hotcodepush:protocol-android` is the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader with its signature check and the byte-level patches it applies from delta packs, the state machine and the debug screen behind every HotCodePush SDK on Android, held to the same fixture suite as the JavaScript and iOS clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
 
 ## Installation
 
@@ -52,8 +52,10 @@ npm ci                       # the protocol fixtures the tests read
 ./gradlew lint test
 ```
 
-`npm run verify` adds the release build; `./gradlew connectedDebugAndroidTest` runs the signature fixtures on a running emulator or an attached device; `./gradlew publishToMavenLocal` builds the Maven publication JitPack serves.
+`npm run verify` adds the release build; `./gradlew publishToMavenLocal` builds the Maven publication JitPack serves.
+
+`./gradlew connectedDebugAndroidTest` runs the tests that need a device on a running emulator or an attached device: the signature fixtures, bspatch on its hostile patches and the patch cases of the protocol's fixtures. CI runs them on every push and pull request on two emulators, a 32-bit x86 one at API 24, where bspatch runs on a 32-bit `off_t`, and an x86_64 one at API 35.
 
 ## License
 
-See [LICENSE](./LICENSE).
+See [LICENSE](./LICENSE). The library includes FreeBSD's bspatch under the BSD 2-clause licence and the decompression of bzip2 1.0.8 under the bzip2 licence. [THIRD-PARTY-NOTICES](./THIRD-PARTY-NOTICES) carries both notices, and an app's distribution reproduces them: the BSD 2-clause licence requires it of a binary, the bzip2 licence appreciates the acknowledgment.
