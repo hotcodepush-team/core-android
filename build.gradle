@@ -69,6 +69,11 @@ dependencies {
     androidTestImplementation 'androidx.test:runner:1.7.0'
 }
 
+// The tests read the fixtures and the schema of the installed protocol package at run time: a new pin reruns them.
+tasks.withType(Test).configureEach {
+    inputs.dir('node_modules/@hotcodepush/protocol').withPropertyName('protocolPackage').withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 // The release AAR as a Maven publication, which JitPack builds for a commit as com.github.hotcodepush-team:protocol-android:<sha>.
 afterEvaluate {
     publishing {

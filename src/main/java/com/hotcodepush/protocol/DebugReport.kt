@@ -59,7 +59,7 @@ object DebugReport {
         return DebugSection(
             "Channel",
             listOf(
-                DebugRow("Channel id", channel.id.ifEmpty { "unresolved" }),
+                DebugRow("Channel id", describeChannelId(channel)),
                 DebugRow("Name", channel.name ?: "none"),
                 DebugRow("Source", channel.source.wire),
             ),
@@ -113,7 +113,7 @@ object DebugReport {
             "Configuration",
             listOf(
                 DebugRow("App id", configuration.appId),
-                DebugRow("Configured channel", configuration.channelId),
+                DebugRow("Configured channel", configuration.channelId ?: "none"),
                 DebugRow("Built at", Iso8601.format(configuration.builtAt)),
                 DebugRow("Files host", configuration.filesBaseUrl),
                 DebugRow("Updates host", configuration.updatesBaseUrl),
@@ -129,6 +129,13 @@ object DebugReport {
     private fun logSection(snapshot: DebugSnapshot): DebugSection {
         val rows = snapshot.log.map { DebugRow(Iso8601.format(it.at), "${it.code} — ${it.message}") }
         return DebugSection("Log", rows.ifEmpty { listOf(DebugRow("Entries", "none this session")) })
+    }
+
+    /** The id in effect; without one, a runtime name waits for its first sync and a build without a channel says why it has none. */
+    private fun describeChannelId(channel: ChannelResult): String = when {
+        channel.id.isNotEmpty() -> channel.id
+        channel.source == ChannelSource.RUNTIME -> "unresolved"
+        else -> "none: the build carries no channel, it was built without a token or offline"
     }
 
     private fun describe(release: Release?): String? = release?.let { "#${it.number} (${it.bundleVersion}), bundle ${it.bundleId}${if (it.isMandatory) ", mandatory" else ""}" }

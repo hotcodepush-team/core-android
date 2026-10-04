@@ -41,7 +41,8 @@ enum class ReadySignal(val wire: String) {
 /** The resource file: the project's `hotcodepush.json` with the channel resolved to its id, plus what only the embed step knows. */
 data class Configuration(
     val appId: String,
-    val channelId: String,
+    /** The channel the build follows; `null` in a build whose build step ran without a token or offline and never resolved the channel's name. */
+    val channelId: String?,
     val autoCheck: Boolean,
     val checkInterval: Double,
     val downloadStrategy: DownloadStrategy,
@@ -67,7 +68,7 @@ data class Configuration(
 
         fun fromJson(json: JSONObject) = Configuration(
             appId = json.getString("appId"),
-            channelId = json.getString("channelId"),
+            channelId = json.getNullableWireString("channelId", WireRule.NON_EMPTY),
             autoCheck = json.optBoolean("autoCheck", true),
             checkInterval = json.optDouble("checkInterval", 900.0),
             downloadStrategy = DownloadStrategy.fromWire(json.optNullableString("downloadStrategy")) ?: DownloadStrategy.AUTO,

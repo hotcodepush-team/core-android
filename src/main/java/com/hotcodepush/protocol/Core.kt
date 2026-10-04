@@ -26,11 +26,14 @@ class Core(
     /** How far a cycle goes: the check alone, the download whatever the strategy says, or the whole sync. */
     private enum class Stage { CHECK, DOWNLOAD, SYNC }
 
-    /** How a runtime channel name resolved. */
+    /** How the channel in effect resolved: the runtime choice, a name through the channels index, else the build's own. */
     private sealed class ChannelResolution {
         data class Id(val id: String) : ChannelResolution()
         object Offline : ChannelResolution()
         object Unknown : ChannelResolution()
+
+        /** The build carries no channel and the app set none at runtime. */
+        object Missing : ChannelResolution()
         data class Invalid(val message: String) : ChannelResolution()
     }
 
@@ -176,6 +179,7 @@ class Core(
             is ChannelResolution.Id -> resolution.id
             ChannelResolution.Offline -> return SyncResult.failed(current, FailedReason.OFFLINE, "The channels index could not be fetched to resolve the channel name")
             ChannelResolution.Unknown -> return SyncResult.failed(current, FailedReason.UNKNOWN_CHANNEL, "The channel set at runtime is not in the app's channels index")
+            ChannelResolution.Missing -> return SyncResult.failed(current, FailedReason.UNKNOWN_CHANNEL, MISSING_CHANNEL_MESSAGE)
             is ChannelResolution.Invalid -> return SyncResult.failed(current, FailedReason.INVALID_INDEX, resolution.message)
         }
         val index = when (val fetch = fetchChannelIndex(channelId)) {
@@ -183,6 +187,7 @@ class Core(
             IndexFetch.Offline -> return SyncResult.failed(current, FailedReason.OFFLINE, "The channel index could not be fetched and no cached copy exists")
             is IndexFetch.Invalid -> return SyncResult.failed(current, FailedReason.INVALID_INDEX, fetch.message)
             IndexFetch.Absent -> return SyncResult.upToDate(current)
+            IndexFetch.NoChannel -> return SyncResult.failed(current, FailedReason.UNKNOWN_CHANNEL, MISSING_CHANNEL_MESSAGE)
         }
         return when (val evaluation = Evaluator.evaluate(index, deviceInfo())) {
             is Evaluation.UpToDate -> SyncResult.upToDate(current)
@@ -336,7 +341,7 @@ class Core(
     fun channel(): ChannelResult = when (val choice = state.channel) {
         is ChannelChoice.Id -> ChannelResult(choice.id, null, ChannelSource.RUNTIME)
         is ChannelChoice.Name -> ChannelResult(resolvedChannelName?.takeIf { it.first == choice.name }?.second ?: "", choice.name, ChannelSource.RUNTIME)
-        null -> ChannelResult(configuration.channelId, null, ChannelSource.CONFIG)
+        null -> ChannelResult(configuration.channelId ?: "", null, ChannelSource.CONFIG)
     }
 
     suspend fun setChannel(choice: ChannelChoice?) = lock.withLock {
@@ -514,11 +519,14 @@ class Core(
         object Offline : IndexFetch()
         data class Invalid(val message: String) : IndexFetch()
         object Absent : IndexFetch()
+
+        /** The runtime channel serves no index and the build carries none to fall back to. */
+        object NoChannel : IndexFetch()
     }
 
-    /** The runtime choice, then the configured id; a name resolves through the channels index, offline being offline and not an unknown name. */
+    /** The runtime choice, then the configured id, which a build made without a token or offline does not carry; a name resolves through the channels index, offline being offline and not an unknown name. */
     private suspend fun resolveChannelId(): ChannelResolution = when (val choice = state.channel) {
-        null -> ChannelResolution.Id(configuration.channelId)
+        null -> configuration.channelId?.let { ChannelResolution.Id(it) } ?: ChannelResolution.Missing
         is ChannelChoice.Id -> ChannelResolution.Id(choice.id)
         is ChannelChoice.Name -> {
             val resolved = resolvedChannelName
@@ -569,12 +577,9 @@ class Core(
                 IndexFetch.Index(index)
             }
             404 -> {
-                if (state.channel != null) {
-                    lock.withLock { state.channel = null }
-                    fetchChannelIndex(configuration.channelId)
-                } else {
-                    IndexFetch.Absent
-                }
+                if (state.channel == null) return IndexFetch.Absent
+                lock.withLock { state.channel = null }
+                configuration.channelId?.let { fetchChannelIndex(it) } ?: IndexFetch.NoChannel
             }
             else -> cached?.let { IndexFetch.Index(it.body) } ?: IndexFetch.Offline
         }
@@ -636,4 +641,9 @@ class Core(
     }
 
     private fun resolveMonth(epochMillis: Long) = Iso8601.format(epochMillis).substring(0, 7)
+
+    companion object {
+        /** What a build without a channel answers, without a request: it can never update until the app sets a channel at runtime. */
+        const val MISSING_CHANNEL_MESSAGE = "The build carries no channel: it was built without a token or offline, so the channel's name was never resolved. Build it with a token to receive updates."
+    }
 }
