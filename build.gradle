@@ -60,7 +60,7 @@ repositories {
 dependencies {
     implementation 'com.squareup.okhttp3:okhttp:5.3.2'
     implementation 'com.squareup.okio:okio:3.16.4'
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.86'
+    implementation 'org.bouncycastle:bcprov-jdk15to18:1.86'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20250517'
