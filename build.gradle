@@ -25,6 +25,18 @@ android {
     defaultConfig {
         minSdk = 23
         testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
+        externalNativeBuild {
+            cmake {
+                // NDK r27 aligns a library's segments for 4 KB pages unless asked; Google Play requires 16 KB.
+                arguments '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+            }
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path = 'src/main/cpp/CMakeLists.txt'
+            version = '3.22.1'
+        }
     }
     sourceSets {
         // The on-device tests read the same fixtures the JVM tests read, packaged as their assets.
