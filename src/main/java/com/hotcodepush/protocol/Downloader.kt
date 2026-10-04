@@ -76,8 +76,6 @@ class Downloader(
         SignatureRefusal.UNSIGNED -> "The manifest is unsigned and the app accepts only signed manifests"
         SignatureRefusal.UNKNOWN_SCHEME -> "The signature's scheme is not one this SDK accepts"
         SignatureRefusal.UNKNOWN_KEY -> "The signature names the key ${signature?.keyId}, which the app does not hold"
-        SignatureRefusal.SCHEME_MISMATCH -> "The signature's scheme is not the scheme of the key it names"
-        SignatureRefusal.SCHEME_UNAVAILABLE -> "This device cannot verify ${signature?.value?.substringBefore(':')} signatures: Android 13 is the floor for Ed25519 in this SDK version"
         SignatureRefusal.INVALID -> "The manifest's signature does not verify under the key it names"
     }
 

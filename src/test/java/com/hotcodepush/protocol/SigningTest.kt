@@ -73,8 +73,12 @@ class SigningTest {
     }
 
     @Test
-    fun shouldHaveEd25519OnTheTestRuntime() {
-        assertTrue(SignatureVerifier.isEd25519Available)
+    fun shouldRefuseASignatureUnderAListedKeyThatIsNoEd25519Key() {
+        val manifest = Fixture.release(1, "b2", "<html>v2</html>".toByteArray()).envelope.manifest
+        val signed = fixture.sign(manifest, "ed25519-a")
+        val shortKey = "ed25519:" + Base64.getEncoder().encodeToString(ByteArray(31))
+        val keyId = SigningKeys.fingerprint(SigningKeys.parse(shortKey) ?: throw AssertionError(shortKey))
+        assertEquals(SignatureRefusal.INVALID, SignatureVerifier.verifyManifestSignature(manifest, Signature(keyId, signed.value), listOf(shortKey)))
     }
 }
 

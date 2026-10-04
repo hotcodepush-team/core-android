@@ -36,7 +36,7 @@ An SDK opens the debug screen from any context. The screen shows the device, the
 DebugScreen.show(context, core)
 ```
 
-Once the resource file lists `publicKeys`, the downloader refuses a manifest that is unsigned or whose Ed25519 signature does not verify against them, before it fetches a byte of the bundle. Ed25519 is verified by the platform's own implementation, which Android has from version 13 (API 33); an older device refuses a signed update.
+Once the resource file lists `publicKeys`, the downloader refuses a manifest that is unsigned or whose Ed25519 signature does not verify against them, before it fetches a byte of the bundle. The check runs on BouncyCastle, `org.bouncycastle:bcprov-jdk18on`, the same code on every Android version: Android's own providers verify Ed25519 under a key from outside the keystore from Android 17 alone. An app that shrinks its code with R8 carries the Ed25519 classes, about 40 KB of its APK, and needs no rule for it; an app that does not shrink carries the whole library, about 2.2 MB.
 
 The library is the foundation of the HotCodePush SDKs, not their supported API: an app uses the SDK for its framework.
 
@@ -52,7 +52,7 @@ npm ci                       # the protocol fixtures the tests read
 ./gradlew lint test
 ```
 
-`npm run verify` adds the release build; `./gradlew connectedDebugAndroidTest` runs the signature fixtures against the providers of a running emulator or an attached device; `./gradlew publishToMavenLocal` builds the Maven publication JitPack serves.
+`npm run verify` adds the release build; `./gradlew connectedDebugAndroidTest` runs the signature fixtures on a running emulator or an attached device; `./gradlew publishToMavenLocal` builds the Maven publication JitPack serves.
 
 ## License
 
