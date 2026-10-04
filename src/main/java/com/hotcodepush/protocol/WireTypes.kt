@@ -172,8 +172,8 @@ data class Signature(val keyId: String, val value: String) {
 
 /**
  * The document at `/apps/{appId}/bundles/{bundleId}/manifest.json`: the manifest as the signed string, its signature, the
- * reserved encryption slot and, unsigned beside them, the server's facts — the bundle's id and creation time, and the pack,
- * the deltas and the patches as stored.
+ * reserved encryption slot and, unsigned beside them, the server's facts — the bundle's id and creation time, and the pack
+ * and the deltas as stored. An envelope stored while bundles carried `patches` still parses; the key is not read.
  */
 data class ManifestEnvelope(
     val bundleId: String,
@@ -182,7 +182,6 @@ data class ManifestEnvelope(
     val signature: Signature?,
     val pack: Pack,
     val deltas: List<Delta>,
-    val patches: List<Patch>,
 ) {
     data class Pack(val url: String, val sizeBytes: Long) {
         fun toJson(): JSONObject = JSONObject().put("url", url).put("sizeBytes", sizeBytes)
@@ -200,28 +199,6 @@ data class ManifestEnvelope(
         }
     }
 
-    /** A patch as stored: the manifest's entry with where its bytes are and how many. */
-    data class Patch(val path: String, val fromSha256: String, val toSha256: String, val format: String, val url: String, val sizeBytes: Long) {
-        fun toJson(): JSONObject = JSONObject()
-            .put("path", path)
-            .put("fromSha256", fromSha256)
-            .put("toSha256", toSha256)
-            .put("format", format)
-            .put("url", url)
-            .put("sizeBytes", sizeBytes)
-
-        companion object {
-            fun fromJson(json: JSONObject) = Patch(
-                path = json.getWireString("path", WireRule.RELATIVE_PATH),
-                fromSha256 = json.getWireString("fromSha256", WireRule.SHA256),
-                toSha256 = json.getWireString("toSha256", WireRule.SHA256),
-                format = json.getWireString("format", WireRule.NON_EMPTY),
-                url = json.getWireString("url", WireRule.URL),
-                sizeBytes = json.getWireLong("sizeBytes", minimum = 0),
-            )
-        }
-    }
-
     fun decodeManifest(): BundleManifest = BundleManifest.fromJson(JSONObject(manifest))
 
     fun toJson(): JSONObject = JSONObject()
@@ -232,7 +209,6 @@ data class ManifestEnvelope(
         .put("encryption", JSONObject.NULL)
         .put("pack", pack.toJson())
         .put("deltas", JSONArray(deltas.map { it.toJson() }))
-        .put("patches", JSONArray(patches.map { it.toJson() }))
 
     companion object {
         fun fromJson(json: JSONObject): ManifestEnvelope {
@@ -244,7 +220,6 @@ data class ManifestEnvelope(
                 signature = json.getNullableObject("signature")?.let(Signature::fromJson),
                 pack = Pack.fromJson(json.getJSONObject("pack")),
                 deltas = json.getJSONArray("deltas").map(Delta::fromJson),
-                patches = json.getJSONArray("patches").map(Patch::fromJson),
             )
         }
     }
@@ -252,7 +227,8 @@ data class ManifestEnvelope(
 
 /**
  * The bundle manifest, the content the CLI knows before the upload and signs as canonical JSON: the files with their hashes
- * and sizes, the patches it computed, the platforms, the bundle version, the fingerprint and the signing key's id.
+ * and sizes, the platforms, the bundle version, the fingerprint and the signing key's id. A manifest stored while bundles
+ * carried `patches` still parses; the key is not read.
  */
 data class BundleManifest(
     val appId: String,
@@ -261,7 +237,6 @@ data class BundleManifest(
     val fingerprint: String? = null,
     /** The fingerprint of the key that signed the manifest, `null` when unsigned. */
     val keyId: String? = null,
-    val patches: List<Patch> = emptyList(),
     val platforms: List<String>,
 ) {
     data class File(val path: String, val sha256: String, val sizeBytes: Long) {
@@ -272,27 +247,12 @@ data class BundleManifest(
         }
     }
 
-    /** A patch the bundle offers: the file at `path` from the bytes of `fromSha256` to those of `toSha256`; a format the reader does not know means the full file. */
-    data class Patch(val path: String, val fromSha256: String, val toSha256: String, val format: String) {
-        fun toJson(): JSONObject = JSONObject().put("path", path).put("fromSha256", fromSha256).put("toSha256", toSha256).put("format", format)
-
-        companion object {
-            fun fromJson(json: JSONObject) = Patch(
-                path = json.getWireString("path", WireRule.RELATIVE_PATH),
-                fromSha256 = json.getWireString("fromSha256", WireRule.SHA256),
-                toSha256 = json.getWireString("toSha256", WireRule.SHA256),
-                format = json.getWireString("format", WireRule.NON_EMPTY),
-            )
-        }
-    }
-
     fun toJson(): JSONObject = JSONObject()
         .put("appId", appId)
         .put("bundleVersion", bundleVersion)
         .put("files", JSONArray(files.map { it.toJson() }))
         .put("fingerprint", fingerprint ?: JSONObject.NULL)
         .put("keyId", keyId ?: JSONObject.NULL)
-        .put("patches", JSONArray(patches.map { it.toJson() }))
         .put("platforms", JSONArray(platforms))
 
     companion object {
@@ -302,40 +262,13 @@ data class BundleManifest(
             files = json.getJSONArray("files").map(File::fromJson),
             fingerprint = json.getNullableWireString("fingerprint", WireRule.NON_EMPTY),
             keyId = json.getNullableWireString("keyId", WireRule.NON_EMPTY),
-            patches = json.getJSONArray("patches").map(Patch::fromJson),
             platforms = json.getJSONArray("platforms").toWireStringList(WireRule.NON_EMPTY),
         )
     }
 }
 
-/** The embedded bundle's manifest in the resource file: the bundle manifest without patches, since nothing is ever patched into the embedded bundle. */
-data class EmbeddedBundleManifest(
-    val appId: String,
-    val bundleVersion: String,
-    val files: List<BundleManifest.File>,
-    val fingerprint: String? = null,
-    val keyId: String? = null,
-    val platforms: List<String>,
-) {
-    fun toJson(): JSONObject = JSONObject()
-        .put("appId", appId)
-        .put("bundleVersion", bundleVersion)
-        .put("files", JSONArray(files.map { it.toJson() }))
-        .put("fingerprint", fingerprint ?: JSONObject.NULL)
-        .put("keyId", keyId ?: JSONObject.NULL)
-        .put("platforms", JSONArray(platforms))
-
-    companion object {
-        fun fromJson(json: JSONObject) = EmbeddedBundleManifest(
-            appId = json.getWireString("appId", WireRule.NON_EMPTY),
-            bundleVersion = json.getWireString("bundleVersion"),
-            files = json.getJSONArray("files").map(BundleManifest.File::fromJson),
-            fingerprint = json.getNullableWireString("fingerprint", WireRule.NON_EMPTY),
-            keyId = json.getNullableWireString("keyId", WireRule.NON_EMPTY),
-            platforms = json.getJSONArray("platforms").toWireStringList(WireRule.NON_EMPTY),
-        )
-    }
-}
+/** The embedded bundle's manifest in the resource file, the bundle manifest itself. */
+typealias EmbeddedBundleManifest = BundleManifest
 
 /** What a value may hold before it names a file, a directory or a host: nothing that climbs out of its directory, nothing off the wire's format. */
 internal enum class WireRule {

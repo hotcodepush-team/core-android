@@ -10,6 +10,13 @@ class WireTypesTest {
     private val sha256 = Hashing.sha256Hex("content")
 
     @Test
+    fun shouldReadAManifestStoredWhileBundlesCarriedPatches() {
+        val stored = """{"appId":"a1","bundleVersion":"1.0.0","files":[{"path":"index.html","sha256":"$sha256","sizeBytes":7}],"fingerprint":null,"keyId":null,"patches":[],"platforms":["android"]}"""
+        val manifest = BundleManifest(appId = "a1", bundleVersion = "1.0.0", files = listOf(BundleManifest.File("index.html", sha256, 7)), platforms = listOf("android"))
+        assertEquals(manifest, BundleManifest.fromJson(JSONObject(stored)))
+    }
+
+    @Test
     fun shouldRefuseAnEnvelopeWhoseBundleIdIsNotAnIdentifier() {
         for (bundleId in listOf("../..", "", "bundles/b1", "b".repeat(65), "bündle")) {
             assertThrows(bundleId, JSONException::class.java) { decodeEnvelope(bundleId) }
@@ -76,7 +83,7 @@ class WireTypesTest {
     }
 
     private fun decodeEnvelope(bundleId: String): ManifestEnvelope {
-        val envelope = ManifestEnvelope(bundleId, Fixture.BUILT_AT, "{}", null, ManifestEnvelope.Pack("${Fixture.FILES_BASE_URL}/pack", 1), emptyList(), emptyList())
+        val envelope = ManifestEnvelope(bundleId, Fixture.BUILT_AT, "{}", null, ManifestEnvelope.Pack("${Fixture.FILES_BASE_URL}/pack", 1), emptyList())
         return ManifestEnvelope.fromJson(envelope.toJson())
     }
 

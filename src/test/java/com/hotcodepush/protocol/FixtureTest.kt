@@ -175,10 +175,38 @@ class FixtureTest {
         assertEquals(expected.length(), entries.size)
         for (index in entries.indices) {
             val entry = expected.getJSONObject(index)
-            assertEquals(entry.getString("sha256"), entries[index].sha256)
+            assertEquals(entry.getString("sha256"), (entries[index] as PackEntry.File).sha256)
             assertEquals(entry.getString("content"), String(entries[index].body, Charsets.UTF_8))
         }
         assertTrue(PackWriter.pack(entries).contentEquals(pack))
+    }
+
+    @Test
+    fun shouldReadAndWriteTheDeltaPackOfThePackEntriesFixture() {
+        val fixture = load("pack-entries.json").getJSONObject("deltaPack")
+        val pack = Base64.getDecoder().decode(fixture.getString("packBase64"))
+        assertEquals(fixture.getString("packSha256"), Hashing.sha256Hex(pack))
+        val entries = PackReader.entries(pack)
+        assertEquals(fixture.getJSONArray("entries").map(::describeFixtureEntry), entries.map(::describeEntry))
+        assertTrue(PackWriter.pack(entries).contentEquals(pack))
+    }
+
+    @Test
+    fun shouldSkipTheUnknownEntryOfThePackEntriesFixture() {
+        val fixture = load("pack-entries.json").getJSONObject("skippedEntryPack")
+        val pack = Base64.getDecoder().decode(fixture.getString("packBase64"))
+        assertEquals(fixture.getJSONArray("entries").map(::describeFixtureEntry), PackReader.entries(pack).map(::describeEntry))
+    }
+
+    /** An entry as the values a test compares, its body by content. */
+    private fun describeEntry(entry: PackEntry): List<String> = when (entry) {
+        is PackEntry.File -> listOf("file", entry.sha256, Base64.getEncoder().encodeToString(entry.body))
+        is PackEntry.Patch -> listOf("patch", entry.fromSha256, entry.toSha256, Base64.getEncoder().encodeToString(entry.body))
+    }
+
+    private fun describeFixtureEntry(json: JSONObject): List<String> = when (json.getString("type")) {
+        "file" -> listOf("file", json.getString("sha256"), json.getString("bodyBase64"))
+        else -> listOf(json.getString("type"), json.getString("fromSha256"), json.getString("toSha256"), json.getString("bodyBase64"))
     }
 
     @Test

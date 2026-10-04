@@ -39,8 +39,10 @@ android {
         }
     }
     sourceSets {
-        // The on-device tests read the same fixtures the JVM tests read, packaged as their assets.
+        // The on-device tests read the same fixtures the JVM tests read, packaged as their assets, and share their download fakes.
         androidTest.assets.srcDirs += 'node_modules/@hotcodepush/protocol/fixtures'
+        androidTest.java.srcDirs += 'src/sharedTest/java'
+        test.java.srcDirs += 'src/sharedTest/java'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_21

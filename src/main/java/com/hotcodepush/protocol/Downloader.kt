@@ -1,6 +1,7 @@
 package com.hotcodepush.protocol
 
 import java.io.File
+import java.io.FileNotFoundException
 
 sealed class DownloadFailure(message: String) : Exception(message) {
     class InvalidSignature(message: String) : DownloadFailure(message)
@@ -120,8 +121,8 @@ class Downloader(
 
     /**
      * Streams the pack to disk, resuming what an earlier attempt left and never past its bound, then inflates each wanted
-     * entry up to its file's size: an entry is always the gzip bytes the bucket serves. A pack whose size the envelope
-     * states holds exactly that many bytes; a streamed one has no size to hold it to.
+     * file entry up to its file's size, an entry always the gzip bytes the bucket serves, and applies each patch entry to a
+     * wanted file. A pack whose size the envelope states holds exactly that many bytes; a streamed one has no size to hold it to.
      */
     internal suspend fun downloadPackEntries(source: PackSource, bundleId: String, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): Long {
         val pinnedUrl = resolvePinnedUrl(source.url)
@@ -139,8 +140,16 @@ class Downloader(
             if (source.sizeBytes != null && file.length() != source.sizeBytes) throw DownloadFailure.VerificationFailed("The pack holds ${file.length()} of its ${source.sizeBytes} bytes")
             file.inputStream().buffered().use { input ->
                 PackReader.forEachEntry(input, file.length()) { entry ->
-                    val sizeBytes = wanted[entry.sha256] ?: return@forEachEntry
-                    files.writeFile(Gzip.decompress(entry.body, sizeBytes), entry.sha256)
+                    when (entry) {
+                        is PackEntry.File -> {
+                            val sizeBytes = wanted[entry.sha256] ?: return@forEachEntry
+                            files.writeFile(Gzip.decompress(entry.body, sizeBytes), entry.sha256)
+                        }
+                        is PackEntry.Patch -> {
+                            val sizeBytes = wanted[entry.toSha256] ?: return@forEachEntry
+                            applyPatch(entry, sizeBytes)
+                        }
+                    }
                 }
             }
             return file.length()
@@ -151,6 +160,42 @@ class Downloader(
         } finally {
             file.delete()
         }
+    }
+
+    /**
+     * Writes the file `toSha256` from the patch and the held file `fromSha256`, never past the manifest's size of it.
+     * Whatever stops it — no base, a malformed patch, another hash, no native library for the ABI, no memory — leaves the
+     * file missing, fetched whole after the pack: an update never fails because of a patch.
+     */
+    internal fun applyPatch(entry: PackEntry.Patch, maximumBytes: Long) {
+        try {
+            writePatchedFile(entry, maximumBytes)
+        } catch (failure: Throwable) {
+            val isPatchFailure = failure is Exception || failure is LinkageError || failure is OutOfMemoryError
+            if (!isPatchFailure) throw failure
+        }
+    }
+
+    /** The patched bytes into the store, which refuses them unless they hash to `toSha256`. */
+    private fun writePatchedFile(entry: PackEntry.Patch, maximumBytes: Long) {
+        val directory = File(temporaryDirectory, "${entry.toSha256}.patching")
+        directory.mkdirs()
+        try {
+            val base = preparePatchBase(entry.fromSha256, directory)
+            val patch = File(directory, "patch").apply { writeBytes(entry.body) }
+            val patched = File(directory, "patched")
+            Bspatch.apply(patch, base, patched, maximumBytes)
+            files.writeFile(patched.readBytes(), entry.toSha256)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    /** The held file a patch starts from: the store's in place, the embedded bundle's copied beside the patch. */
+    private fun preparePatchBase(sha256: String, directory: File): File {
+        if (files.hasFile(sha256)) return files.file(sha256)
+        if (!embedded.has(sha256)) throw FileNotFoundException("The patch's base $sha256 is not held")
+        return File(directory, "base").also { embedded.copyFile(sha256, it) }
     }
 
     /** The URL of a manifest, pack or delta only when it is on a configured host: the SDK fetches from our hosts and nowhere else. */

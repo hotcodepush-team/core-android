@@ -9,38 +9,40 @@ import java.io.File
 import java.nio.file.Files
 
 class PackTest {
+    private val sha256 = Hashing.sha256Hex("x")
+
     @Test
     fun shouldRoundTripEntriesThroughTheUstarFormat() {
         val content = "hello".toByteArray()
-        val entries = listOf(PackEntry(Hashing.sha256Hex(content), Gzip.compress(content)), PackEntry(Hashing.sha256Hex("x"), ByteArray(0)))
+        val entries = listOf(PackEntry.File(Hashing.sha256Hex(content), Gzip.compress(content)), PackEntry.File(sha256, ByteArray(0)))
         val pack = PackWriter.pack(entries)
         assertEquals(0, pack.size % 512)
-        val read = PackReader.entries(pack)
+        val read = PackReader.entries(pack).map { it as PackEntry.File }
         assertEquals(entries.map { it.sha256 }, read.map { it.sha256 })
         assertEquals("hello", String(Gzip.decompress(read[0].body, content.size.toLong())))
     }
 
     @Test(expected = PackFormatException::class)
     fun shouldRejectATruncatedPack() {
-        PackReader.entries(PackWriter.pack(listOf(PackEntry("abc", ByteArray(700)))).copyOf(600))
+        PackReader.entries(PackWriter.pack(listOf(PackEntry.File(sha256, ByteArray(700)))).copyOf(600))
     }
 
     @Test
     fun shouldIgnoreBytesAfterTheEndOfArchiveBlocks() {
-        val pack = PackWriter.pack(listOf(PackEntry("abc", "x".toByteArray()))) + "trailing".toByteArray()
-        assertEquals(listOf("abc"), PackReader.entries(pack).map { it.sha256 })
+        val pack = PackWriter.pack(listOf(PackEntry.File(sha256, "x".toByteArray()))) + "trailing".toByteArray()
+        assertEquals(listOf(sha256), PackReader.entries(pack).map { (it as PackEntry.File).sha256 })
     }
 
     @Test(expected = PackFormatException::class)
     fun shouldRefuseAnEntryLargerThanWhatIsLeftOfThePackBeforeAllocatingIt() {
-        val pack = PackWriter.pack(listOf(PackEntry("abc", ByteArray(700))))
+        val pack = PackWriter.pack(listOf(PackEntry.File(sha256, ByteArray(700))))
         "%011o".format(1_500_000_000).toByteArray(Charsets.US_ASCII).copyInto(pack, 124)
         PackReader.entries(pack)
     }
 
     @Test(expected = PackFormatException::class)
     fun shouldRefuseAnEntryWithANegativeSize() {
-        val pack = PackWriter.pack(listOf(PackEntry("abc", ByteArray(700))))
+        val pack = PackWriter.pack(listOf(PackEntry.File(sha256, ByteArray(700))))
         "-0000001000".toByteArray(Charsets.US_ASCII).copyInto(pack, 124)
         PackReader.entries(pack)
     }
