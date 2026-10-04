@@ -36,7 +36,7 @@ package.json                             private, only the pinned @hotcodepush/p
 | `npm run verify`                      | the lint, the tests and the release build                          |
 | `./gradlew connectedDebugAndroidTest` | the on-device tests, on every running emulator and attached device |
 
-`ci.yml` runs the lint, the tests and `assembleRelease` on every push and pull request, and its `device` job runs `connectedDebugAndroidTest` on two emulators: a 32-bit x86 one at API 24, where bspatch runs on a 32-bit `off_t`, and an x86_64 one at API 35.
+`ci.yml` runs the lint, the tests and `assembleRelease` on every push and pull request, and its `device` job runs `connectedDebugAndroidTest` on two emulators: a 32-bit x86 one at API 23, where bspatch runs on a 32-bit `off_t`, and an x86_64 one at API 35.
 `./gradlew publishToMavenLocal` is what JitPack runs for a commit.
 No releases yet: the version stays `0.0.0`, and release-please and the Maven Central publication arrive with the publish decision.
 The fixtures move with `package.json`'s pin: a protocol change is a bump of that sha, and the cases the new build adds fail here until the Kotlin follows.

@@ -36,7 +36,7 @@ jobs:
       matrix:
         include:
           # 32-bit x86: bspatch's off_t is 32 bits there, so offtin()'s range check, OFF_MAX and the JNI cap run as shipped.
-          - api-level: 24
+          - api-level: 23
             arch: x86
           - api-level: 35
             arch: x86_64

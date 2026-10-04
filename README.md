@@ -54,7 +54,7 @@ npm ci                       # the protocol fixtures the tests read
 
 `npm run verify` adds the release build; `./gradlew publishToMavenLocal` builds the Maven publication JitPack serves.
 
-`./gradlew connectedDebugAndroidTest` runs the tests that need a device on a running emulator or an attached device: the signature fixtures, bspatch on its hostile patches and the patch cases of the protocol's fixtures. CI runs them on every push and pull request on two emulators, a 32-bit x86 one at API 24, where bspatch runs on a 32-bit `off_t`, and an x86_64 one at API 35.
+`./gradlew connectedDebugAndroidTest` runs the tests that need a device on a running emulator or an attached device: the signature fixtures, bspatch on its hostile patches and the patch cases of the protocol's fixtures. CI runs them on every push and pull request on two emulators, a 32-bit x86 one at API 23, where bspatch runs on a 32-bit `off_t`, and an x86_64 one at API 35.
 
 ## License
 
