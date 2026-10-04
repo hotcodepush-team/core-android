@@ -26,3 +26,44 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - run: npm ci
       - run: ./gradlew lint test assembleRelease --console=plain
+
+  device:
+    name: Run the on-device tests on the API ${{ matrix.api-level }} ${{ matrix.arch }} emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 32-bit x86: bspatch's off_t is 32 bits there, so offtin()'s range check, OFF_MAX and the JNI cap run as shipped.
+          - api-level: 24
+            arch: x86
+          - api-level: 35
+            arch: x86_64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - run: npm ci
+      - name: Run connectedDebugAndroidTest on the emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: ${{ matrix.arch }}
+          disable-animations: true
+          # A hosted runner's emulator can take past the action's ten-minute default to boot.
+          emulator-boot-timeout: 1200
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -camera-back none
+          script: ./gradlew connectedDebugAndroidTest --console=plain
