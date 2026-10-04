@@ -256,7 +256,7 @@ class CoreTest {
 
     @Test
     fun shouldRefuseAnUnsignedManifestOnceAPublicKeyIsConfigured() = runBlocking {
-        val harness = Harness(Fixture.configuration(publicKeys = listOf("k1")))
+        val harness = Harness(Fixture.configuration(publicKeys = listOf(SignatureFixtures().devicePublicKey("rsa-4096-a"))))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -266,10 +266,10 @@ class CoreTest {
     @Test
     fun shouldApplyAManifestSignedByAListedKey() = runBlocking {
         val fixture = SignatureFixtures()
-        val harness = Harness(Fixture.configuration(publicKeys = listOf(fixture.publicKey("ed25519-b"), fixture.publicKey("ed25519-a"))))
+        val harness = Harness(Fixture.configuration(publicKeys = listOf(fixture.devicePublicKey("rsa-4096-b"), fixture.devicePublicKey("rsa-4096-a"))))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
-        harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(signature = fixture.sign(v2.envelope.manifest, "ed25519-a")).toJson())
+        harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(signature = fixture.sign(v2.envelope.manifest, "rsa-4096-a")).toJson())
         harness.core.handleAppStart()
         assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
     }
@@ -277,10 +277,10 @@ class CoreTest {
     @Test
     fun shouldRefuseAManifestSignedByAKeyTheAppDoesNotHold() = runBlocking {
         val fixture = SignatureFixtures()
-        val harness = Harness(Fixture.configuration(publicKeys = listOf(fixture.publicKey("ed25519-b"))))
+        val harness = Harness(Fixture.configuration(publicKeys = listOf(fixture.devicePublicKey("rsa-4096-b"))))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
-        harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(signature = fixture.sign(v2.envelope.manifest, "ed25519-a")).toJson())
+        harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(signature = fixture.sign(v2.envelope.manifest, "rsa-4096-a")).toJson())
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(FailedReason.INVALID_SIGNATURE.name, result.reason)

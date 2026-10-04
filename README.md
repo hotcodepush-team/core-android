@@ -36,7 +36,7 @@ An SDK opens the debug screen from any context. The screen shows the device, the
 DebugScreen.show(context, core)
 ```
 
-Once the resource file lists `publicKeys`, the downloader refuses a manifest that is unsigned or whose Ed25519 signature does not verify against them, before it fetches a byte of the bundle. The check runs on BouncyCastle, `org.bouncycastle:bcprov-jdk15to18`, the same code on every Android version and the artifact every app's build reads, one with Jetifier on included: Android's own providers verify Ed25519 under a key from outside the keystore from Android 17 alone. An app that shrinks its code with R8 carries the Ed25519 classes, about 40 KB of its APK, and needs no rule for it; an app that does not shrink carries the whole library, about 2.2 MB.
+Once the resource file lists `publicKeys`, the downloader refuses a manifest that is unsigned or whose signature does not verify against them, before it fetches a byte of the bundle. The one scheme is `rsa-v1_5-sha256`, RSA PKCS #1 v1.5 with SHA-256, which `java.security` verifies on every Android version: each key arrives as the base64 of its SPKI DER beside its key id, a key under 2048 bits verifies nothing, and the library brings no cryptography of its own.
 
 The library is the foundation of the HotCodePush SDKs, not their supported API: an app uses the SDK for its framework.
 

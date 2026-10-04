@@ -3,7 +3,7 @@
 `com.hotcodepush:protocol-android`, the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader, the signature check, the file store, the state machine and the debug screen every HotCodePush SDK on Android runs, held to the fixture suite of `@hotcodepush/protocol`.
 `@hotcodepush/protocol` (`protocol-js`) and the Swift package `HotCodePushProtocol` (`protocol-ios`) implement the same functions and types; a change to one is a change to the other two.
 The Capacitor SDK consumes it at a pinned commit through JitPack until its publish decision — `com.github.hotcodepush-team:protocol-android:<sha>` from `https://jitpack.io` — never a branch; it is not the supported API, apps use the SDK for their framework.
-Stack: Kotlin 2.2 on the Android Gradle plugin, minSdk 23, OkHttp with Okio, coroutines and BouncyCastle, JUnit 4 and Robolectric on the JVM, Java 21, Node 24 for the fixtures.
+Stack: Kotlin 2.2 on the Android Gradle plugin, minSdk 23, OkHttp with Okio and coroutines, JUnit 4 and Robolectric on the JVM, Java 21, Node 24 for the fixtures.
 
 The plan is the private `handbook` repo, checked out beside this one: `../handbook/docs/`.
 Its `sdk-api.md` (the SDK surface, the state and the functions, statuses and reasons) and `architecture.md` (_The device protocol_, _Signing_, _Packs_, _Debugging_, _Evolving the wire format_, _Testing_) are binding here.
@@ -16,7 +16,7 @@ src/main/java/com/hotcodepush/protocol   the library: no framework import, Andro
 src/main/res/xml                         the rules that keep the store out of backups and device transfers
 src/main/res/values, values-v29          the debug screen's strings and its theme, day and night from API 29
 src/test/java/com/hotcodepush/protocol   JUnit on the JVM; FixtureTest and SigningTest read node_modules/@hotcodepush/protocol/fixtures after npm ci, DeviceEventsContractTest runs the package's schema with node; Robolectric runs the debug screen's activity
-src/androidTest/java/com/hotcodepush/protocol   the tests that need a device: the signature fixtures on Android's own runtime, the fixtures packaged as assets
+src/androidTest/java/com/hotcodepush/protocol   the tests that need a device: the signature fixtures against the device's own `java.security` providers, the fixtures packaged as assets
 build.gradle                             the library module and the Maven publication JitPack builds
 package.json                             private, only the pinned @hotcodepush/protocol the fixtures come from
 ```
@@ -47,12 +47,11 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - Every key in the store is `hotcodepush.<name>`; three identity keys survive everything, the rest is a cache dropped on an unknown `stateVersion`.
 - Statuses and reasons are `SCREAMING_SNAKE_CASE` from the one catalog; a method throws a plain error only for a programming mistake.
 - `java.time` sits above the API floor: timestamps live as epoch milliseconds and travel through `Iso8601`.
-- The signature allow-list is pinned and has one entry, `ed25519`: the manifest string is verified as received under the key its `keyId` names, on one code path for every Android version — BouncyCastle's lightweight API, `org.bouncycastle:bcprov-jdk15to18` as an ordinary dependency, no provider registered and the platform's algorithm lookup never asked, since Android's providers take an Ed25519 key from outside the keystore from API 37 alone. A key or signature of the Expo bridge's `rsa-v1_5-sha256` verifies nothing here, so the suite's RSA cases are asserted as refused.
-- The artifact is `bcprov-jdk15to18`, never `bcprov-jdk18on`: the same sources of the same release, compiled for Java 5 and without the multi-release layers, whose Java 25 classes stop the Jetifier of an app on an older Android Gradle plugin and whose OSGi manifest collides with other libraries'.
-- BouncyCastle costs an app about 2.2 MB of APK when it does not shrink its code and about 40 KB behind R8, which keeps the fifty-five classes the verification reaches without a rule from this library; the two message files of the jar ride along as resources. A change that reaches further into BouncyCastle is measured on the demo before it lands.
+- The signature allow-list is pinned and has one entry, `rsa-v1_5-sha256`: the manifest string is verified as received under the key whose id the signature names, with `java.security` alone — `KeyFactory` over the SPKI DER the resource file carries beside each key id, then `SHA256withRSA` — on every Android version. A value under any other prefix, `ed25519` included, is an unknown scheme, and a key under 2048 bits, its size read from the key the platform imported, verifies nothing.
+- No cryptography library is a dependency: BouncyCastle was one while the scheme was Ed25519, and cost an app that does not shrink its code 2.2 MB.
 - A download stays on the URL the core pinned and never follows a redirect; a streamed delta the updates host does not serve gives way to the envelope's full pack.
 - The debug screen shows what `DebugReport` renders, section for section and label for label what the Swift package renders, and the share text is the same sections: a fact joins both through `DebugReport`, never the screen alone. The session log lives in memory, the newest two hundred lines, never on disk and never on the wire.
-- Nothing here writes a cryptographic primitive or parses a standard format by hand beyond ustar and gzip: BouncyCastle, `java.security`'s digest, `java.util.zip`, `org.json` and Okio's Base64 do that.
+- Nothing here writes a cryptographic primitive or parses a standard format by hand beyond ustar and gzip: `java.security`, `java.util.zip`, `org.json` and Okio's Base64 do that.
 
 ## Naming
 

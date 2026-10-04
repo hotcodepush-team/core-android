@@ -9,39 +9,38 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The signature fixtures on a device, which the JVM tests cannot stand in for: the verifier runs on Android's runtime,
- * whatever its version and whatever its own providers hold, and answers the suite case for case within the allow-list.
+ * The signature fixtures against a device's own `java.security` providers, which the JVM tests cannot stand in for:
+ * every Android version imports the SPKI key a resource file carries and verifies the suite case for case.
  */
 @RunWith(AndroidJUnit4::class)
 class SignaturesOnDeviceTest {
     private val manifests: List<JSONObject> = InstrumentationRegistry.getInstrumentation().context.assets.open("signatures.json").bufferedReader().use { reader ->
-        JSONObject(reader.readText()).getJSONArray("manifests").let { cases -> List(cases.length()) { cases.getJSONObject(it) } }
+        JSONObject(reader.readText()).getJSONArray("manifests").map { it }
     }
 
     @Test
-    fun shouldMatchEverySignatureFixtureWithinTheAllowList() {
+    fun shouldMatchEverySignatureFixture() {
         assertTrue(manifests.size > 5)
         var verified = 0
         for (case in manifests) {
             val isValid = verify(case) == null
-            assertEquals(case.getString("name"), case.getBoolean("isValid") && resolveScheme(case) == SigningScheme.ED25519.wire, isValid)
+            assertEquals(case.getString("name"), case.getBoolean("isValid"), isValid)
             if (isValid) verified++
         }
-        assertTrue(verified >= 2)
+        assertTrue(verified >= 3)
     }
 
     @Test
-    fun shouldVerifyEd25519AndRefuseTheExpoBridgesRsaScheme() {
-        val refusalsOfValidCases = manifests.filter { it.getBoolean("isValid") }.associate { resolveScheme(it) to verify(it) }
-        assertEquals(null, refusalsOfValidCases[SigningScheme.ED25519.wire])
-        assertEquals(SignatureRefusal.UNKNOWN_SCHEME, refusalsOfValidCases["rsa-v1_5-sha256"])
+    fun shouldRefuseAKeyUnderTheMinimumSizeAndAnEd25519Signature() {
+        val refusals = manifests.associate { it.getString("name") to verify(it) }
+        assertEquals(SignatureRefusal.UNUSABLE_KEY, refusals["should refuse a signature by a key under 2048 bits"])
+        assertEquals(SignatureRefusal.UNKNOWN_SCHEME, refusals["should refuse a scheme outside the allow-list, ed25519"])
     }
 
     private fun verify(case: JSONObject): SignatureRefusal? {
         val envelope = case.getJSONObject("envelope")
         val signature = envelope.getNullableObject("signature")?.let(Signature::fromJson)
-        return SignatureVerifier.verifyManifestSignature(envelope.getString("manifest"), signature, case.getJSONArray("publicKeys").toStringList())
+        val publicKeys = case.getJSONObject("devicePublicKeys").getJSONArray("android").map(DevicePublicKey::fromJson)
+        return SignatureVerifier.verifyManifestSignature(envelope.getString("manifest"), signature, publicKeys)
     }
-
-    private fun resolveScheme(case: JSONObject): String? = case.getJSONObject("envelope").getNullableObject("signature")?.getString("value")?.substringBefore(':')
 }

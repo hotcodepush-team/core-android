@@ -74,8 +74,9 @@ class Downloader(
 
     private fun resolveSignatureRefusalMessage(refusal: SignatureRefusal, signature: Signature?): String = when (refusal) {
         SignatureRefusal.UNSIGNED -> "The manifest is unsigned and the app accepts only signed manifests"
-        SignatureRefusal.UNKNOWN_SCHEME -> "The signature's scheme is not one this SDK accepts"
+        SignatureRefusal.UNKNOWN_SCHEME -> "The signature's scheme is not ${SignatureVerifier.SCHEME}, the one this SDK accepts"
         SignatureRefusal.UNKNOWN_KEY -> "The signature names the key ${signature?.keyId}, which the app does not hold"
+        SignatureRefusal.UNUSABLE_KEY -> "The key ${signature?.keyId} the app holds is not an RSA key of ${SignatureVerifier.KEY_BITS_MINIMUM} bits or more"
         SignatureRefusal.INVALID -> "The manifest's signature does not verify under the key it names"
     }
 

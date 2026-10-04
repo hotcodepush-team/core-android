@@ -150,7 +150,7 @@ object Fixture {
 
     fun embeddedManifest() = EmbeddedBundleManifest(appId = APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File("index.html", Hashing.sha256Hex(embeddedIndexHtml), embeddedIndexHtml.size.toLong())), platforms = listOf("android"))
 
-    fun configuration(installStrategy: InstallStrategy = InstallStrategy.NEXT_START, mandatoryInstallStrategy: MandatoryInstallStrategy = MandatoryInstallStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, autoCheck: Boolean = false, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<String> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, enabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID): Configuration {
+    fun configuration(installStrategy: InstallStrategy = InstallStrategy.NEXT_START, mandatoryInstallStrategy: MandatoryInstallStrategy = MandatoryInstallStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, autoCheck: Boolean = false, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<DevicePublicKey> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, enabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID): Configuration {
         val json = JSONObject()
             .put("appId", APP_ID)
             .put("channelId", channelId ?: JSONObject.NULL)
@@ -163,7 +163,7 @@ object Fixture {
             .put("readySignal", readySignal.wire)
             .put("readyTimeout", 10)
             .put("enabledInDebugBuilds", enabledInDebugBuilds)
-            .put("publicKeys", org.json.JSONArray(publicKeys))
+            .put("publicKeys", org.json.JSONArray(publicKeys.map { JSONObject().put("der", it.der).put("keyId", it.keyId) }))
             .put("builtAt", Iso8601.format(builtAt))
             .put("fingerprint", fingerprint ?: JSONObject.NULL)
             .put("embeddedBundleManifest", embeddedManifest().toJson())

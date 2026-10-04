@@ -355,7 +355,10 @@ internal enum class WireRule {
     URL,
 
     /** The scheme, a colon and the base64 of the signature. */
-    SIGNATURE_VALUE;
+    SIGNATURE_VALUE,
+
+    /** Base64 in its one canonical spelling: padded, no unused bits set. */
+    BASE64;
 
     fun accepts(value: String): Boolean = when (this) {
         IDENTIFIER -> identifierPattern.matches(value)
@@ -364,12 +367,14 @@ internal enum class WireRule {
         NON_EMPTY -> value.isNotEmpty()
         URL -> runCatching { URI(value) }.getOrNull()?.let { !it.scheme.isNullOrEmpty() && !it.host.isNullOrEmpty() } ?: false
         SIGNATURE_VALUE -> signatureValuePattern.matches(value)
+        BASE64 -> base64Pattern.matches(value)
     }
 }
 
 private val identifierPattern = Regex("[A-Za-z0-9_-]{1,64}")
 private val sha256Pattern = Regex("[0-9a-f]{64}")
 private val signatureValuePattern = Regex("[a-z0-9_-]+:[A-Za-z0-9+/]+=*")
+private val base64Pattern = Regex("(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)")
 
 /** A string, never a number or a boolean read as one, that the rule accepts; anything else fails the decode before it can name a file, a directory or a host. */
 internal fun JSONObject.getWireString(key: String, rule: WireRule? = null): String {
