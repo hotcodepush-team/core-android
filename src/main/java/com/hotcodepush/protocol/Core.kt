@@ -293,7 +293,7 @@ class Core(
     }
 
     /** Rolls the running release back now; `detail` is the app's own cause, carried on the failure event. */
-    suspend fun rollback(detail: String?) = lock.withLock {
+    suspend fun rollbackUpdate(detail: String?) = lock.withLock {
         if (detail != null) AttributeRules.validate(detail)
         if (state.currentRelease != null) rollbackCurrentRelease(RollbackReason.REPORTED_BY_APP, detail)
     }

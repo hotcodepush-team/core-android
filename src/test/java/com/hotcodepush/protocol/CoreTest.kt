@@ -189,7 +189,7 @@ class CoreTest {
         val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
         harness.publish(listOf(v2, v3), 2, etag = "\"e2\"")
         harness.core.sync(SyncTrigger.MANUAL)
-        harness.core.rollback("fatal")
+        harness.core.rollbackUpdate("fatal")
         val status = harness.core.getState()
         assertEquals(v2.release.release, status.currentRelease)
         assertEquals(listOf("b3"), status.failedBundleIds)
@@ -373,7 +373,7 @@ class CoreTest {
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.notifyReady()
         harness.core.setRestartAllowed(false)
-        harness.core.rollback("fatal")
+        harness.core.rollbackUpdate("fatal")
         assertEquals(listOf("b2", null), harness.loader.loaded)
         val status = harness.core.getState()
         assertNull(status.currentRelease)
@@ -725,11 +725,11 @@ class CoreTest {
         harness.core.handleRendered()
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.notifyReady()
-        harness.core.rollback("checkout crashed")
+        harness.core.rollbackUpdate("checkout crashed")
         val failed = StateStore(harness.store).unsentEvents.last { it.type == "failed" }
         assertEquals(RollbackReason.REPORTED_BY_APP.name, failed.reason)
         assertEquals("checkout crashed", failed.detail)
-        val error = runCatching { harness.core.rollback("a\nb") }.exceptionOrNull()
+        val error = runCatching { harness.core.rollbackUpdate("a\nb") }.exceptionOrNull()
         assertTrue(error is PlainException)
     }
 
