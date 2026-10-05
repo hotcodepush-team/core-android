@@ -37,6 +37,9 @@ class Core(
         data class Invalid(val message: String) : ChannelResolution()
     }
 
+    /** A restart held at the gate and who asked for it: the app's own is never held by `setRestartAllowed(false)`. */
+    private class QueuedRestart(val isAskedByApp: Boolean, val restart: () -> Unit)
+
     private val state = StateStore(store)
     private val downloader = Downloader(configuration, files, embedded, http, temporaryDirectory)
     private val httpClient = http
@@ -47,7 +50,7 @@ class Core(
     private var intervalTimer: ScheduledTask? = null
     private var runningSync: Deferred<SyncResult>? = null
     private var isRestartAllowed = true
-    private var queuedRestart: (() -> Unit)? = null
+    private var queuedRestart: QueuedRestart? = null
 
     /** The app is up in this run: it rendered, called `notifyReady()` or ran out of time since the start or the last reload. */
     private var hasStartSettled = false
@@ -61,7 +64,7 @@ class Core(
 
     // Lifecycle
 
-    /** The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, the gate, the check left for the settled start, then the cleanup. */
+    /** The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, the gate, then the cleanup. */
     suspend fun handleAppStart() = lock.withLock {
         state.lastRollback = null
         if (state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest()) dropStoredReleases()
@@ -70,8 +73,12 @@ class Core(
         val next = state.nextRelease
         if (next != null && shouldSwitchAtStart(next)) switchToNextRelease()
         loadBundle()
-        if (isCurrentReleaseUnconfirmed()) startReadyTimer()
-        isStartSyncPending = configuration.autoCheck
+        if (isCurrentReleaseUnconfirmed()) {
+            startReadyTimer()
+            isStartSyncPending = true
+        } else if (configuration.autoCheck) {
+            scope.launch { sync(SyncTrigger.START) }
+        }
         deleteUnusedFiles()
     }
 
@@ -147,12 +154,14 @@ class Core(
         return performCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions())
     }
 
-    /** The third stage: apply the downloaded update now and reload the app. */
+    /** The third stage: apply the downloaded update and reload the app, now or, before the app is up in this run, once it is. */
     suspend fun applyUpdate(): ApplyResult = lock.withLock {
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease ?: return ApplyResult(ApplyStatus.NOTHING_TO_APPLY, state.currentRelease)
-        switchToNextRelease()
-        reloadApp()
+        restartThroughGate(isAskedByApp = true) {
+            switchToNextRelease()
+            reloadApp()
+        }
         ApplyResult(ApplyStatus.APPLIED, next)
     }
 
@@ -292,24 +301,26 @@ class Core(
         return SyncResult.updated(release, notes, strategy)
     }
 
-    /** Rolls the running release back now; `detail` is the app's own cause, carried on the failure event. */
+    /** Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event. */
     suspend fun rollbackUpdate(detail: String?) = lock.withLock {
         if (detail != null) AttributeRules.validate(detail)
         if (state.currentRelease != null) rollbackCurrentRelease(RollbackReason.REPORTED_BY_APP, detail)
     }
 
-    /** Back to the embedded bundle: every downloaded update and the failed list go, the identity stays. */
+    /** Back to the embedded bundle, now or, before the app is up in this run, once it is: every downloaded update and the failed list go, the identity stays. */
     suspend fun clearUpdates() = lock.withLock {
-        stopReadyTimer()
-        state.currentRelease = null
-        state.nextRelease = null
-        state.fallbackRelease = null
-        state.failedBundleIds = emptyList()
-        state.lastRollback = null
-        files.bundleIds().forEach(loader::deleteProjection)
-        files.deleteEverything()
-        loader.persistServedBundle(null)
-        reloadApp()
+        restartThroughGate(isAskedByApp = true) {
+            stopReadyTimer()
+            state.currentRelease = null
+            state.nextRelease = null
+            state.fallbackRelease = null
+            state.failedBundleIds = emptyList()
+            state.lastRollback = null
+            files.bundleIds().forEach(loader::deleteProjection)
+            files.deleteEverything()
+            loader.persistServedBundle(null)
+            reloadApp()
+        }
     }
 
     suspend fun setRestartAllowed(allowed: Boolean) = lock.withLock {
@@ -418,37 +429,32 @@ class Core(
         if (isCurrentReleaseUnconfirmed()) startReadyTimer()
     }
 
-    /** The install the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs. */
-    private fun installNextRelease() = restartThroughGate {
-        switchToNextRelease()
-        reloadApp()
+    /** The install the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does. */
+    private fun installNextRelease() {
+        state.nextRelease?.let { loader.persistServedBundle(it.bundleId) }
+        restartThroughGate(isAskedByApp = false) {
+            switchToNextRelease()
+            reloadApp()
+        }
     }
 
-    /** A restart the SDK performs on its own waits while the app holds restarts or the start has not settled; the first one held runs when both let go. */
-    private fun restartThroughGate(restart: () -> Unit) {
-        if (queuedRestart == null) queuedRestart = restart
+    /** A restart waits until the app is up in this run, and the SDK's own also while the app holds restarts. One is held at most: the app's replaces a held one, the SDK's yields to it. */
+    private fun restartThroughGate(isAskedByApp: Boolean, restart: () -> Unit) {
+        if (isAskedByApp || queuedRestart == null) queuedRestart = QueuedRestart(isAskedByApp, restart)
         runQueuedRestart()
     }
 
     private fun runQueuedRestart() {
-        if (!isRestartAllowed || !hasStartSettled) return
-        val restart = queuedRestart ?: return
+        val queued = queuedRestart ?: return
+        if (!hasStartSettled || !(isRestartAllowed || queued.isAskedByApp)) return
         queuedRestart = null
-        restart()
+        queued.restart()
     }
 
-    /** The app is up in this run: the restart held for it runs, then the check of the start once the running release is confirmed. */
+    /** The app is up in this run: the restart held for it runs. */
     private fun settleStart() {
         hasStartSettled = true
         runQueuedRestart()
-        runPendingStartSync()
-    }
-
-    /** The automatic check of the start waits for the settled start and a confirmed running release; a held restart that reloaded unsettles it again. */
-    private fun runPendingStartSync() {
-        if (!isStartSyncPending || !hasStartSettled || isCurrentReleaseUnconfirmed()) return
-        isStartSyncPending = false
-        scope.launch { sync(SyncTrigger.START) }
     }
 
     private fun adoptInPlace(release: Release) {
@@ -470,9 +476,13 @@ class Core(
             state.fallbackRelease = current
             enqueueDeviceEvent(DeviceEvent.confirmed(current.id))
         }
+        if (isStartSyncPending) {
+            isStartSyncPending = false
+            if (configuration.autoCheck) scope.launch { sync(SyncTrigger.START) }
+        }
     }
 
-    /** The timer's rollback reloads through the gate; the app's own rollback and the crash a start finds, before anything runs, reload at once. */
+    /** A rollback never waits for the app to be up: the app's own and the crash a start finds reload at once, the timer's, which settles the start, waits only while the app holds restarts. */
     private fun rollbackCurrentRelease(reason: RollbackReason, detail: String?) {
         val current = state.currentRelease ?: return
         stopReadyTimer()
@@ -485,7 +495,7 @@ class Core(
         enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.name, detail))
         enqueueDeviceEvent(DeviceEvent.rolledBack(current.id, fallback?.id))
         loader.persistServedBundle(fallback?.bundleId)
-        if (reason == RollbackReason.READY_TIMEOUT) restartThroughGate { reloadApp() } else reloadApp()
+        if (reason == RollbackReason.READY_TIMEOUT) restartThroughGate(isAskedByApp = false) { reloadApp() } else reloadApp()
     }
 
     /** The release to fall back to right now: the last confirmed one while it can still run, else the embedded bundle. */
@@ -502,7 +512,7 @@ class Core(
         state.currentRelease = null
         state.nextRelease = null
         loader.persistServedBundle(null)
-        restartThroughGate { reloadApp() }
+        restartThroughGate(isAskedByApp = false) { reloadApp() }
     }
 
     private fun startReadyTimer() {
