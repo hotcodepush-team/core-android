@@ -89,6 +89,7 @@ class DeviceEventsContractTest {
         val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", "<html>v2</html>".toByteArray())), 1)
         harness.core.handleAppStart()
+        harness.core.handleRendered()
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.handleReadyTimeout()
         harness.acknowledgeEvents()

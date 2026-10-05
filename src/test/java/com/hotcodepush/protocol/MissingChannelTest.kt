@@ -70,6 +70,7 @@ class MissingChannelTest {
     fun shouldFailTheSyncAtStartWithoutTouchingTheNetworkWhenAutoCheckIsOn() = runBlocking {
         val harness = harness(autoCheck = true)
         harness.core.handleAppStart()
+        harness.core.handleRendered()
         assertEquals(listOf(FailedReason.UNKNOWN_CHANNEL), harness.listener.failed.map { it.reason })
         assertEquals(Core.MISSING_CHANNEL_MESSAGE, harness.listener.failed.single().message)
         assertTrue(harness.http.requests.isEmpty())

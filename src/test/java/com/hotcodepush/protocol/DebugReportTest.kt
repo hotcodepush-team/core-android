@@ -89,6 +89,7 @@ class DebugReportTest {
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
+        harness.core.handleRendered()
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.notifyReady()
         val log = harness.core.debugSnapshot().log
@@ -117,6 +118,7 @@ class DebugReportTest {
         val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
+        harness.core.handleRendered()
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.handleReadyTimeout()
         val log = harness.core.debugSnapshot().log.filter { !it.code.startsWith("REPORT") }
