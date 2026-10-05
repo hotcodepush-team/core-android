@@ -987,6 +987,35 @@ class CoreTest {
         assertEquals(v2.release.release, harness.core.getState().fallbackRelease)
     }
 
+    @Test
+    fun shouldReloadOnceWhenTheAppAppliesAnUpdateWhileTheAppHoldsARestart() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        harness.core.setRestartAllowed(false)
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertTrue(harness.loader.loaded.isEmpty())
+        harness.core.applyUpdate()
+        assertEquals(listOf("b2"), harness.loader.loaded)
+        harness.core.handleRendered()
+        harness.core.setRestartAllowed(true)
+        assertEquals(listOf("b2"), harness.loader.loaded)
+    }
+
+    @Test
+    fun shouldReloadOnceWhenTheAppClearsUpdatesWhileTheStartHoldsARestart() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertTrue(harness.loader.loaded.isEmpty())
+        harness.core.clearUpdates()
+        assertEquals(listOf<String?>(null), harness.loader.loaded)
+        harness.core.handleRendered()
+        assertEquals(listOf<String?>(null), harness.loader.loaded)
+    }
+
     /** The third run of an app whose second run confirmed v2: its start finds nothing to switch and nothing to roll back. */
     private suspend fun startOnConfirmedRelease(configuration: Configuration): Harness {
         val harness = Harness()

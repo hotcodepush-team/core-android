@@ -48,10 +48,10 @@ class Core(
     private var runningSync: Deferred<SyncResult>? = null
     private var isRestartAllowed = true
     private var queuedRestart: (() -> Unit)? = null
-    private var isStartSyncPending = false
 
     /** The app is up in this run: it rendered, called `notifyReady()` or ran out of time since the start or the last reload. */
     private var hasStartSettled = false
+    private var isStartSyncPending = false
     private var isSendingDeviceEvents = false
     private var backgroundedAt: Long? = null
     private var resolvedChannelName: Pair<String, String>? = null
@@ -406,9 +406,10 @@ class Core(
         if (loader.servedBundleId() != expected) loader.loadServedBundle(expected)
     }
 
-    /** The restart of the web layer: the start is unsettled until the reloaded app is up, the bundle loads, a rollback this start follows is announced once, then the gate runs. */
+    /** The restart of the web layer: the start is unsettled until the reloaded app is up, a held restart is moot since the reloaded app runs what the state says, the bundle loads, a rollback this start follows is announced once, then the gate runs. */
     private fun reloadApp() {
         hasStartSettled = false
+        queuedRestart = null
         loader.loadServedBundle(state.currentRelease?.bundleId)
         pendingRollbackEvent?.let { event ->
             pendingRollbackEvent = null
