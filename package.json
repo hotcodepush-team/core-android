@@ -1,5 +1,5 @@
 {
-  "name": "@hotcodepush/protocol-android-fixtures",
+  "name": "@hotcodepush/core-android-fixtures",
   "version": "0.0.0",
   "private": true,
   "description": "The protocol fixtures the Android library's tests read; nothing of this file ships",

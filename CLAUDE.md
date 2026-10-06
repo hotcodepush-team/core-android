@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-`com.hotcodepush:protocol-android`, the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader, the signature check, the patch application, the file store, the state machine and the debug screen every HotCodePush SDK on Android runs, held to the fixture suite of `@hotcodepush/protocol`.
-`@hotcodepush/protocol` (`protocol-js`) and the Swift package `HotCodePushProtocol` (`protocol-ios`) implement the same functions and types; a change to one is a change to the other two.
-The Capacitor SDK consumes it at a pinned commit through JitPack until its publish decision — `com.github.hotcodepush-team:protocol-android:<sha>` from `https://jitpack.io` — never a branch; it is not the supported API, apps use the SDK for their framework.
+`com.hotcodepush:core-android`, the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader, the signature check, the patch application, the file store, the state machine and the debug screen every HotCodePush SDK on Android runs, held to the fixture suite of `@hotcodepush/protocol`.
+`@hotcodepush/protocol` (`protocol`) and the Swift package `HotCodePushCore` (`core-ios`) implement the same functions and types; a change to one is a change to the other two.
+The Capacitor SDK consumes it at a pinned commit through JitPack until its publish decision — `com.github.hotcodepush-team:core-android:<sha>` from `https://jitpack.io` — never a branch; it is not the supported API, apps use the SDK for their framework.
 Stack: Kotlin 2.2 on the Android Gradle plugin, minSdk 23, OkHttp with Okio and coroutines, C for bspatch and bzip2's decompression (bzip2 1.0.8, unmodified), JUnit 4 and Robolectric on the JVM, Java 21, Node 24 for the fixtures.
 CMake builds the C with the plugin's default NDK for its four ABIs, the two 64-bit ones aligned for 16 KB pages.
 
@@ -13,13 +13,13 @@ When code and plan disagree, stop and surface it; never improvise.
 ## Layout
 
 ```
-src/main/java/com/hotcodepush/protocol   the library: no framework import, Android's UI classes in DebugScreen.kt alone; the manifest carries INTERNET, the backup and data-extraction rules and the debug screen's activity
-src/main/cpp                             the native library hotcodepush_bspatch behind one JNI function: bspatch/ is FreeBSD's bspatch.c and its header, byte for byte protocol-ios's, bzip2/ the decompression sources of bzip2 1.0.8, unmodified
+src/main/java/com/hotcodepush/core       the library: no framework import, Android's UI classes in DebugScreen.kt alone; the manifest carries INTERNET, the backup and data-extraction rules and the debug screen's activity
+src/main/cpp                             the native library hotcodepush_bspatch behind one JNI function: bspatch/ is FreeBSD's bspatch.c and its header, byte for byte core-ios's, bzip2/ the decompression sources of bzip2 1.0.8, unmodified
 src/main/res/xml                         the rules that keep the store out of backups and device transfers
 src/main/res/values, values-v29          the debug screen's strings and its theme, day and night from API 29
-src/test/java/com/hotcodepush/protocol   JUnit on the JVM; FixtureTest and SigningTest read node_modules/@hotcodepush/protocol/fixtures after npm ci, DeviceEventsContractTest runs the package's schema with node; Robolectric runs the debug screen's activity
+src/test/java/com/hotcodepush/core       JUnit on the JVM; FixtureTest and SigningTest read node_modules/@hotcodepush/protocol/fixtures after npm ci, DeviceEventsContractTest runs the package's schema with node; Robolectric runs the debug screen's activity
 src/sharedTest/java                      the download fakes and the pack writer the JVM tests and the on-device tests share
-src/androidTest/java/com/hotcodepush/protocol   the tests that need a device: the signature fixtures against the device's own `java.security` providers, bspatch on its hostile patches and the fixtures' patch cases through the native library of the device's ABI, the fixtures packaged as assets
+src/androidTest/java/com/hotcodepush/core   the tests that need a device: the signature fixtures against the device's own `java.security` providers, bspatch on its hostile patches and the fixtures' patch cases through the native library of the device's ABI, the fixtures packaged as assets
 src/androidTest/assets/bspatch           what BspatchTest reads: the committed inputs old.bin, new.bin and valid.patch, the patch written once by bsdiff 4.3, and the hostile patches src/androidTest/make-bspatch-fixtures.sh writes with bash, xxd and bzip2
 build.gradle                             the library module and the Maven publication JitPack builds
 THIRD-PARTY-NOTICES                      the notices of bspatch, BSD 2-clause, and of bzip2, under its own licence
@@ -62,7 +62,7 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - A patch that does not apply — no base, a malformed patch, another hash, no native library for the ABI, no memory — leaves its file to the single-file fetch after the pack: an update never fails because of a patch.
 - The debug screen shows what `DebugReport` renders, section for section and label for label what the Swift package renders, and the share text is the same sections: a fact joins both through `DebugReport`, never the screen alone. The session log lives in memory, the newest two hundred lines, never on disk and never on the wire.
 - Nothing here writes a cryptographic primitive or parses a standard format by hand beyond ustar and gzip: `java.security`, `java.util.zip`, `org.json` and Okio's Base64 do that, and FreeBSD's `bspatch.c` applies BSDIFF40 over bzip2's own decompression.
-- `bspatch.c` is FreeBSD's with the lower bound on the old file's offset that FreeBSD dropped in 2019 restored, every change listed under its licence header, and byte for byte protocol-ios's: a change lands in both cores at once, and protocol-ios's CI fails on a difference.
+- `bspatch.c` is FreeBSD's with the lower bound on the old file's offset that FreeBSD dropped in 2019 restored, every change listed under its licence header, and byte for byte core-ios's: a change lands in both cores at once, and core-ios's CI fails on a difference.
 
 ## Naming
 

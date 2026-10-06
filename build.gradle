@@ -20,7 +20,7 @@ group = 'com.hotcodepush'
 version = '0.0.0'
 
 android {
-    namespace = 'com.hotcodepush.protocol'
+    namespace = 'com.hotcodepush.core'
     compileSdk = 36
     defaultConfig {
         minSdk = 23
@@ -88,13 +88,13 @@ tasks.withType(Test).configureEach {
     inputs.dir('node_modules/@hotcodepush/protocol').withPropertyName('protocolPackage').withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
-// The release AAR as a Maven publication, which JitPack builds for a commit as com.github.hotcodepush-team:protocol-android:<sha>.
+// The release AAR as a Maven publication, which JitPack builds for a commit as com.github.hotcodepush-team:core-android:<sha>.
 afterEvaluate {
     publishing {
         publications {
             release(MavenPublication) {
                 from components.release
-                artifactId = 'protocol-android'
+                artifactId = 'core-android'
             }
         }
     }

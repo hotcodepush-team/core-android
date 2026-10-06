@@ -13,7 +13,7 @@ static off_t resolve_max_new_size(jlong max_new_size)
 
 /* Bspatch.applyPatch: the status of hotcodepush_bspatch(), or an OutOfMemoryError when a path cannot be read. */
 JNIEXPORT jint JNICALL
-Java_com_hotcodepush_protocol_Bspatch_applyPatch(JNIEnv *env, jclass bspatch,
+Java_com_hotcodepush_core_Bspatch_applyPatch(JNIEnv *env, jclass bspatch,
     jstring old_path, jstring new_path, jstring patch_path, jlong max_new_size)
 {
 	const char *old_chars = NULL, *new_chars = NULL, *patch_chars = NULL;

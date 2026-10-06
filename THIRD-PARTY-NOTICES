@@ -1,4 +1,4 @@
-protocol-android includes the following third-party code.
+core-android includes the following third-party code.
 
 bspatch, BSD-2-Clause
 src/main/cpp/bspatch/bspatch.c, from FreeBSD's usr.bin/bsdiff/bspatch/bspatch.c

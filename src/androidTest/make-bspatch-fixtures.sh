@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Writes the hostile patches BspatchTest reads into assets/bspatch, each with a hand-made control block: protocol-ios's
+# Writes the hostile patches BspatchTest reads into assets/bspatch, each with a hand-made control block: core-ios's
 # make-patches.sh writes the same bytes, and length-past-32-bits.patch is for the 32-bit off_t of Android's 32-bit ABIs.
-# old.bin, new.bin and valid.patch beside them are committed inputs, the same bytes as protocol-ios's: valid.patch was
+# old.bin, new.bin and valid.patch beside them are committed inputs, the same bytes as core-ios's: valid.patch was
 # written once by bsdiff 4.3 from old.bin to new.bin, and nothing here regenerates it.
 set -euo pipefail
 cd "$(dirname "$0")/assets/bspatch"

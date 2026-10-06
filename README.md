@@ -1,6 +1,6 @@
-# protocol-android
+# core-android
 
-`com.hotcodepush:protocol-android` is the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader with its signature check and the byte-level patches it applies from delta packs, the state machine and the debug screen behind every HotCodePush SDK on Android, held to the same fixture suite as the JavaScript and iOS clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
+`com.hotcodepush:core-android` is the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader with its signature check and the byte-level patches it applies from delta packs, the state machine and the debug screen behind every HotCodePush SDK on Android, held to the same fixture suite as the JavaScript and iOS clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
 
 ## Installation
 
@@ -12,7 +12,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.hotcodepush-team:protocol-android:<sha>'
+    implementation 'com.github.hotcodepush-team:core-android:<sha>'
 }
 ```
 
@@ -21,8 +21,8 @@ The library supports Android 6.0 (API 23) and later.
 ## Usage
 
 ```kotlin
-import com.hotcodepush.protocol.ChannelIndex
-import com.hotcodepush.protocol.Evaluator
+import com.hotcodepush.core.ChannelIndex
+import com.hotcodepush.core.Evaluator
 import org.json.JSONObject
 
 val index = ChannelIndex.fromJson(JSONObject(body))
