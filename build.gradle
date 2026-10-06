@@ -17,7 +17,8 @@ apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'maven-publish'
 
 group = 'com.hotcodepush'
-version = '0.0.0'
+// Until the library is on Maven Central, a version is the full sha of the commit it is built from.
+version = providers.exec { commandLine 'git', 'rev-parse', 'HEAD' }.standardOutput.asText.get().trim()
 
 android {
     namespace = 'com.hotcodepush.core'
@@ -88,13 +89,22 @@ tasks.withType(Test).configureEach {
     inputs.dir('node_modules/@hotcodepush/protocol').withPropertyName('protocolPackage').withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
-// The release AAR as a Maven publication, which JitPack builds for a commit as com.github.hotcodepush-team:core-android:<sha>.
+// The release AAR as a Maven publication; CI publishes it into its checkout of the maven branch, the directory -PmavenBranchDir names.
 afterEvaluate {
     publishing {
         publications {
             release(MavenPublication) {
                 from components.release
                 artifactId = 'core-android'
+            }
+        }
+        def mavenBranchDir = findProperty('mavenBranchDir')
+        if (mavenBranchDir) {
+            repositories {
+                maven {
+                    name = 'mavenBranch'
+                    url = file(mavenBranchDir)
+                }
             }
         }
     }

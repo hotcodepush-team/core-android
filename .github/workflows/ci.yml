@@ -27,6 +27,15 @@ jobs:
       - run: npm ci
       - run: ./gradlew lint test assembleRelease --console=plain
 
+  publish:
+    needs: android
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      ref: ${{ github.sha }}
+
   device:
     name: Run the on-device tests on the API ${{ matrix.api-level }} ${{ matrix.arch }} emulator
     runs-on: ubuntu-latest

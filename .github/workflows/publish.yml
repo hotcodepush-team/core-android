@@ -1,0 +1,52 @@
+name: Publish
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The full sha of the commit to publish
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish the library onto the maven branch
+    runs-on: ubuntu-latest
+    # Every publish commits onto the tip of the maven branch, so one runs at a time.
+    concurrency:
+      group: maven-branch
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/checkout@v7
+        with:
+          ref: maven
+          path: maven-branch
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: Refuse a version the branch already holds
+        run: test ! -e "maven-branch/com/hotcodepush/core-android/$(git rev-parse HEAD)"
+      - run: ./gradlew publishReleasePublicationToMavenBranchRepository -PmavenBranchDir=maven-branch --console=plain
+      - name: Commit and push the version
+        working-directory: maven-branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .
+          git commit -m "publish: core-android at $(git -C .. rev-parse HEAD)"
+          git push
