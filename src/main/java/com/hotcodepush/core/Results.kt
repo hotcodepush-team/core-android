@@ -111,8 +111,9 @@ data class StateResult(
 
 enum class ChannelSource(val wire: String) { RUNTIME("runtime"), CONFIG("config") }
 
-data class ChannelResult(val id: String, val name: String?, val source: ChannelSource) {
-    fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name ?: JSONObject.NULL).put("source", source.wire)
+/** `id` is `null` while no id is known: a build without a channel, or a runtime name no sync has resolved yet. */
+data class ChannelResult(val id: String?, val name: String?, val source: ChannelSource) {
+    fun toJson(): JSONObject = JSONObject().put("id", id ?: JSONObject.NULL).put("name", name ?: JSONObject.NULL).put("source", source.wire)
 }
 
 data class DeviceResult(

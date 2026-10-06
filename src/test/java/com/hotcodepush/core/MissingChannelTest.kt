@@ -64,7 +64,7 @@ class MissingChannelTest {
         assertTrue(state.unsentEvents.isEmpty())
         assertNull(state.acknowledgedReport)
         assertNull(harness.core.getState().lastReportAt)
-        assertEquals(ChannelResult("", null, ChannelSource.CONFIG), harness.core.channel())
+        assertEquals(ChannelResult(null, null, ChannelSource.CONFIG), harness.core.channel())
     }
 
     @Test
@@ -121,7 +121,7 @@ class MissingChannelTest {
         harness.core.setChannel(ChannelChoice.Id("gone"))
         assertEquals(failed, harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(listOf("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/gone/android/v1/index.json"), harness.http.requests.map { it.first })
-        assertEquals(ChannelResult("", null, ChannelSource.CONFIG), harness.core.channel())
+        assertEquals(ChannelResult(null, null, ChannelSource.CONFIG), harness.core.channel())
     }
 
     @Test

@@ -350,8 +350,8 @@ class Core(
 
     fun channel(): ChannelResult = when (val choice = state.channel) {
         is ChannelChoice.Id -> ChannelResult(choice.id, null, ChannelSource.RUNTIME)
-        is ChannelChoice.Name -> ChannelResult(resolvedChannelName?.takeIf { it.first == choice.name }?.second ?: "", choice.name, ChannelSource.RUNTIME)
-        null -> ChannelResult(configuration.channelId ?: "", null, ChannelSource.CONFIG)
+        is ChannelChoice.Name -> ChannelResult(resolvedChannelName?.takeIf { it.first == choice.name }?.second, choice.name, ChannelSource.RUNTIME)
+        null -> ChannelResult(configuration.channelId, null, ChannelSource.CONFIG)
     }
 
     suspend fun setChannel(choice: ChannelChoice?) = lock.withLock {
@@ -664,11 +664,14 @@ class Core(
         }
     }
 
-    /** The facts the server should hold: the report when they differ from the acknowledged ones or the month began, else nothing. */
+    /**
+     * The facts the server should hold: the report when they differ from the acknowledged ones or the month began, else nothing.
+     * A device without a channel id — a runtime name not yet resolved, a build that carries none — reports nothing: a row for it would mislead.
+     */
     private fun buildDeviceReport(): DeviceReport? {
         val channel = channel()
-        if (channel.id.isEmpty()) return null
-        val report = DeviceReport(state.attributes, device.binaryBuild, device.binaryVersion, channel.id, channel.source, configuration.embeddedBundleId, configuration.fingerprint, device.osVersion, state.currentRelease?.id, runtimeVersion = null)
+        val channelId = channel.id ?: return null
+        val report = DeviceReport(state.attributes, device.binaryBuild, device.binaryVersion, channelId, channel.source, configuration.embeddedBundleId, configuration.fingerprint, device.osVersion, state.currentRelease?.id, runtimeVersion = null)
         val reportedAt = state.reportedAt
         val isAcknowledged = report == state.acknowledgedReport && reportedAt != null && resolveMonth(reportedAt) == resolveMonth(clock.now())
         return if (isAcknowledged) null else report

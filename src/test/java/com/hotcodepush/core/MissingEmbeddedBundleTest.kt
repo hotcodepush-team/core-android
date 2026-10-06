@@ -140,12 +140,13 @@ class MissingEmbeddedBundleTest {
     }
 
     @Test
-    fun shouldSayOnTheDebugReportThatTheBuildEmbedsNoBundle() = runBlocking {
+    fun shouldSayOnTheDebugReportThatTheBuildEmbedsNoBundleAndThatSuchABuildResolvesNoChannelName() = runBlocking {
         val harness = Harness(configurationWithoutEmbeddedBundle(channelId = null), isDebugBuild = true)
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
         val text = DebugReport.text(harness.core.debugSnapshot())
         assertTrue(text, text.contains("Embedded bundle: none: the build embeds no bundle, live updates are off in it"))
+        assertTrue(text, text.contains("Channel id: none: a build without an embedded bundle resolves no channel name"))
         assertTrue(text, text.contains("Result: SKIPPED DEBUG_BUILD"))
     }
 }

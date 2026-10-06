@@ -459,6 +459,17 @@ class CoreTest {
     }
 
     @Test
+    fun shouldAnswerNoIdForARuntimeNameBeforeASyncResolvedItAndTheIdAfter() = runBlocking {
+        val harness = Harness()
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "c-staging").put("name", "staging"))))
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/c-staging/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "c-staging", "android", false, null, emptyList(), emptyList()).toJson())
+        harness.core.setChannel(ChannelChoice.Name("staging"))
+        assertEquals(ChannelResult(null, "staging", ChannelSource.RUNTIME), harness.core.channel())
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(ChannelResult("c-staging", "staging", ChannelSource.RUNTIME), harness.core.channel())
+    }
+
+    @Test
     fun shouldMergeAttributesAndRefuseInvalidOnes() = runBlocking {
         val harness = Harness()
         harness.core.setAttributes(mapOf("plan" to "beta", "userId" to "42"))

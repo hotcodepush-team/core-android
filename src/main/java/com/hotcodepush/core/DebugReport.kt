@@ -59,7 +59,7 @@ object DebugReport {
         return DebugSection(
             "Channel",
             listOf(
-                DebugRow("Channel id", describeChannelId(channel)),
+                DebugRow("Channel id", describeChannelId(channel, snapshot.configuration)),
                 DebugRow("Name", channel.name ?: "none"),
                 DebugRow("Source", channel.source.wire),
             ),
@@ -132,9 +132,10 @@ object DebugReport {
     }
 
     /** The id in effect; without one, a runtime name waits for its first sync and a build without a channel says why it has none. */
-    private fun describeChannelId(channel: ChannelResult): String = when {
-        channel.id.isNotEmpty() -> channel.id
+    private fun describeChannelId(channel: ChannelResult, configuration: Configuration): String = when {
+        channel.id != null -> channel.id
         channel.source == ChannelSource.RUNTIME -> "unresolved"
+        configuration.embeddedBundleManifest == null -> "none: a build without an embedded bundle resolves no channel name"
         else -> "none: the build carries no channel, it was built without a token or offline"
     }
 

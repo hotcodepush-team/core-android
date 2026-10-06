@@ -22,11 +22,12 @@ class ContractTest {
 
     @Test
     fun shouldCarryEveryDeviceKeyWithNullsForTheEmptyOnes() = runBlocking {
-        val json = Harness(Fixture.configuration(fingerprint = null)).core.deviceResult().toJson()
+        val json = Harness(Fixture.configuration(fingerprint = null, channelId = null)).core.deviceResult().toJson()
         assertEquals(setOf("id", "platform", "binaryVersion", "binaryBuild", "osVersion", "sdkVersion", "fingerprint", "channel", "attributes"), keys(json))
         assertTrue(json.isNull("fingerprint"))
         val channel = json.getJSONObject("channel")
         assertEquals(setOf("id", "name", "source"), keys(channel))
+        assertTrue(channel.isNull("id"))
         assertTrue(channel.isNull("name"))
     }
 
