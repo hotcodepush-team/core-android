@@ -13,6 +13,9 @@ class FakeHttpClient : HttpClient {
     val posts = mutableListOf<Triple<String, Map<String, String>, ByteArray>>()
     var isOffline = false
 
+    /** Runs once inside the next post, before it answers: what the app does while a batch is on its way. */
+    var whilePosting: (suspend () -> Unit)? = null
+
     fun stub(url: String, status: Int = 200, headers: Map<String, String> = emptyMap(), body: ByteArray) {
         stubs[url] = Stub(status, headers, body)
     }
@@ -28,8 +31,13 @@ class FakeHttpClient : HttpClient {
 
     override suspend fun post(url: String, headers: Map<String, String>, body: ByteArray): HttpResponse {
         posts += Triple(url, headers, body)
+        whilePosting?.let { block ->
+            whilePosting = null
+            block()
+        }
         if (isOffline) throw java.io.IOException("offline")
-        val stub = stubs[url] ?: return HttpResponse(404, emptyMap(), ByteArray(0))
+        // A post no test stubbed gets no answer, which keeps the outbox: a 404 would refuse the batch and drop its events.
+        val stub = stubs[url] ?: throw java.io.IOException("no answer")
         return HttpResponse(stub.status, stub.headers, stub.body)
     }
 

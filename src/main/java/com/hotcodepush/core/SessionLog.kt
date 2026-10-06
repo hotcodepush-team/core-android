@@ -24,11 +24,14 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
             else -> null
         }
 
-        /** One batch to the events endpoint: acknowledged, or kept for the next sync. */
-        fun ofReport(eventCount: Int, status: Int?, at: Long): LogEntry = when (status) {
-            null -> LogEntry(at, "REPORT_FAILED", "$eventCount events kept for the next sync: the events endpoint could not be reached")
-            202 -> LogEntry(at, "REPORTED", "$eventCount events acknowledged")
-            else -> LogEntry(at, "REPORT_FAILED", "$eventCount events kept for the next sync: HTTP $status")
+        /** A batch's answer: acknowledged, refused and its events dropped, or failed and its events kept for the next sync. */
+        internal fun ofBatch(answer: BatchAnswer, eventCount: Int, at: Long): LogEntry = when (answer) {
+            is BatchAnswer.Acknowledged -> LogEntry(at, "REPORTED", "$eventCount events acknowledged")
+            is BatchAnswer.Refused -> LogEntry(at, "REPORT_REFUSED", "$eventCount events dropped: HTTP ${answer.status}")
+            is BatchAnswer.Failed -> when (answer.status) {
+                null -> LogEntry(at, "REPORT_FAILED", "$eventCount events kept for the next sync: the events endpoint could not be reached")
+                else -> LogEntry(at, "REPORT_FAILED", "$eventCount events kept for the next sync: HTTP ${answer.status}")
+            }
         }
 
         private fun resolveCycleSentence(result: SyncResult): String {

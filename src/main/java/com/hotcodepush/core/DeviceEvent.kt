@@ -130,4 +130,24 @@ data class DeviceEventsResponse(val reportedAt: Long) {
     }
 }
 
+/** What the events endpoint's answer means for a batch: taken, refused for good, or kept for the next sync. */
+internal sealed class BatchAnswer {
+    data class Acknowledged(val reportedAt: Long) : BatchAnswer()
+    data class Refused(val status: Int) : BatchAnswer()
+
+    /** No response, or one that asks for the batch again: `null` when the endpoint could not be reached. */
+    data class Failed(val status: Int?) : BatchAnswer()
+
+    companion object {
+        /** A readable `202` takes the batch; a 4xx other than 408 and 429 refuses it for good; anything else asks for it again. */
+        fun of(response: HttpResponse?): BatchAnswer = when (val status = response?.status) {
+            null -> Failed(null)
+            202 -> runCatching { DeviceEventsResponse.fromJson(JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()?.let { Acknowledged(it.reportedAt) } ?: Failed(status)
+            408, 429 -> Failed(status)
+            in 400..499 -> Refused(status)
+            else -> Failed(status)
+        }
+    }
+}
+
 internal fun JSONObject.toStringMap(): Map<String, String> = keys().asSequence().associateWith { getString(it) }

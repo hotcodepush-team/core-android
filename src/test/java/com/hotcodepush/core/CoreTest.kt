@@ -544,6 +544,76 @@ class CoreTest {
     }
 
     @Test
+    fun shouldDropTheBatchsEventsAndKeepTheReportUnacknowledgedWhenTheEndpointAnswers400() = runBlocking {
+        assertBatchRefused(400)
+    }
+
+    @Test
+    fun shouldDropTheBatchsEventsAndKeepTheReportUnacknowledgedWhenTheEndpointAnswers404() = runBlocking {
+        assertBatchRefused(404)
+    }
+
+    @Test
+    fun shouldDropTheBatchsEventsAndKeepTheReportUnacknowledgedWhenTheEndpointAnswers422() = runBlocking {
+        assertBatchRefused(422)
+    }
+
+    @Test
+    fun shouldKeepTheOutboxWhenTheEndpointAnswers408() = runBlocking {
+        val harness = Harness()
+        harness.http.stub(Fixture.eventsUrl(), status = 408, body = ByteArray(0))
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(1, harness.http.posts.size)
+        assertEquals(2, StateStore(harness.store).unsentEvents.size)
+        assertNull(StateStore(harness.store).reportedAt)
+    }
+
+    @Test
+    fun shouldKeepTheOutboxWhenTheEndpointDoesNotAnswer() = runBlocking {
+        val harness = Harness()
+        harness.http.stub(Fixture.eventsUrl(), status = 500, body = ByteArray(0))
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.http.isOffline = true
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(2, harness.http.posts.size)
+        assertEquals(2, StateStore(harness.store).unsentEvents.size)
+        assertEquals("2 events kept for the next sync: the events endpoint could not be reached", harness.core.debugSnapshot().log.last().message)
+    }
+
+    @Test
+    fun shouldKeepAnEventEnqueuedWhileARefusedBatchWasInFlight() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        harness.http.stub(Fixture.eventsUrl(), status = 400, body = ByteArray(0))
+        harness.http.whilePosting = { harness.core.notifyReady() }
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        harness.core.sync(SyncTrigger.MANUAL)
+        val sent = JSONObject(String(harness.http.posts.first().third))
+        assertEquals(listOf("checked", "downloaded", "applied"), sent.getJSONArray("events").map { it.getString("type") })
+        assertEquals(listOf(DeviceEvent.confirmed("r1")), StateStore(harness.store).unsentEvents)
+    }
+
+    @Test
+    fun shouldKeepAnEventEnqueuedWhileAnAcknowledgedBatchWasInFlightWhenTheOutboxWasAtItsCap() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        harness.acknowledgeEvents()
+        harness.http.whilePosting = { harness.core.notifyReady() }
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        StateStore(harness.store).unsentEvents = List(200) { DeviceEvent.applied("r-old-$it") }
+        harness.core.sync(SyncTrigger.MANUAL)
+        val sent = JSONObject(String(harness.http.posts.first().third))
+        assertEquals(200, sent.getJSONArray("events").length())
+        assertEquals(listOf(DeviceEvent.confirmed("r1")), StateStore(harness.store).unsentEvents)
+    }
+
+    @Test
     fun shouldSendTheReportOncePerChangeAndAgainWhenTheMonthBegan() = runBlocking {
         val harness = Harness()
         harness.acknowledgeEvents()
@@ -1090,6 +1160,24 @@ class CoreTest {
         assertEquals("r2", harness.core.getState().currentRelease?.id)
         startAgain(harness, configuration)
         assertEquals("r1", harness.core.getState().currentRelease?.id)
+    }
+
+    /** A batch the endpoint refuses loses its events and leaves the report unacknowledged, so the next sync sends the report alone. */
+    private suspend fun assertBatchRefused(status: Int) {
+        val harness = Harness()
+        harness.http.stub(Fixture.eventsUrl(), status = status, body = ByteArray(0))
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        val state = StateStore(harness.store)
+        assertTrue(state.unsentEvents.isEmpty())
+        assertNull(state.reportedAt)
+        assertNull(state.acknowledgedReport)
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(2, harness.http.posts.size)
+        val next = JSONObject(String(harness.http.posts[1].third))
+        assertEquals(0, next.getJSONArray("events").length())
+        assertTrue(!next.isNull("report"))
     }
 
     /** The third run of an app whose second run confirmed v2: its start finds nothing to switch and nothing to roll back. */

@@ -56,6 +56,9 @@ class Core(
     private var hasStartSettled = false
     private var isStartSyncPending = false
     private var isSendingDeviceEvents = false
+
+    /** The events enqueued while a batch is on its way: never part of it, so they stay in the outbox whatever the answer. */
+    private var eventCountEnqueuedInFlight = 0
     private var backgroundedAt: Long? = null
     private var resolvedChannelName: Pair<String, String>? = null
 
@@ -648,10 +651,14 @@ class Core(
 
     private fun enqueueDeviceEvent(event: DeviceEvent) {
         state.unsentEvents = (state.unsentEvents + event).takeLast(200)
+        if (isSendingDeviceEvents) eventCountEnqueuedInFlight += 1
         LogEntry.ofDeviceEvent(event, clock.now())?.let(log::record)
     }
 
-    /** One batch to the events endpoint, the outbox and the report when it changed: the 202 clears what was sent, anything else keeps it for the next sync. */
+    /**
+     * One batch to the events endpoint, the outbox as it stands and the report when it changed: a readable 202 takes both,
+     * a refusal drops the events and leaves the report unacknowledged, anything else keeps both for the next sync.
+     */
     private suspend fun sendDeviceEvents() {
         val request = lock.withLock {
             if (isSendingDeviceEvents || isDisabledInThisBuild) return
@@ -659,19 +666,32 @@ class Core(
             val report = buildDeviceReport()
             if (events.isEmpty() && report == null) return
             isSendingDeviceEvents = true
+            eventCountEnqueuedInFlight = 0
             DeviceEventsRequest(state.deviceId, events, device.platform, report, device.sdkVersion)
         }
         val url = "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/events"
-        val response = runCatching { httpClient.post(url, mapOf("Content-Type" to "application/json"), request.toJson().toString().toByteArray()) }.getOrNull()
-        log.record(LogEntry.ofReport(request.events.size, response?.status, clock.now()))
-        val acknowledged = response?.takeIf { it.status == 202 }?.let { runCatching { DeviceEventsResponse.fromJson(org.json.JSONObject(String(it.body, Charsets.UTF_8))) }.getOrNull() }
+        val answer = BatchAnswer.of(runCatching { httpClient.post(url, mapOf("Content-Type" to "application/json"), request.toJson().toString().toByteArray()) }.getOrNull())
+        log.record(LogEntry.ofBatch(answer, request.events.size, clock.now()))
         lock.withLock {
             isSendingDeviceEvents = false
-            if (acknowledged == null) return
-            state.unsentEvents = state.unsentEvents.drop(request.events.size)
-            state.reportedAt = acknowledged.reportedAt
-            request.report?.let { state.acknowledgedReport = it }
+            when (answer) {
+                is BatchAnswer.Acknowledged -> {
+                    dropBatchEvents()
+                    state.reportedAt = answer.reportedAt
+                    request.report?.let { state.acknowledgedReport = it }
+                }
+                is BatchAnswer.Refused -> dropBatchEvents()
+                is BatchAnswer.Failed -> Unit
+            }
         }
+    }
+
+    /**
+     * The batch's events leave the outbox: what stays is exactly what was enqueued while the batch was on its way, the newest 200 of it,
+     * also when the outbox's cap dropped events of the batch meanwhile.
+     */
+    private fun dropBatchEvents() {
+        state.unsentEvents = state.unsentEvents.takeLast(eventCountEnqueuedInFlight)
     }
 
     /**

@@ -3,6 +3,7 @@ package com.hotcodepush.core
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -101,7 +102,7 @@ class DebugReportTest {
     }
 
     @Test
-    fun shouldLogARefusedReportAndKeepTheOutbox() = runBlocking {
+    fun shouldLogARateLimitedReportAndKeepTheOutbox() = runBlocking {
         val harness = Harness()
         harness.http.stubJson(Fixture.eventsUrl(), JSONObject().put("error", "E_RATE_LIMITED"), status = 429)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
@@ -111,6 +112,32 @@ class DebugReportTest {
         assertEquals("REPORT_FAILED", log.last().code)
         assertEquals("2 events kept for the next sync: HTTP 429", log.last().message)
         assertEquals(2, StateStore(harness.store).unsentEvents.size)
+    }
+
+    @Test
+    fun shouldLogARefusedBatchWithTheCountAndTheStatus() = runBlocking {
+        val harness = Harness()
+        harness.http.stubJson(Fixture.eventsUrl(), JSONObject().put("error", "E_VALIDATION"), status = 422)
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        val log = harness.core.debugSnapshot().log
+        assertEquals("REPORT_REFUSED", log.last().code)
+        assertEquals("2 events dropped: HTTP 422", log.last().message)
+    }
+
+    @Test
+    fun shouldLogAnUnreadableAcknowledgementAsAFailedReport() = runBlocking {
+        val harness = Harness()
+        harness.http.stub(Fixture.eventsUrl(), status = 202, body = "accepted".toByteArray())
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        val log = harness.core.debugSnapshot().log
+        assertEquals("REPORT_FAILED", log.last().code)
+        assertEquals("2 events kept for the next sync: HTTP 202", log.last().message)
+        assertEquals(2, StateStore(harness.store).unsentEvents.size)
+        assertNull(StateStore(harness.store).reportedAt)
     }
 
     @Test
