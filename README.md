@@ -4,15 +4,15 @@
 
 ## Installation
 
-The library is not on Maven Central yet; JitPack builds any commit on request, and a consumer pins one commit and bumps it deliberately, never a branch.
+The library is not on Maven Central yet; CI publishes every commit on `main` to this repository's `maven` branch, versioned by the commit's full sha, and a consumer pins one commit and bumps it deliberately.
 
 ```groovy
 repositories {
-    maven { url 'https://jitpack.io' }
+    maven { url 'https://raw.githubusercontent.com/hotcodepush-team/core-android/maven/' }
 }
 
 dependencies {
-    implementation 'com.github.hotcodepush-team:core-android:<sha>'
+    implementation 'com.hotcodepush:core-android:<full sha>'
 }
 ```
 
@@ -52,7 +52,7 @@ npm ci                       # the protocol fixtures the tests read
 ./gradlew lint test
 ```
 
-`npm run verify` adds the release build; `./gradlew publishToMavenLocal` builds the Maven publication JitPack serves.
+`npm run verify` adds the release build; `./gradlew publishToMavenLocal` installs the Maven publication, versioned by the full sha of `HEAD`, in the local Maven repository.
 
 `./gradlew connectedDebugAndroidTest` runs the tests that need a device on a running emulator or an attached device: the signature fixtures, bspatch on its hostile patches and the patch cases of the protocol's fixtures. CI runs them on every push and pull request on two emulators, a 32-bit x86 one at API 23, where bspatch runs on a 32-bit `off_t`, and an x86_64 one at API 35.
 
