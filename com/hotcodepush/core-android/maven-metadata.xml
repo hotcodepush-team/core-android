@@ -3,12 +3,13 @@
   <groupId>com.hotcodepush</groupId>
   <artifactId>core-android</artifactId>
   <versioning>
-    <latest>afcec3ad7ac6d55fa223c788aa2e57fe8fa4df0b</latest>
-    <release>afcec3ad7ac6d55fa223c788aa2e57fe8fa4df0b</release>
+    <latest>ad213fc6febeeabfc654ffac36119c64e6651ed5</latest>
+    <release>ad213fc6febeeabfc654ffac36119c64e6651ed5</release>
     <versions>
       <version>31be61880906c762ff8e61cf6bd038187f9dcc51</version>
       <version>afcec3ad7ac6d55fa223c788aa2e57fe8fa4df0b</version>
+      <version>ad213fc6febeeabfc654ffac36119c64e6651ed5</version>
     </versions>
-    <lastUpdated>20261006125435</lastUpdated>
+    <lastUpdated>20261006170527</lastUpdated>
   </versioning>
 </metadata>
