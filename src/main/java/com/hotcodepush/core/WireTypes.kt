@@ -102,13 +102,12 @@ data class IndexRelease(
 }
 
 enum class ConditionType(val wire: String) {
-    BINARY("binary"), RUNTIME("runtime"), FINGERPRINT("fingerprint"), OS("os"), ATTRIBUTE("attribute"), DEVICE("device")
+    BINARY("binary"), FINGERPRINT("fingerprint"), OS("os"), ATTRIBUTE("attribute"), DEVICE("device")
 }
 
 /** A condition of an index entry; a type this SDK does not know is kept and fails closed. */
 sealed class Condition {
     data class Binary(val range: String) : Condition()
-    data class Runtime(val version: String) : Condition()
     data class Fingerprint(val hash: String) : Condition()
     data class Os(val range: String) : Condition()
     data class Device(val hashedIds: List<String>) : Condition()
@@ -118,7 +117,6 @@ sealed class Condition {
     val type: ConditionType?
         get() = when (this) {
             is Binary -> ConditionType.BINARY
-            is Runtime -> ConditionType.RUNTIME
             is Fingerprint -> ConditionType.FINGERPRINT
             is Os -> ConditionType.OS
             is Device -> ConditionType.DEVICE
@@ -128,7 +126,6 @@ sealed class Condition {
 
     fun toJson(): JSONObject = when (this) {
         is Binary -> JSONObject().put("type", "binary").put("range", range)
-        is Runtime -> JSONObject().put("type", "runtime").put("version", version)
         is Fingerprint -> JSONObject().put("type", "fingerprint").put("hash", hash)
         is Os -> JSONObject().put("type", "os").put("range", range)
         is Device -> JSONObject().put("type", "device").put("hashedIds", JSONArray(hashedIds))
@@ -139,7 +136,6 @@ sealed class Condition {
     companion object {
         fun fromJson(json: JSONObject): Condition = when (val type = json.getWireString("type")) {
             "binary" -> Binary(json.getWireString("range", WireRule.NON_EMPTY))
-            "runtime" -> Runtime(json.getWireString("version", WireRule.NON_EMPTY))
             "fingerprint" -> Fingerprint(json.getWireString("hash", WireRule.NON_EMPTY))
             "os" -> Os(json.getWireString("range", WireRule.NON_EMPTY))
             "device" -> Device(json.getJSONArray("hashedIds").toWireStringList())

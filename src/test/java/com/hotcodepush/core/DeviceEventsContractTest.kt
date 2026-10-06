@@ -67,9 +67,9 @@ class DeviceEventsContractTest {
 
     @Test
     fun shouldCarryEveryReportKeyWithNullsForTheEmptyOnes() {
-        val report = DeviceReport(emptyMap(), "57", "2.4.1", "c1", ChannelSource.CONFIG, embeddedBundleId = null, fingerprint = null, osVersion = "14", releaseId = null, runtimeVersion = null).toJson()
-        assertEquals(setOf("attributes", "binaryBuild", "binaryVersion", "channelId", "channelSource", "embeddedBundleId", "fingerprint", "osVersion", "releaseId", "runtimeVersion"), keys(report))
-        for (key in listOf("embeddedBundleId", "fingerprint", "releaseId", "runtimeVersion")) assertTrue(key, report.isNull(key))
+        val report = DeviceReport(emptyMap(), "57", "2.4.1", "c1", ChannelSource.CONFIG, embeddedBundleId = null, fingerprint = null, osVersion = "14", releaseId = null).toJson()
+        assertEquals(setOf("attributes", "binaryBuild", "binaryVersion", "channelId", "channelSource", "embeddedBundleId", "fingerprint", "osVersion", "releaseId"), keys(report))
+        for (key in listOf("embeddedBundleId", "fingerprint", "releaseId")) assertTrue(key, report.isNull(key))
         val request = DeviceEventsRequest("d1", emptyList(), "android", null, "0.0.0").toJson()
         assertEquals(setOf("deviceId", "events", "platform", "report", "sdkVersion"), keys(request))
         assertTrue(request.isNull("report"))
@@ -77,9 +77,9 @@ class DeviceEventsContractTest {
 
     @Test
     fun shouldEncodeEveryEventKindAndTheReportAsTheProtocolsSchemaAcceptsThem() {
-        val report = DeviceReport(mapOf("plan" to "pro"), "57", "2.4.1", "c1", ChannelSource.RUNTIME, "embedded", "fp1:abc", "14", "r2", runtimeVersion = null)
+        val report = DeviceReport(mapOf("plan" to "pro"), "57", "2.4.1", "c1", ChannelSource.RUNTIME, "embedded", "fp1:abc", "14", "r2")
         assertEquals("", resolveSchemaIssues(DeviceEventsRequest("d1", events, "android", report, "0.0.0").toJson()))
-        val empty = DeviceReport(emptyMap(), "57", "2.4.1", "c1", ChannelSource.CONFIG, null, null, "14", null, null)
+        val empty = DeviceReport(emptyMap(), "57", "2.4.1", "c1", ChannelSource.CONFIG, null, null, "14", null)
         assertEquals("", resolveSchemaIssues(DeviceEventsRequest("d1", emptyList(), "android", empty, "0.0.0").toJson()))
         assertEquals("", resolveSchemaIssues(DeviceEventsRequest("d1", emptyList(), "android", null, "0.0.0").toJson()))
     }

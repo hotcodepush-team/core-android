@@ -17,7 +17,6 @@ data class DeviceInfo(
     val osVersion: String,
     /** The server time of the last acknowledged report, for the spending cap. */
     val reportedAt: Long?,
-    val runtimeVersion: String?,
 )
 
 data class Skip(val reason: SkippedReason, val condition: ConditionType? = null)
@@ -90,7 +89,6 @@ object Evaluator {
         is Condition.Device -> Hashing.deviceIdHash(device.deviceId) in condition.hashedIds
         is Condition.Fingerprint -> device.fingerprint != null && device.fingerprint == condition.hash
         is Condition.Os -> VersionRange.parseVersion(device.osVersion)?.let { VersionRange.isVersionInRange(it, condition.range) == true } ?: false
-        is Condition.Runtime -> device.runtimeVersion != null && device.runtimeVersion == condition.version
         is Condition.Unknown -> false
     }
 

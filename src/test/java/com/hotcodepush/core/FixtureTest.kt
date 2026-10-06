@@ -52,7 +52,6 @@ class FixtureTest {
         fingerprint = json.optNullableString("fingerprint"),
         osVersion = json.getString("osVersion"),
         reportedAt = json.optNullableString("reportedAt")?.let(Iso8601::parse),
-        runtimeVersion = json.optNullableString("runtimeVersion"),
     )
 
     private fun load(path: String): JSONObject = JSONObject(File(fixturesDirectory, path).readText())

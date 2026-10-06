@@ -82,8 +82,6 @@ data class DeviceReport(
     val fingerprint: String?,
     val osVersion: String,
     val releaseId: String?,
-    /** The runtime version a bridge reports; this SDK has none. */
-    val runtimeVersion: String?,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("attributes", JSONObject(attributes))
@@ -95,7 +93,6 @@ data class DeviceReport(
         .put("fingerprint", fingerprint ?: JSONObject.NULL)
         .put("osVersion", osVersion)
         .put("releaseId", releaseId ?: JSONObject.NULL)
-        .put("runtimeVersion", runtimeVersion ?: JSONObject.NULL)
 
     companion object {
         fun fromJson(json: JSONObject) = DeviceReport(
@@ -108,7 +105,6 @@ data class DeviceReport(
             fingerprint = json.optNullableString("fingerprint"),
             osVersion = json.getString("osVersion"),
             releaseId = json.optNullableString("releaseId"),
-            runtimeVersion = json.optNullableString("runtimeVersion"),
         )
     }
 }
