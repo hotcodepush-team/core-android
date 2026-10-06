@@ -138,7 +138,7 @@ class FixtureTest {
     fun shouldReadEveryResourceFileFixture() {
         for (case in cases("resource-files.json", "cases")) {
             val configuration = Configuration.fromJson(case.getJSONObject("resourceFile"))
-            assertEquals(case.getString("name"), EmbeddedBundleManifest.fromJson(case.getJSONObject("embeddedBundleManifest")), configuration.embeddedBundleManifest)
+            assertEquals(case.getString("name"), case.getNullableObject("embeddedBundleManifest")?.let(EmbeddedBundleManifest::fromJson), configuration.embeddedBundleManifest)
         }
     }
 

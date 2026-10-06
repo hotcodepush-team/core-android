@@ -618,8 +618,9 @@ class Core(
         }
     }
 
+    /** Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `DEBUG_BUILD`. */
     private val isDisabledInThisBuild: Boolean
-        get() = device.isDebugBuild && !configuration.enabledInDebugBuilds
+        get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.enabledInDebugBuilds)
 
     private fun deviceInfo() = DeviceInfo(null, state.attributes, device.binaryBuild, device.binaryVersion, configuration.builtAt, state.currentRelease, state.deviceId, state.failedBundleIds, configuration.fingerprint, device.osVersion, state.reportedAt, null)
 

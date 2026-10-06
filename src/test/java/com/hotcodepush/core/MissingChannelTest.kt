@@ -26,8 +26,9 @@ class MissingChannelTest {
     @Test
     fun shouldReadANullChannelFromTheFixtureOfABuildWithoutAChannel() {
         val withoutChannel = resourceFiles.single { it.getString("name").contains("without a channel") }
+        val withoutEmbeddedBundle = resourceFiles.single { it.isNull("embeddedBundleManifest") }
         assertNull(Configuration.fromJson(withoutChannel.getJSONObject("resourceFile")).channelId)
-        for (case in resourceFiles - withoutChannel) assertEquals(case.getString("name"), "c1", Configuration.fromJson(case.getJSONObject("resourceFile")).channelId)
+        for (case in resourceFiles - withoutChannel - withoutEmbeddedBundle) assertEquals(case.getString("name"), "c1", Configuration.fromJson(case.getJSONObject("resourceFile")).channelId)
     }
 
     @Test

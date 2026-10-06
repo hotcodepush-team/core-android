@@ -68,7 +68,7 @@ object Fixture {
 
     fun embeddedManifest() = EmbeddedBundleManifest(appId = APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File("index.html", Hashing.sha256Hex(embeddedIndexHtml), embeddedIndexHtml.size.toLong())), platforms = listOf("android"))
 
-    fun configuration(installStrategy: InstallStrategy = InstallStrategy.NEXT_START, mandatoryInstallStrategy: MandatoryInstallStrategy = MandatoryInstallStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, autoCheck: Boolean = false, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<DevicePublicKey> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, enabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID): Configuration {
+    fun configuration(installStrategy: InstallStrategy = InstallStrategy.NEXT_START, mandatoryInstallStrategy: MandatoryInstallStrategy = MandatoryInstallStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, autoCheck: Boolean = false, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<DevicePublicKey> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, enabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID, hasEmbeddedBundle: Boolean = true): Configuration {
         val json = JSONObject()
             .put("appId", APP_ID)
             .put("channelId", channelId ?: JSONObject.NULL)
@@ -84,8 +84,8 @@ object Fixture {
             .put("publicKeys", org.json.JSONArray(publicKeys.map { JSONObject().put("der", it.der).put("keyId", it.keyId) }))
             .put("builtAt", Iso8601.format(builtAt))
             .put("fingerprint", fingerprint ?: JSONObject.NULL)
-            .put("embeddedBundleManifest", embeddedManifest().toJson())
-            .put("embeddedBundleId", "embedded")
+            .put("embeddedBundleManifest", if (hasEmbeddedBundle) embeddedManifest().toJson() else JSONObject.NULL)
+            .put("embeddedBundleId", if (hasEmbeddedBundle) "embedded" else JSONObject.NULL)
             .put("filesBaseUrl", FILES_BASE_URL)
             .put("updatesBaseUrl", UPDATES_BASE_URL)
         return Configuration.decode(json.toString())

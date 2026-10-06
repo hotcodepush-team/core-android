@@ -55,7 +55,8 @@ data class Configuration(
     val publicKeys: List<DevicePublicKey>,
     val builtAt: Long,
     val fingerprint: String?,
-    val embeddedBundleManifest: EmbeddedBundleManifest,
+    /** The embedded bundle's files; `null` in a build that bundled no JavaScript, which embeds no bundle and never updates. */
+    val embeddedBundleManifest: EmbeddedBundleManifest?,
     val embeddedBundleId: String?,
     val filesBaseUrl: String,
     val updatesBaseUrl: String,
@@ -81,7 +82,7 @@ data class Configuration(
             publicKeys = json.optJSONArray("publicKeys").map(DevicePublicKey::fromJson),
             builtAt = Iso8601.parse(json.getString("builtAt")),
             fingerprint = json.optNullableString("fingerprint"),
-            embeddedBundleManifest = EmbeddedBundleManifest.fromJson(json.getJSONObject("embeddedBundleManifest")),
+            embeddedBundleManifest = json.getNullableObject("embeddedBundleManifest")?.let(EmbeddedBundleManifest::fromJson),
             embeddedBundleId = json.optNullableString("embeddedBundleId"),
             filesBaseUrl = json.optNullableString("filesBaseUrl") ?: DEFAULT_FILES_BASE_URL,
             updatesBaseUrl = json.optNullableString("updatesBaseUrl") ?: DEFAULT_UPDATES_BASE_URL,

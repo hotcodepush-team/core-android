@@ -74,7 +74,7 @@ object DebugReport {
                 DebugRow("Running", describe(state.currentRelease) ?: "the embedded bundle"),
                 DebugRow("Downloaded", describe(state.nextRelease) ?: "none"),
                 DebugRow("Fallback", describe(state.fallbackRelease) ?: "the embedded bundle"),
-                DebugRow("Embedded bundle", state.embeddedBundleId ?: "not registered"),
+                DebugRow("Embedded bundle", describeEmbeddedBundle(snapshot)),
                 DebugRow("Failed bundles", if (state.failedBundleIds.isEmpty()) "none" else state.failedBundleIds.joinToString(", ")),
             ),
         )
@@ -136,6 +136,12 @@ object DebugReport {
         channel.id.isNotEmpty() -> channel.id
         channel.source == ChannelSource.RUNTIME -> "unresolved"
         else -> "none: the build carries no channel, it was built without a token or offline"
+    }
+
+    /** The registered bundle's id; a build without an embedded bundle says that live updates are off in it. */
+    private fun describeEmbeddedBundle(snapshot: DebugSnapshot): String = when {
+        snapshot.configuration.embeddedBundleManifest == null -> "none: the build embeds no bundle, live updates are off in it"
+        else -> snapshot.state.embeddedBundleId ?: "not registered"
     }
 
     private fun describe(release: Release?): String? = release?.let { "#${it.number} (${it.bundleVersion}), bundle ${it.bundleId}${if (it.isMandatory) ", mandatory" else ""}" }
