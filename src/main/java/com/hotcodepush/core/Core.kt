@@ -77,7 +77,7 @@ class Core(
             startReadyTimer()
             isStartSyncPending = true
         } else if (configuration.autoCheck) {
-            scope.launch { sync(SyncTrigger.START) }
+            startAutomaticCycle(SyncTrigger.START)
         }
         deleteUnusedFiles()
     }
@@ -124,10 +124,16 @@ class Core(
         if (!configuration.autoCheck) return
         val elapsedSeconds = state.lastSyncAt?.let { (clock.now() - it) / 1000.0 }
         if (elapsedSeconds == null || elapsedSeconds >= configuration.checkInterval) {
-            scope.launch { sync(SyncTrigger.RESUME) }
+            startAutomaticCycle(SyncTrigger.RESUME)
             return
         }
         scheduleIntervalSync(configuration.checkInterval - elapsedSeconds)
+    }
+
+    /** The start's, the resume's and the interval's cycle; a device without a channel starts none, since it could only fail. */
+    private fun startAutomaticCycle(trigger: SyncTrigger) {
+        if (!hasChannel) return
+        scope.launch { sync(trigger) }
     }
 
     // The three stages
@@ -478,7 +484,7 @@ class Core(
         }
         if (isStartSyncPending) {
             isStartSyncPending = false
-            if (configuration.autoCheck) scope.launch { sync(SyncTrigger.START) }
+            if (configuration.autoCheck) startAutomaticCycle(SyncTrigger.START)
         }
     }
 
@@ -535,7 +541,7 @@ class Core(
     private fun scheduleIntervalSync(afterSeconds: Double) {
         intervalTimer?.cancel()
         if (!configuration.autoCheck) return
-        intervalTimer = scheduler.schedule(afterSeconds) { scope.launch { sync(SyncTrigger.INTERVAL) } }
+        intervalTimer = scheduler.schedule(afterSeconds) { scope.launch { lock.withLock { startAutomaticCycle(SyncTrigger.INTERVAL) } } }
     }
 
     /** Everything no kept release lists: the served tree of every other bundle first, since its links hold the bytes. */
@@ -590,6 +596,10 @@ class Core(
             }
         }
     }
+
+    /** A device has a channel when the app set one at runtime or the build carries one. */
+    private val hasChannel: Boolean
+        get() = state.channel != null || configuration.channelId != null
 
     private suspend fun fetchChannelIndex(channelId: String): IndexFetch {
         val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/channels/$channelId/${device.platform}/v1/index.json"

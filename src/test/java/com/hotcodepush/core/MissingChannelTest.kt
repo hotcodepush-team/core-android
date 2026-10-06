@@ -11,8 +11,8 @@ import org.junit.Test
 import java.io.File
 
 /**
- * A build whose build step ran without a token or offline carries no channel: it answers `FAILED` with `UNKNOWN_CHANNEL`,
- * requests nothing and reports nothing until a channel is set at runtime.
+ * A build whose build step ran without a token or offline carries no channel: it checks nothing on its own, answers an explicit
+ * call `FAILED` with `UNKNOWN_CHANNEL`, requests nothing and reports nothing until a channel is set at runtime.
  */
 class MissingChannelTest {
     private val v2Content = "<html>v2</html>".toByteArray()
@@ -21,7 +21,8 @@ class MissingChannelTest {
         List(cases.length()) { cases.getJSONObject(it) }
     }
 
-    private fun harness(autoCheck: Boolean = false) = Harness(Fixture.configuration(channelId = null, autoCheck = autoCheck))
+    /** Automatic checks on, so a failure a test sees is the explicit call's own. */
+    private fun harness() = Harness(Fixture.configuration(channelId = null, autoCheck = true))
 
     @Test
     fun shouldReadANullChannelFromTheFixtureOfABuildWithoutAChannel() {
@@ -39,18 +40,115 @@ class MissingChannelTest {
     }
 
     @Test
-    fun shouldFailEveryStageWithUnknownChannelWithoutTouchingTheNetwork() = runBlocking {
-        val harness = harness()
-        harness.acknowledgeEvents()
-        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+    fun shouldFailAnExplicitSyncWithUnknownChannelRequestNothingAndFireUpdateFailedWithTheManualTriggerWhenTheDeviceHasNoChannel() = runBlocking {
+        val harness = harnessWithARelease()
         harness.core.handleAppStart()
         assertEquals(failed, harness.core.sync(SyncTrigger.MANUAL))
+        assertFailedExplicitly(harness)
+        assertEquals(LastCheck(harness.clock.now, SyncTrigger.MANUAL, failed), harness.core.getState().lastCheck)
+    }
+
+    @Test
+    fun shouldFailAnExplicitCheckWithUnknownChannelRequestNothingAndFireUpdateFailedWithTheManualTriggerWhenTheDeviceHasNoChannel() = runBlocking {
+        val harness = harnessWithARelease()
+        harness.core.handleAppStart()
         assertEquals(failed, harness.core.checkForUpdate())
+        assertFailedExplicitly(harness)
+        assertEquals(LastCheck(harness.clock.now, SyncTrigger.MANUAL, failed), harness.core.getState().lastCheck)
+    }
+
+    @Test
+    fun shouldFailAnExplicitDownloadWithUnknownChannelRequestNothingAndFireUpdateFailedWithTheManualTriggerWhenTheDeviceHasNoChannel() = runBlocking {
+        val harness = harnessWithARelease()
+        harness.core.handleAppStart()
         assertEquals(failed, harness.core.downloadUpdate())
+        assertFailedExplicitly(harness)
+    }
+
+    @Test
+    fun shouldSkipAnExplicitSyncWithDebugBuildWhenTheBuildIsDisabledAndTheDeviceHasNoChannel() = runBlocking {
+        val harness = Harness(Fixture.configuration(enabledInDebugBuilds = false, channelId = null), isDebugBuild = true)
+        harness.core.handleAppStart()
+        assertEquals(SyncResult.skipped(null, SkippedReason.DEBUG_BUILD), harness.core.sync(SyncTrigger.MANUAL))
+        assertTrue(harness.listener.failed.isEmpty())
+    }
+
+    @Test
+    fun shouldStartNoCheckAtStartWhenTheDeviceHasNoChannel() = runBlocking {
+        val harness = harnessWithARelease()
+        harness.core.handleAppStart()
+        assertNoCheckStarted(harness)
+    }
+
+    @Test
+    fun shouldStartNoCheckAtTheConfirmationOfANewReleaseWhenTheDeviceHasNoChannel() = runBlocking {
+        val harness = harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.setChannel(ChannelChoice.Id(Fixture.CHANNEL_ID))
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.setChannel(null)
+        val requestCount = harness.http.requests.size
+        harness.loader.served = "b2"
+        harness.restart(Fixture.configuration(channelId = null, autoCheck = true))
+        harness.core.handleAppStart()
+        assertEquals(v2.release.release, harness.core.getState().currentRelease)
+        harness.core.notifyReady()
+        assertEquals(SyncTrigger.MANUAL, StateStore(harness.store).lastCheck?.trigger)
+        assertEquals(requestCount, harness.http.requests.size)
+        assertTrue(harness.listener.failed.isEmpty())
+    }
+
+    @Test
+    fun shouldStartNoCheckOnResumeWhenTheDeviceHasNoChannel() = runBlocking {
+        val harness = harnessWithARelease()
+        harness.core.handleAppStart()
+        harness.core.handleAppPause()
+        harness.clock.now += 1_000_000
+        harness.core.handleAppResume()
+        assertNoCheckStarted(harness)
+    }
+
+    @Test
+    fun shouldStartNoCheckAndArmNoTimerWhenTheIntervalFiresAndTheDeviceHasNoChannel() = runBlocking {
+        val harness = harnessWithARelease()
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(listOf(900.0), harness.scheduler.tasks.map { it.seconds })
+        harness.scheduler.fire()
+        assertEquals(SyncTrigger.MANUAL, StateStore(harness.store).lastCheck?.trigger)
+        assertEquals(listOf(SyncTrigger.MANUAL), harness.listener.failed.map { it.trigger })
+        assertTrue(harness.scheduler.tasks.isEmpty())
         assertTrue(harness.http.requests.isEmpty())
-        assertTrue(harness.http.posts.isEmpty())
-        assertEquals(listOf(FailedReason.UNKNOWN_CHANNEL, FailedReason.UNKNOWN_CHANNEL, FailedReason.UNKNOWN_CHANNEL), harness.listener.failed.map { it.reason })
-        assertEquals(failed, harness.core.getState().lastCheck?.result)
+    }
+
+    @Test
+    fun shouldCheckOnItsOwnAgainAtTheNextResumeWhenAChannelWasSetAtRuntime() = runBlocking {
+        val harness = harness()
+        harness.publish(emptyList(), 1)
+        harness.core.handleAppStart()
+        harness.core.setChannel(ChannelChoice.Id(Fixture.CHANNEL_ID))
+        harness.core.handleAppResume()
+        val lastCheck = StateStore(harness.store).lastCheck
+        assertEquals(SyncTrigger.RESUME, lastCheck?.trigger)
+        assertEquals(SyncResult.upToDate(null), lastCheck?.result)
+    }
+
+    @Test
+    fun shouldFireUpdateFailedOnceWhenAnAutomaticCheckFindsItsRuntimeChannelGoneAndTheBuildCarriesNoneAndStartNoCheckAfterIt() = runBlocking {
+        val harness = harness()
+        harness.core.setChannel(ChannelChoice.Id("c-gone"))
+        harness.core.handleAppStart()
+        assertEquals(listOf(FailedReason.UNKNOWN_CHANNEL), harness.listener.failed.map { it.reason })
+        assertEquals(listOf(SyncTrigger.START), harness.listener.failed.map { it.trigger })
+        harness.scheduler.fire()
+        harness.core.handleAppPause()
+        harness.clock.now += 1_000_000
+        harness.core.handleAppResume()
+        assertEquals(1, harness.listener.failed.size)
+        assertEquals(SyncTrigger.START, StateStore(harness.store).lastCheck?.trigger)
+        assertEquals(1, harness.http.requests.size)
     }
 
     @Test
@@ -65,16 +163,6 @@ class MissingChannelTest {
         assertNull(state.acknowledgedReport)
         assertNull(harness.core.getState().lastReportAt)
         assertEquals(ChannelResult(null, null, ChannelSource.CONFIG), harness.core.channel())
-    }
-
-    @Test
-    fun shouldFailTheSyncAtStartWithoutTouchingTheNetworkWhenAutoCheckIsOn() = runBlocking {
-        val harness = harness(autoCheck = true)
-        harness.core.handleAppStart()
-        assertEquals(listOf(FailedReason.UNKNOWN_CHANNEL), harness.listener.failed.map { it.reason })
-        assertEquals(Core.MISSING_CHANNEL_MESSAGE, harness.listener.failed.single().message)
-        assertTrue(harness.http.requests.isEmpty())
-        assertTrue(harness.http.posts.isEmpty())
     }
 
     @Test
@@ -145,5 +233,30 @@ class MissingChannelTest {
         assertTrue(text, text.contains("Result: FAILED UNKNOWN_CHANNEL"))
         harness.core.setChannel(ChannelChoice.Id(Fixture.CHANNEL_ID))
         assertTrue(DebugReport.text(harness.core.debugSnapshot()).contains("Channel\n  Channel id: ${Fixture.CHANNEL_ID}\n  Name: none\n  Source: runtime\n"))
+    }
+
+    /** A build without a channel whose events endpoint acknowledges, and a release on the channel it does not know. */
+    private fun harnessWithARelease() = harness().apply {
+        acknowledgeEvents()
+        publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+    }
+
+    /** The explicit call's failure is the only one: one `updateFailed` with the manual trigger and today's message, and no request. */
+    private fun assertFailedExplicitly(harness: Harness) {
+        assertEquals(listOf(UpdateFailedEvent(null, FailedReason.UNKNOWN_CHANNEL, Core.MISSING_CHANNEL_MESSAGE, SyncTrigger.MANUAL)), harness.listener.failed)
+        assertTrue(harness.http.requests.isEmpty())
+        assertTrue(harness.http.posts.isEmpty())
+    }
+
+    /** A cycle that is not started leaves no trace: no check, no log entry, no event, no request and no interval timer. */
+    private fun assertNoCheckStarted(harness: Harness) {
+        val state = StateStore(harness.store)
+        assertNull(state.lastCheck)
+        assertNull(state.lastSyncAt)
+        assertEquals(emptyList<LogEntry>(), harness.core.debugSnapshot().log)
+        assertTrue(harness.listener.failed.isEmpty())
+        assertTrue(harness.http.requests.isEmpty())
+        assertTrue(harness.http.posts.isEmpty())
+        assertTrue(harness.scheduler.tasks.isEmpty())
     }
 }
