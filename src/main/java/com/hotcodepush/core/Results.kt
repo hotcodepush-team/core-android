@@ -164,9 +164,13 @@ data class UpdateFailedEvent(val release: Release?, val reason: FailedReason, va
         .put("trigger", trigger.wire)
 }
 
-/** At the start that follows a rollback, once, before the readiness gate; `to` is `null` for the embedded bundle. */
+/** At each start that follows a rollback until the app is up after one, before the readiness gate; `to` is `null` for the embedded bundle. */
 data class RolledBackEvent(val from: Release, val to: Release?, val reason: RollbackReason) {
     fun toJson(): JSONObject = JSONObject().put("from", from.toJson()).put("to", to?.toJson() ?: JSONObject.NULL).put("reason", reason.name)
+
+    companion object {
+        fun fromJson(json: JSONObject) = RolledBackEvent(Release.fromJson(json.getJSONObject("from")), json.optJSONObject("to")?.let(Release::fromJson), RollbackReason.valueOf(json.getString("reason")))
+    }
 }
 
 internal fun JSONObject.putIfNotNull(key: String, value: Any?, nullWhenStatus: Boolean = false): JSONObject {

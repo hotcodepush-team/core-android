@@ -62,20 +62,24 @@ class Core(
     private var backgroundedAt: Long? = null
     private var resolvedChannelName: Pair<String, String>? = null
 
-    /** The rollback the next reload announces, once, before the gate. */
-    private var pendingRollbackEvent: RolledBackEvent? = null
+    /** The stored rollback notice was announced in this process, so the app coming up next has received it. */
+    private var hasAnnouncedRollback = false
 
     // Lifecycle
 
-    /** The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, the gate, then the cleanup. */
+    /**
+     * The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
+     * has not come up after, the gate, then the cleanup.
+     */
     suspend fun handleAppStart() = lock.withLock {
-        state.lastRollback = null
+        if (state.pendingRollbackEvent == null) state.lastRollback = null
         if (state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest()) dropStoredReleases()
         if (isCurrentReleaseUnconfirmed()) rollbackCurrentRelease(RollbackReason.CRASHED, null)
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
         if (next != null && shouldSwitchAtStart(next)) switchToNextRelease()
         loadBundle()
+        if (!hasAnnouncedRollback) announceRollback()
         if (isCurrentReleaseUnconfirmed()) {
             startReadyTimer()
             isStartSyncPending = true
@@ -325,6 +329,7 @@ class Core(
             state.fallbackRelease = null
             state.failedBundleIds = emptyList()
             state.lastRollback = null
+            state.pendingRollbackEvent = null
             files.bundleIds().forEach(loader::deleteProjection)
             files.deleteEverything()
             loader.persistServedBundle(null)
@@ -394,6 +399,8 @@ class Core(
         state.nextRelease = null
         state.fallbackRelease = null
         state.failedBundleIds = emptyList()
+        state.lastRollback = null
+        state.pendingRollbackEvent = null
         state.lastBuiltAt = configuration.builtAt
         loader.persistServedBundle(null)
     }
@@ -426,15 +433,12 @@ class Core(
         if (loader.servedBundleId() != expected) loader.loadServedBundle(expected)
     }
 
-    /** The restart of the web layer: the start is unsettled until the reloaded app is up, a held restart is moot since the reloaded app runs what the state says, the bundle loads, a rollback this start follows is announced once, then the gate runs. */
+    /** The restart of the web layer: the start is unsettled until the reloaded app is up, a held restart is moot since the reloaded app runs what the state says, the bundle loads, a rollback the app has not come up after is announced, then the gate runs. */
     private fun reloadApp() {
         hasStartSettled = false
         queuedRestart = null
         loader.loadServedBundle(state.currentRelease?.bundleId)
-        pendingRollbackEvent?.let { event ->
-            pendingRollbackEvent = null
-            listener.rolledBack(event)
-        }
+        announceRollback()
         if (isCurrentReleaseUnconfirmed()) startReadyTimer()
     }
 
@@ -460,10 +464,21 @@ class Core(
         queued.restart()
     }
 
-    /** The app is up in this run: the restart held for it runs. */
+    /** The app is up in this run: a rollback announced to it is delivered, and the restart held for it runs. */
     private fun settleStart() {
         hasStartSettled = true
+        if (hasAnnouncedRollback) {
+            hasAnnouncedRollback = false
+            state.pendingRollbackEvent = null
+        }
         runQueuedRestart()
+    }
+
+    /** The stored notice reaches the JavaScript that just started, once per start; it stays stored until the app is up after it. */
+    private fun announceRollback() {
+        val event = state.pendingRollbackEvent ?: return
+        hasAnnouncedRollback = true
+        listener.rolledBack(event)
     }
 
     private fun adoptInPlace(release: Release) {
@@ -500,7 +515,8 @@ class Core(
         state.currentRelease = fallback
         state.nextRelease = null
         state.lastRollback = LastRollback(current, fallback, reason)
-        pendingRollbackEvent = RolledBackEvent(current, fallback, reason)
+        state.pendingRollbackEvent = RolledBackEvent(current, fallback, reason)
+        hasAnnouncedRollback = false
         enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.name, detail))
         enqueueDeviceEvent(DeviceEvent.rolledBack(current.id, fallback?.id))
         loader.persistServedBundle(fallback?.bundleId)

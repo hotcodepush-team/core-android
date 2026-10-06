@@ -11,6 +11,7 @@ import java.nio.file.Files
 
 class CoreTest {
     private val v2Content = "<html>v2</html>".toByteArray()
+    private val immediateInstall = Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE)
 
     @Test
     fun shouldRunTheEmbeddedBundleAndBeUpToDateOnAnEmptyChannel() = runBlocking {
@@ -853,6 +854,110 @@ class CoreTest {
     }
 
     @Test
+    fun shouldAnnounceARollbackAtTheNextStartWhenTheProcessEndedWhileItsReloadWasHeld() = runBlocking {
+        val harness = startOnUnconfirmedRelease()
+        harness.core.setRestartAllowed(false)
+        harness.scheduler.fire()
+        assertTrue(harness.listener.rolledBack.isEmpty())
+        startAgain(harness, immediateInstall)
+        assertEquals(listOf(RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
+        val ready = harness.core.notifyReady()
+        assertTrue(ready.isRolledBack)
+        assertEquals(RollbackReason.READY_TIMEOUT, ready.rollbackReason)
+        assertEquals("r1", ready.previousRelease?.id)
+    }
+
+    @Test
+    fun shouldAnnounceARollbackAgainAtTheNextStartWhenTheAppNeverCameUpAfterTheReload() = runBlocking {
+        val harness = startOnUnconfirmedRelease()
+        harness.core.rollbackUpdate(null)
+        assertEquals(1, harness.listener.rolledBack.size)
+        startAgain(harness, immediateInstall)
+        assertEquals(listOf(RollbackReason.REPORTED_BY_APP, RollbackReason.REPORTED_BY_APP), harness.listener.rolledBack.map { it.reason })
+    }
+
+    @Test
+    fun shouldNotAnnounceARollbackAgainAtTheNextStartWhenTheAppRenderedAfterTheReload() = runBlocking {
+        val harness = startOnUnconfirmedRelease()
+        harness.core.rollbackUpdate(null)
+        harness.core.handleRendered()
+        startAgain(harness, immediateInstall)
+        assertEquals(1, harness.listener.rolledBack.size)
+        assertNull(StateStore(harness.store).pendingRollbackEvent)
+    }
+
+    @Test
+    fun shouldNotAnnounceARollbackAgainAtTheNextStartWhenTheAppNotifiedReadyAfterTheReload() = runBlocking {
+        val harness = startOnUnconfirmedRelease()
+        harness.core.rollbackUpdate(null)
+        harness.core.notifyReady()
+        startAgain(harness, immediateInstall)
+        assertEquals(1, harness.listener.rolledBack.size)
+        assertNull(StateStore(harness.store).pendingRollbackEvent)
+    }
+
+    @Test
+    fun shouldAnnounceOnceAtAStartThatRollsBackACrashItself() = runBlocking {
+        val harness = Harness()
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.loader.served = "b2"
+        harness.restart()
+        harness.core.handleAppStart()
+        harness.restart()
+        harness.core.handleAppStart()
+        assertEquals(listOf(RollbackReason.CRASHED), harness.listener.rolledBack.map { it.reason })
+    }
+
+    @Test
+    fun shouldKeepTheNoticeWhenTheReadinessTimerRanOutAndNothingRendered() = runBlocking {
+        val harness = startOnUnconfirmedRelease()
+        harness.scheduler.fire()
+        assertEquals(listOf(RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(RollbackReason.READY_TIMEOUT, StateStore(harness.store).pendingRollbackEvent?.reason)
+        startAgain(harness, immediateInstall)
+        assertEquals(listOf(RollbackReason.READY_TIMEOUT, RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
+    }
+
+    @Test
+    fun shouldKeepTheNoticeWhenTheAppRendersWhileTheRollbacksReloadIsHeld() = runBlocking {
+        val harness = startOnUnconfirmedRelease()
+        harness.core.setRestartAllowed(false)
+        harness.scheduler.fire()
+        harness.core.handleRendered()
+        assertEquals(RollbackReason.READY_TIMEOUT, StateStore(harness.store).pendingRollbackEvent?.reason)
+        harness.core.setRestartAllowed(true)
+        assertEquals(listOf(RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(RollbackReason.READY_TIMEOUT, StateStore(harness.store).pendingRollbackEvent?.reason)
+    }
+
+    @Test
+    fun shouldRemoveTheNoticeAtTheStartOfANewBinary() = runBlocking {
+        val harness = startOnUnconfirmedRelease()
+        harness.core.rollbackUpdate(null)
+        harness.loader.served = null
+        harness.restart(Fixture.configuration(builtAt = Fixture.BUILT_AT + 86_400_000))
+        harness.core.handleAppStart()
+        assertEquals(1, harness.listener.rolledBack.size)
+        assertNull(StateStore(harness.store).pendingRollbackEvent)
+        assertEquals(false, harness.core.notifyReady().isRolledBack)
+    }
+
+    @Test
+    fun shouldRemoveTheNoticeWhenTheAppClearsUpdates() = runBlocking {
+        val harness = startOnUnconfirmedRelease()
+        harness.core.setRestartAllowed(false)
+        harness.scheduler.fire()
+        harness.core.clearUpdates()
+        assertEquals(listOf("b2", null), harness.loader.loaded)
+        assertNull(StateStore(harness.store).pendingRollbackEvent)
+        assertNull(StateStore(harness.store).lastRollback)
+        startAgain(harness, immediateInstall)
+        assertTrue(harness.listener.rolledBack.isEmpty())
+    }
+
+    @Test
     fun shouldFailOfflineNotUnknownWhenAChannelNameCannotBeResolved() = runBlocking {
         val harness = Harness()
         harness.core.setChannel(ChannelChoice.Name("staging"))
@@ -1178,6 +1283,18 @@ class CoreTest {
         val next = JSONObject(String(harness.http.posts[1].third))
         assertEquals(0, next.getJSONArray("events").length())
         assertTrue(!next.isNull("report"))
+    }
+
+    /** A run that installs v2 at once after the first render and has not confirmed it: its readiness timer is the one scheduled. */
+    private suspend fun startOnUnconfirmedRelease(): Harness {
+        val harness = Harness(immediateInstall)
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(listOf("b2"), harness.loader.loaded)
+        assertEquals(1, harness.scheduler.tasks.size)
+        return harness
     }
 
     /** The third run of an app whose second run confirmed v2: its start finds nothing to switch and nothing to roll back. */

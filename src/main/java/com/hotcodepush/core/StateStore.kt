@@ -103,6 +103,11 @@ class StateStore(private val store: KeyValueStore) {
         get() = readObject("lastRollback")?.let(LastRollback::fromJson)
         set(value) = writeObject("lastRollback", value?.toJson())
 
+    /** The `rolledBack` event the app has not come up after yet: announced at every start until it does. */
+    var pendingRollbackEvent: RolledBackEvent?
+        get() = readObject("pendingRollbackEvent")?.let(RolledBackEvent::fromJson)
+        set(value) = writeObject("pendingRollbackEvent", value?.toJson())
+
     var lastSyncAt: Long?
         get() = Iso8601.parseOrNull(getRaw("lastSyncAt"))
         set(value) = putRaw("lastSyncAt", value?.let(Iso8601::format))
@@ -132,7 +137,7 @@ class StateStore(private val store: KeyValueStore) {
         const val PREFIX = "hotcodepush."
         private val CACHE_KEYS = listOf(
             "currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport",
-            "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "lastSyncAt",
+            "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "pendingRollbackEvent", "lastSyncAt",
         )
     }
 }
