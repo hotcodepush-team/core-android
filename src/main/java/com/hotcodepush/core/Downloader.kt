@@ -3,6 +3,7 @@ package com.hotcodepush.core
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.InputStream
+import java.util.UUID
 
 sealed class DownloadFailure(message: String) : Exception(message) {
     /** A downloaded file or pack off what the manifest promised: a hash, the pack's length, an entry's size, the archive's form. */
@@ -193,7 +194,7 @@ class Downloader(
 
     /** The patched bytes into the store, which refuses them unless they hash to `toSha256`. */
     private fun writePatchedFile(entry: PackEntry.Patch, body: InputStream, maximumBytes: Long) {
-        val directory = File(temporaryDirectory, "${entry.toSha256}.patching")
+        val directory = File(temporaryDirectory, "${UUID.randomUUID()}.patching")
         directory.mkdirs()
         try {
             val base = preparePatchBase(entry.fromSha256, directory)
@@ -225,8 +226,7 @@ class Downloader(
      */
     internal suspend fun downloadFile(file: BundleManifest.File): Long {
         val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/files/${file.sha256}"
-        val temporary = File(temporaryDirectory, "${file.sha256}.file")
-        temporary.delete()
+        val temporary = File(temporaryDirectory, "${UUID.randomUUID()}.file")
         try {
             try {
                 http.download(url, temporary, file.sizeBytes) { _, _ -> }
