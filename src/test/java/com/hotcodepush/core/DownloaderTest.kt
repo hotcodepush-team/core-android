@@ -46,6 +46,22 @@ class DownloaderTest {
     }
 
     @Test
+    fun shouldRefuseAManifestOfAnotherAppBeforeAByteOfThePackArrives() {
+        val harness = DownloaderHarness()
+        val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
+        assertEquals(FailedReason.MANIFEST_INVALID, harness.downloadFailure(harness.publish(bundle.manifest.copy(appId = "another-app"), bundle.pack))?.reason)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
+    }
+
+    @Test
+    fun shouldRefuseAManifestThatLeavesOutTheDevicesPlatformBeforeAByteOfThePackArrives() {
+        val harness = DownloaderHarness()
+        val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
+        assertEquals(FailedReason.MANIFEST_INVALID, harness.downloadFailure(harness.publish(bundle.manifest.copy(platforms = listOf("ios")), bundle.pack))?.reason)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
+    }
+
+    @Test
     fun shouldFailADownloadThatDoesNotFitInTheFreeSpace() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))

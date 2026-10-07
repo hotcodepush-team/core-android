@@ -138,7 +138,7 @@ class MissingChannelTest {
     @Test
     fun shouldFireUpdateFailedOnceWhenAnAutomaticCheckFindsItsRuntimeChannelGoneAndTheBuildCarriesNoneAndStartNoCheckAfterIt() = runBlocking {
         val harness = harness()
-        harness.core.setChannel(ChannelChoice.Id("c-gone"))
+        harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003"))
         harness.core.handleAppStart()
         assertEquals(listOf(FailedReason.CHANNEL_UNKNOWN), harness.listener.failed.map { it.reason })
         assertEquals(listOf(SyncTrigger.START), harness.listener.failed.map { it.trigger })
@@ -206,9 +206,9 @@ class MissingChannelTest {
     fun shouldFallBackToNoChannelWhenTheRuntimeChannelServesNoIndex() = runBlocking {
         val harness = harness()
         harness.core.handleAppStart()
-        harness.core.setChannel(ChannelChoice.Id("gone"))
+        harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003"))
         assertEquals(failed, harness.core.sync(SyncTrigger.MANUAL))
-        assertEquals(listOf("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/gone/android/v1/index.json"), harness.http.requests.map { it.first })
+        assertEquals(listOf("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/90e00000-0000-4000-8000-000000000003/android/v1/index.json"), harness.http.requests.map { it.first })
         assertEquals(ChannelResult(null, null, ChannelSource.CONFIG), harness.core.channel())
     }
 
@@ -217,7 +217,7 @@ class MissingChannelTest {
         val harness = Harness()
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
-        harness.core.setChannel(ChannelChoice.Id("gone"))
+        harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003"))
         assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertEquals(ChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.channel())
     }

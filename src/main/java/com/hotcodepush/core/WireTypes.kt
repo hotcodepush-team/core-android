@@ -150,10 +150,14 @@ data class ChannelsIndex(val schema: Int, val channels: List<Entry>) {
     data class Entry(val id: String, val name: String)
 
     companion object {
-        fun fromJson(json: JSONObject) = ChannelsIndex(
-            schema = json.getWireInt("schema", minimum = 0),
-            channels = json.getJSONArray("channels").map { Entry(it.getWireString("id"), it.getWireString("name")) },
-        )
+        const val SCHEMA = 1
+
+        /** Another schema major fails the whole index, and so does an entry whose id is not a UUID, since the id names the channel's index. */
+        fun fromJson(json: JSONObject): ChannelsIndex {
+            val schema = json.getWireInt("schema", minimum = 0)
+            if (schema != SCHEMA) throw JSONException("The channels index has schema $schema, this reader reads $SCHEMA")
+            return ChannelsIndex(schema, json.getJSONArray("channels").map { Entry(it.getWireString("id", WireRule.UUID), it.getWireString("name")) })
+        }
     }
 }
 
@@ -251,6 +255,9 @@ data class BundleManifest(
         .put("keyId", keyId ?: JSONObject.NULL)
         .put("platforms", JSONArray(platforms))
 
+    /** Whether the manifest names the device's app and lists its platform, signed or not: another app's or platform's is `MANIFEST_INVALID`. */
+    fun isForDevice(appId: String, platform: String): Boolean = this.appId == appId && platform in platforms
+
     companion object {
         fun fromJson(json: JSONObject) = BundleManifest(
             appId = json.getWireString("appId", WireRule.NON_EMPTY),
@@ -270,6 +277,9 @@ typealias EmbeddedBundleManifest = BundleManifest
 internal enum class WireRule {
     /** Letters, digits, `_` and `-`, at most 64: a bundle id names a directory. */
     IDENTIFIER,
+
+    /** A UUID in its textual form, hexadecimal in either case: a channel id names a path segment of the index's URL. */
+    UUID,
 
     /** 64 lowercase hexadecimal characters: a file hash names a file. */
     SHA256,
@@ -291,6 +301,7 @@ internal enum class WireRule {
 
     fun accepts(value: String): Boolean = when (this) {
         IDENTIFIER -> identifierPattern.matches(value)
+        UUID -> uuidPattern.matches(value)
         SHA256 -> sha256Pattern.matches(value)
         RELATIVE_PATH -> '\\' !in value && '\u0000' !in value && value.split('/').none { it.isEmpty() || it == "." || it == ".." }
         NON_EMPTY -> value.isNotEmpty()
@@ -302,6 +313,7 @@ internal enum class WireRule {
 
 private val URL_SCHEMES = setOf("http", "https")
 private val identifierPattern = Regex("[A-Za-z0-9_-]{1,64}")
+private val uuidPattern = Regex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 private val sha256Pattern = Regex("[0-9a-f]{64}")
 private val signatureValuePattern = Regex("[a-z0-9_-]+:[A-Za-z0-9+/]+=*")
 private val base64Pattern = Regex("(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)")

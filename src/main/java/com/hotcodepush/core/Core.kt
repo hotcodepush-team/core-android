@@ -41,7 +41,7 @@ class Core(
     private class QueuedRestart(val isAskedByApp: Boolean, val restart: () -> Unit)
 
     private val state = StateStore(store)
-    private val downloader = Downloader(configuration, files, embedded, http, temporaryDirectory)
+    private val downloader = Downloader(configuration, device.platform, files, embedded, http, temporaryDirectory)
     private val httpClient = http
     private val lock = Mutex()
     private val log = SessionLog()
@@ -147,6 +147,7 @@ class Core(
 
     /** One full cycle; a second call while one runs joins the running one. */
     suspend fun sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()): SyncResult {
+        verifyChannelId()
         val running = lock.withLock {
             runningSync ?: scope.async { performCycle(trigger, Stage.SYNC, options) }.also { runningSync = it }
         }
@@ -157,12 +158,14 @@ class Core(
 
     /** The first stage: fetch and evaluate, download nothing. */
     suspend fun checkForUpdate(): SyncResult {
+        verifyChannelId()
         lock.withLock { runningSync }?.await()
         return performCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions())
     }
 
     /** The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then install per the strategies. */
     suspend fun downloadUpdate(): SyncResult {
+        verifyChannelId()
         lock.withLock { runningSync }?.await()
         return performCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions())
     }
@@ -368,7 +371,9 @@ class Core(
         null -> ChannelResult(configuration.channelId, null, ChannelSource.CONFIG)
     }
 
+    /** A channel id names the index's URL, so one that is not a UUID is refused with the plain error and nothing is stored. */
     suspend fun setChannel(choice: ChannelChoice?) = lock.withLock {
+        if (choice is ChannelChoice.Id) verifyChannelId(choice.id)
         state.channel = choice
         state.cachedIndex = null
     }
@@ -616,6 +621,19 @@ class Core(
         }
     }
 
+    /** The channel id a cycle would fetch by, the runtime one or the build's, is a UUID; any other is a programming mistake, refused before anything is fetched. */
+    private fun verifyChannelId() {
+        when (val choice = state.channel) {
+            is ChannelChoice.Id -> verifyChannelId(choice.id)
+            is ChannelChoice.Name -> Unit
+            null -> configuration.channelId?.let(::verifyChannelId)
+        }
+    }
+
+    private fun verifyChannelId(id: String) {
+        if (!WireRule.UUID.accepts(id)) throw PlainException("A channel id is a UUID: $id")
+    }
+
     /** A device has a channel when the app set one at runtime or the build carries one. */
     private val hasChannel: Boolean
         get() = state.channel != null || configuration.channelId != null
@@ -634,6 +652,7 @@ class Core(
             200 -> {
                 val index = runCatching { ChannelIndex.fromJson(org.json.JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()
                     ?: return IndexFetch.Invalid("The channel index could not be parsed")
+                if (!isIndexForDevice(index, channelId)) return IndexFetch.Invalid("The channel index names another app, channel or platform")
                 if (cached != null && index.sequence < cached.body.sequence) return IndexFetch.Index(cached.body)
                 lock.withLock { state.cachedIndex = CachedIndex(response.header("ETag"), clock.now(), index) }
                 IndexFetch.Index(index)
@@ -646,6 +665,10 @@ class Core(
             else -> cached?.let { IndexFetch.Index(it.body) } ?: IndexFetch.Offline
         }
     }
+
+    /** The index the device asked for: its app, the channel it fetched by and its platform, so another index at that URL serves nothing. */
+    private fun isIndexForDevice(index: ChannelIndex, channelId: String): Boolean =
+        index.appId == configuration.appId && index.channelId == channelId && index.platform == device.platform
 
     /** Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`. */
     private val isDisabledInThisBuild: Boolean

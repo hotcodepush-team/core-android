@@ -450,11 +450,11 @@ class CoreTest {
     @Test
     fun shouldResolveAChannelNameThroughTheChannelsIndex() = runBlocking {
         val harness = Harness()
-        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "c-staging").put("name", "staging"))))
-        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/c-staging/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "c-staging", "android", false, null, emptyList(), emptyList()).toJson())
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "5ab00000-0000-4000-8000-000000000002").put("name", "staging"))))
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/5ab00000-0000-4000-8000-000000000002/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "5ab00000-0000-4000-8000-000000000002", "android", false, null, emptyList(), emptyList()).toJson())
         harness.core.setChannel(ChannelChoice.Name("staging"))
         assertEquals(SyncResult.upToDate(null), harness.core.sync(SyncTrigger.MANUAL))
-        assertEquals(ChannelResult("c-staging", "staging", ChannelSource.RUNTIME), harness.core.channel())
+        assertEquals(ChannelResult("5ab00000-0000-4000-8000-000000000002", "staging", ChannelSource.RUNTIME), harness.core.channel())
         harness.core.setChannel(ChannelChoice.Name("nowhere"))
         assertEquals(FailedReason.CHANNEL_UNKNOWN.name, harness.core.sync(SyncTrigger.MANUAL).reason)
     }
@@ -462,12 +462,55 @@ class CoreTest {
     @Test
     fun shouldAnswerNoIdForARuntimeNameBeforeASyncResolvedItAndTheIdAfter() = runBlocking {
         val harness = Harness()
-        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "c-staging").put("name", "staging"))))
-        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/c-staging/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "c-staging", "android", false, null, emptyList(), emptyList()).toJson())
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "5ab00000-0000-4000-8000-000000000002").put("name", "staging"))))
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/5ab00000-0000-4000-8000-000000000002/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "5ab00000-0000-4000-8000-000000000002", "android", false, null, emptyList(), emptyList()).toJson())
         harness.core.setChannel(ChannelChoice.Name("staging"))
         assertEquals(ChannelResult(null, "staging", ChannelSource.RUNTIME), harness.core.channel())
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(ChannelResult("c-staging", "staging", ChannelSource.RUNTIME), harness.core.channel())
+        assertEquals(ChannelResult("5ab00000-0000-4000-8000-000000000002", "staging", ChannelSource.RUNTIME), harness.core.channel())
+    }
+
+    @Test
+    fun shouldRefuseARuntimeChannelIdThatIsNotAUuidAndKeepTheChannel() = runBlocking {
+        val harness = Harness()
+        for (id in listOf("../../other-app/channels/${Fixture.CHANNEL_ID}", "c1", "${Fixture.CHANNEL_ID}?x=1", "")) {
+            val error = runCatching { harness.core.setChannel(ChannelChoice.Id(id)) }.exceptionOrNull()
+            assertTrue(id, error is PlainException)
+        }
+        assertEquals(ChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.channel())
+        assertTrue(harness.http.requests.isEmpty())
+    }
+
+    @Test
+    fun shouldRefuseEveryCallAndFetchNothingWhenTheConfiguredChannelIdIsNotAUuid() = runBlocking {
+        val harness = Harness(Fixture.configuration(channelId = "../../other-app/channels/${Fixture.CHANNEL_ID}"))
+        harness.core.handleAppStart()
+        assertTrue(runCatching { harness.core.sync(SyncTrigger.MANUAL) }.exceptionOrNull() is PlainException)
+        assertTrue(runCatching { harness.core.checkForUpdate() }.exceptionOrNull() is PlainException)
+        assertTrue(runCatching { harness.core.downloadUpdate() }.exceptionOrNull() is PlainException)
+        assertTrue(harness.http.requests.isEmpty())
+        assertTrue(harness.listener.failed.isEmpty())
+    }
+
+    @Test
+    fun shouldFailWithIndexInvalidAndCacheNothingWhenTheIndexNamesAnotherAppChannelOrPlatform() = runBlocking {
+        val harness = Harness()
+        val index = Fixture.index(1, listOf(Fixture.release(1, "b2", v2Content).release))
+        for (other in listOf(index.copy(appId = "another-app"), index.copy(channelId = "5ab00000-0000-4000-8000-000000000002"), index.copy(platform = "ios"))) {
+            harness.http.stubJson(Fixture.indexUrl(), other.toJson())
+            val result = harness.core.sync(SyncTrigger.MANUAL)
+            assertEquals(FailedReason.INDEX_INVALID.name, result.reason)
+            assertNull(harness.core.getState().indexSequence)
+        }
+    }
+
+    @Test
+    fun shouldFailWithIndexInvalidWhenTheChannelsIndexNamesTheChannelByAnIdThatIsNotAUuid() = runBlocking {
+        val harness = Harness()
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "../../other-app/channels/c1").put("name", "staging"))))
+        harness.core.setChannel(ChannelChoice.Name("staging"))
+        assertEquals(FailedReason.INDEX_INVALID.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(listOf("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json"), harness.http.requests.map { it.first })
     }
 
     @Test

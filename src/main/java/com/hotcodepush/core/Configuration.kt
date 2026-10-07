@@ -74,7 +74,7 @@ data class Configuration(
         fun decode(text: String): Configuration = fromJson(JSONObject(text))
 
         fun fromJson(json: JSONObject) = Configuration(
-            appId = json.getString("appId"),
+            appId = json.getWireString("appId", WireRule.IDENTIFIER),
             channelId = json.getNullableWireString("channelId", WireRule.NON_EMPTY),
             autoCheck = json.optBoolean("autoCheck", true),
             checkInterval = json.optDouble("checkInterval", 900.0),
@@ -89,7 +89,7 @@ data class Configuration(
             builtAt = Iso8601.parse(json.getString("builtAt")),
             fingerprint = json.optNullableString("fingerprint"),
             embeddedBundleManifest = json.getNullableObject("embeddedBundleManifest")?.let(EmbeddedBundleManifest::fromJson),
-            embeddedBundleId = json.optNullableString("embeddedBundleId"),
+            embeddedBundleId = json.getOptionalWireString("embeddedBundleId", WireRule.IDENTIFIER),
             filesBaseUrl = json.getOptionalWireString("filesBaseUrl", WireRule.URL) ?: DEFAULT_FILES_BASE_URL,
             updatesBaseUrl = json.getOptionalWireString("updatesBaseUrl", WireRule.URL) ?: DEFAULT_UPDATES_BASE_URL,
         )

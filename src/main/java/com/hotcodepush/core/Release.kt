@@ -19,9 +19,9 @@ data class Release(
 
     companion object {
         fun fromJson(json: JSONObject) = Release(
-            id = json.getString("id"),
+            id = json.getWireString("id", WireRule.IDENTIFIER),
             number = json.getInt("number"),
-            bundleId = json.getString("bundleId"),
+            bundleId = json.getWireString("bundleId", WireRule.IDENTIFIER),
             bundleVersion = json.getString("bundleVersion"),
             isMandatory = json.getBoolean("isMandatory"),
         )

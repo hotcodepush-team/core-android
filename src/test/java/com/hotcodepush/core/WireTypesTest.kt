@@ -1,5 +1,6 @@
 package com.hotcodepush.core
 
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -84,6 +85,24 @@ class WireTypesTest {
         for (url in listOf("ftp://files.test", "file:///files", "files.test")) {
             assertThrows(url, JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("filesBaseUrl", url)) }
             assertThrows(url, JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("updatesBaseUrl", url)) }
+        }
+    }
+
+    @Test
+    fun shouldRefuseAResourceFileWhoseAppIdIsNotAnIdentifier() {
+        val resourceFile = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").getJSONObject(0).getJSONObject("resourceFile")
+        for (appId in listOf("../other-app", "app/channels", "app?query", "")) {
+            assertThrows(appId, JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("appId", appId)) }
+        }
+    }
+
+    @Test
+    fun shouldRefuseAChannelsIndexOfAnotherSchemaOrWithAChannelIdThatIsNotAUuid() {
+        val entry = JSONObject().put("id", Fixture.CHANNEL_ID).put("name", "beta")
+        assertEquals(listOf(ChannelsIndex.Entry(Fixture.CHANNEL_ID, "beta")), ChannelsIndex.fromJson(JSONObject().put("schema", 1).put("channels", JSONArray().put(entry))).channels)
+        assertThrows(JSONException::class.java) { ChannelsIndex.fromJson(JSONObject().put("schema", 2).put("channels", JSONArray().put(entry))) }
+        for (id in listOf("../../other-app/channels/c1", "c1", "${Fixture.CHANNEL_ID}?x=1")) {
+            assertThrows(id, JSONException::class.java) { ChannelsIndex.fromJson(JSONObject().put("schema", 1).put("channels", JSONArray().put(JSONObject(entry.toString()).put("id", id)))) }
         }
     }
 

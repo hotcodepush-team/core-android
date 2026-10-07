@@ -141,6 +141,14 @@ class FixtureTest {
     }
 
     @Test
+    fun shouldMatchEveryManifestIdentityFixture() {
+        for (case in cases("manifest-identity.json", "cases")) {
+            val manifest = BundleManifest.fromJson(case.getJSONObject("manifest"))
+            assertEquals(case.getString("name"), case.getBoolean("isForDevice"), manifest.isForDevice(case.getString("appId"), case.getString("platform")))
+        }
+    }
+
+    @Test
     fun shouldMatchEveryAttributeValueFixture() {
         for (case in cases("attribute-values.json", "cases")) {
             assertEquals(case.getString("name"), case.getBoolean("isValid"), AttributeRules.isValidValue(case.getString("value")))

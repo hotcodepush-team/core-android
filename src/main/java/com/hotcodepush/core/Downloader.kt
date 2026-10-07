@@ -11,7 +11,8 @@ sealed class DownloadFailure(message: String) : Exception(message) {
 
     /**
      * A manifest the device does not take, refused before a byte is written: one that breaks the wire rules, whose bytes are
-     * off the index's hash or whose envelope names another bundle, or a manifest, pack or delta URL off the configured hosts.
+     * off the index's hash, whose envelope names another bundle, that names another app or leaves out the device's platform,
+     * or a manifest, pack or delta URL off the configured hosts.
      */
     class ManifestInvalid(message: String) : DownloadFailure(message)
 
@@ -37,6 +38,7 @@ internal data class PackOutcome(val bytes: Long, val kind: PackKind)
 /** Manifest, signature, missing files, pack, verification, files to disk — each step one function. */
 class Downloader(
     private val configuration: Configuration,
+    private val platform: String,
     private val files: FileStore,
     private val embedded: EmbeddedBundle,
     private val http: HttpClient,
@@ -59,7 +61,7 @@ class Downloader(
         return DownloadOutcome(manifest, bytes, packKind)
     }
 
-    /** The envelope with its manifest decoded, once the manifest's bytes match the index and the envelope names the release's bundle. */
+    /** The envelope with its manifest decoded, once the manifest's bytes match the index, the envelope names the release's bundle and the manifest the device's app and platform. */
     internal suspend fun fetchBundleManifest(target: IndexRelease): Pair<ManifestEnvelope, BundleManifest> {
         val url = resolvePinnedUrl(target.manifestUrl)
         val response = try {
@@ -72,6 +74,7 @@ class Downloader(
         val manifest = envelope?.let { runCatching { it.decodeManifest() }.getOrNull() } ?: throw DownloadFailure.ManifestInvalid("The manifest could not be parsed")
         verifyManifestSignature(envelope, target.manifestSha256)
         if (envelope.bundleId != target.bundleId) throw DownloadFailure.ManifestInvalid("The manifest names another bundle")
+        if (!manifest.isForDevice(configuration.appId, platform)) throw DownloadFailure.ManifestInvalid("The manifest is for another app or does not list $platform")
         return envelope to manifest
     }
 
