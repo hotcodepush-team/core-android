@@ -58,6 +58,40 @@ class CoreTest {
     }
 
     @Test
+    fun shouldAnswerTheReleaseBeforeTheStartAsPreviousReleaseOnceAfterASwitchAtTheStart() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.restart()
+        harness.core.handleAppStart()
+        harness.core.notifyReady()
+        harness.publish(listOf(v2, v3), 2, etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.restart()
+        harness.core.handleAppStart()
+        assertEquals(NotifyReadyResult(v3.release.release, v2.release.release, false, null), harness.core.notifyReady())
+        assertEquals(NotifyReadyResult(v3.release.release, null, false, null), harness.core.notifyReady())
+    }
+
+    @Test
+    fun shouldAnswerTheReleaseBeforeTheReloadAsPreviousReleaseAfterAnImmediateInstall() = runBlocking {
+        val harness = Harness(immediateInstall)
+        val v2 = Fixture.release(1, "b2", v2Content)
+        val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.notifyReady()
+        harness.publish(listOf(v2, v3), 2, etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(NotifyReadyResult(v3.release.release, v2.release.release, false, null), harness.core.notifyReady())
+    }
+
+    @Test
     fun shouldStartOnTheEmbeddedBundleWhenTheBinaryChanged() = runBlocking {
         val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)

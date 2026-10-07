@@ -76,6 +76,9 @@ class Core(
     /** The stored rollback notice was announced in this process, so the app coming up next has received it. */
     private var hasAnnouncedRollback = false
 
+    /** The release a switch in this process replaced, `null` for the embedded bundle, until `notifyReady()` reads it. */
+    private var switchedFromRelease: Release? = null
+
     // Lifecycle
 
     /**
@@ -116,12 +119,17 @@ class Core(
         settleStart()
     }
 
-    /** Ends the gate when `readySignal` is `manual`, settles the start, and tells the app whether this start follows a rollback. */
+    /**
+     * Ends the gate when `readySignal` is `manual`, settles the start, and tells the app whether this start follows a rollback;
+     * `previousRelease` is the release before this start when it changed, by a switch or a rollback, once.
+     */
     suspend fun notifyReady(): NotifyReadyResult = lock.withLock {
         confirmCurrentRelease()
         val rollback = state.lastRollback
         state.lastRollback = null
-        val result = NotifyReadyResult(state.currentRelease, rollback?.from, rollback != null, rollback?.reason)
+        val previousRelease = rollback?.from ?: switchedFromRelease
+        switchedFromRelease = null
+        val result = NotifyReadyResult(state.currentRelease, previousRelease, rollback != null, rollback?.reason)
         settleStart()
         result
     }
@@ -464,6 +472,7 @@ class Core(
 
     private fun switchToNextRelease() {
         val next = state.nextRelease ?: return
+        switchedFromRelease = state.currentRelease
         state.currentRelease = next
         state.nextRelease = null
         loader.persistServedBundle(next.bundleId)
