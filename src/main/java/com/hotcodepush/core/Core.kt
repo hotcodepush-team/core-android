@@ -651,7 +651,7 @@ class Core(
     private val isDisabledInThisBuild: Boolean
         get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.enabledInDebugBuilds)
 
-    private fun deviceInfo() = DeviceInfo(null, state.attributes, device.binaryBuild, device.binaryVersion, configuration.builtAt, state.currentRelease, state.deviceId, state.failedBundleIds, configuration.fingerprint, device.osVersion, state.reportedAt)
+    private fun deviceInfo() = DeviceInfo(state.attributes, device.binaryBuild, device.binaryVersion, configuration.builtAt, state.currentRelease, state.deviceId, state.failedBundleIds, configuration.fingerprint, device.osVersion, state.reportedAt)
 
     // Events
 

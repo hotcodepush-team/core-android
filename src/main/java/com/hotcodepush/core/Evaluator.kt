@@ -2,8 +2,6 @@ package com.hotcodepush.core
 
 /** What the device knows when it evaluates a channel index. */
 data class DeviceInfo(
-    /** The sequence of the index the device has already evaluated; an older index is ignored. */
-    val appliedIndexSequence: Int?,
     val attributes: Map<String, String>,
     val binaryBuild: String,
     val binaryVersion: String,
@@ -34,7 +32,7 @@ sealed class Evaluation {
     data class Skipped(val release: IndexRelease?, val reason: SkippedReason, val condition: ConditionType? = null) : Evaluation()
 }
 
-/** The outcome with the verdicts behind it, newest release first; an index the device does not evaluate — older than the applied one, or capped — leaves them empty. */
+/** The outcome with the verdicts behind it, newest release first; a capped index leaves them empty. */
 data class IndexEvaluation(val outcome: Evaluation, val verdicts: List<ReleaseVerdict>)
 
 /** The device protocol's evaluation, the same rules as `@hotcodepush/protocol`'s, pinned by its fixture suite. */
@@ -45,8 +43,6 @@ object Evaluator {
 
     fun evaluation(index: ChannelIndex, device: DeviceInfo): IndexEvaluation {
         val currentIndexRelease = device.currentRelease?.let { current -> index.releases.firstOrNull { it.id == current.id } }
-        val applied = device.appliedIndexSequence
-        if (applied != null && index.sequence < applied) return IndexEvaluation(Evaluation.UpToDate(currentIndexRelease), emptyList())
         if (isDeviceBeyondCap(index, device)) return IndexEvaluation(Evaluation.Skipped(null, SkippedReason.SPENDING_CAP_REACHED), emptyList())
         val verdicts = index.releases.sortedByDescending { it.number }.map { verdict(it, index, device) }
         return IndexEvaluation(outcome(verdicts, index, device, currentIndexRelease), verdicts)

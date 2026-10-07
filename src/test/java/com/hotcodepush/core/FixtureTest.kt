@@ -41,7 +41,6 @@ class FixtureTest {
     }
 
     private fun deviceInfo(json: JSONObject) = DeviceInfo(
-        appliedIndexSequence = if (json.isNull("appliedIndexSequence")) null else json.getInt("appliedIndexSequence"),
         attributes = json.getJSONObject("attributes").let { attributes -> attributes.keys().asSequence().associateWith { attributes.getString(it) } },
         binaryBuild = json.getString("binaryBuild"),
         binaryVersion = json.getString("binaryVersion"),
