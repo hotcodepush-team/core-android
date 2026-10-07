@@ -107,6 +107,9 @@ class Core(
         else -> configuration.installStrategy == InstallStrategy.NEXT_START
     }
 
+    /** A `next-resume` release; a mandatory one follows `mandatoryInstallStrategy` instead, so one the app took over with `manual` waits for `applyUpdate()`. */
+    private fun shouldInstallAtResume(next: Release): Boolean = !next.isMandatory && configuration.installStrategy == InstallStrategy.NEXT_RESUME
+
     /** The first render of the run or of a reload: the readiness signal when `readySignal` is `render`, and on every setting what settles the start. */
     suspend fun handleRendered() = lock.withLock {
         if (configuration.readySignal == ReadySignal.RENDER) confirmCurrentRelease()
@@ -135,7 +138,8 @@ class Core(
         val backgroundDuration = backgroundedAt?.let { (clock.now() - it) / 1000.0 }
         backgroundedAt = null
         discardNextReleaseThatLeftTheIndex()
-        if (backgroundDuration != null && configuration.installStrategy == InstallStrategy.NEXT_RESUME && state.nextRelease != null && backgroundDuration >= configuration.installOnResumeAfter) {
+        val next = state.nextRelease
+        if (backgroundDuration != null && next != null && shouldInstallAtResume(next) && backgroundDuration >= configuration.installOnResumeAfter) {
             installNextRelease()
             return
         }

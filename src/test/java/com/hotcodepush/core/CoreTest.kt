@@ -440,6 +440,22 @@ class CoreTest {
     }
 
     @Test
+    fun shouldKeepAMandatoryReleaseTheAppTookOverWaitingAtAResumeUnderNextResume() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.NEXT_RESUME, mandatoryInstallStrategy = MandatoryInstallStrategy.MANUAL))
+        val v2 = Fixture.release(1, "b2", v2Content, isMandatory = true)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.MANUAL), harness.core.sync(SyncTrigger.MANUAL))
+        harness.core.handleAppPause()
+        harness.clock.now += 600_000
+        harness.core.handleAppResume()
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertEquals(v2.release.release, harness.core.getState().nextRelease)
+        assertNull(harness.core.getState().currentRelease)
+    }
+
+    @Test
     fun shouldSkipOnAMeteredConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val harness = Harness()
         harness.loader.isMetered = true
