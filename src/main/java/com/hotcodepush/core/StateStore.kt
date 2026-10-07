@@ -47,69 +47,69 @@ class StateStore(private val store: KeyValueStore) {
         get() = getRaw("deviceId") ?: UUID.randomUUID().toString().lowercase().also { putRaw("deviceId", it) }
 
     var attributes: Map<String, String>
-        get() = readObject("attributes")?.toStringMap() ?: emptyMap()
+        get() = readObject("attributes") { it.toStringMap() } ?: emptyMap()
         set(value) = writeObject("attributes", JSONObject(value))
 
     var channel: ChannelChoice?
-        get() = readObject("channel")?.let(ChannelChoice::fromJson)
+        get() = readObject("channel", ChannelChoice::fromJson)
         set(value) = writeObject("channel", value?.toJson())
 
     var currentRelease: Release?
-        get() = readObject("currentRelease")?.let(Release::fromJson)
+        get() = readObject("currentRelease", Release::fromJson)
         set(value) = writeObject("currentRelease", value?.toJson())
 
     var nextRelease: Release?
-        get() = readObject("nextRelease")?.let(Release::fromJson)
+        get() = readObject("nextRelease", Release::fromJson)
         set(value) = writeObject("nextRelease", value?.toJson())
 
     var fallbackRelease: Release?
-        get() = readObject("fallbackRelease")?.let(Release::fromJson)
+        get() = readObject("fallbackRelease", Release::fromJson)
         set(value) = writeObject("fallbackRelease", value?.toJson())
 
     var failedBundleIds: List<String>
-        get() = readArray("failedBundleIds").toStringList()
+        get() = readArray("failedBundleIds") { it.toWireStringList() } ?: emptyList()
         set(value) = putRaw("failedBundleIds", JSONArray(value).toString())
 
     /** The floor of the binary that last started, to notice a new one. */
     var lastBuiltAt: Long?
-        get() = Iso8601.parseOrNull(getRaw("lastBuiltAt"))
+        get() = readValue("lastBuiltAt", Iso8601::parse)
         set(value) = putRaw("lastBuiltAt", value?.let(Iso8601::format))
 
     var reportedAt: Long?
-        get() = Iso8601.parseOrNull(getRaw("reportedAt"))
+        get() = readValue("reportedAt", Iso8601::parse)
         set(value) = putRaw("reportedAt", value?.let(Iso8601::format))
 
     var acknowledgedReport: DeviceReport?
-        get() = readObject("acknowledgedReport")?.let(DeviceReport::fromJson)
+        get() = readObject("acknowledgedReport", DeviceReport::fromJson)
         set(value) = writeObject("acknowledgedReport", value?.toJson())
 
     var lastCheck: LastCheck?
-        get() = readObject("lastCheck")?.let(LastCheck::fromJson)
+        get() = readObject("lastCheck", LastCheck::fromJson)
         set(value) = writeObject("lastCheck", value?.toJson())
 
     var cachedIndex: CachedIndex?
-        get() = readObject("cachedIndex")?.let(CachedIndex::fromJson)
+        get() = readObject("cachedIndex", CachedIndex::fromJson)
         set(value) = writeObject("cachedIndex", value?.toJson())
 
     var unsentEvents: List<DeviceEvent>
-        get() = readArray("unsentEvents").map { DeviceEvent.fromJson(it) }
+        get() = readArray("unsentEvents") { array -> array.map(DeviceEvent::fromJson) } ?: emptyList()
         set(value) = putRaw("unsentEvents", JSONArray(value.map { it.toJson() }).toString())
 
     var checkedReleaseIds: List<String>
-        get() = readArray("checkedReleaseIds").toStringList()
+        get() = readArray("checkedReleaseIds") { it.toWireStringList() } ?: emptyList()
         set(value) = putRaw("checkedReleaseIds", JSONArray(value).toString())
 
     var lastRollback: LastRollback?
-        get() = readObject("lastRollback")?.let(LastRollback::fromJson)
+        get() = readObject("lastRollback", LastRollback::fromJson)
         set(value) = writeObject("lastRollback", value?.toJson())
 
     /** The `rolledBack` event the app has not come up after yet: announced at every start until it does. */
     var pendingRollbackEvent: RolledBackEvent?
-        get() = readObject("pendingRollbackEvent")?.let(RolledBackEvent::fromJson)
+        get() = readObject("pendingRollbackEvent", RolledBackEvent::fromJson)
         set(value) = writeObject("pendingRollbackEvent", value?.toJson())
 
     var lastSyncAt: Long?
-        get() = Iso8601.parseOrNull(getRaw("lastSyncAt"))
+        get() = readValue("lastSyncAt", Iso8601::parse)
         set(value) = putRaw("lastSyncAt", value?.let(Iso8601::format))
 
     /** Drops every cache key; the identity keys survive. Called at start on an unknown version, never by the app. */
@@ -118,12 +118,22 @@ class StateStore(private val store: KeyValueStore) {
         store.putInt(PREFIX + "stateVersion", STATE_VERSION)
     }
 
-    private fun readObject(key: String): JSONObject? = getRaw(key)?.let { raw ->
-        runCatching { JSONObject(raw) }.getOrElse { deleteCacheKeys(); null }
-    }
+    private fun <T> readObject(key: String, decode: (JSONObject) -> T): T? = readValue(key) { decode(JSONObject(it)) }
 
-    private fun readArray(key: String): JSONArray? = getRaw(key)?.let { raw ->
-        runCatching { JSONArray(raw) }.getOrElse { deleteCacheKeys(); null }
+    private fun <T> readArray(key: String, decode: (JSONArray) -> T): T? = readValue(key) { decode(JSONArray(it)) }
+
+    /**
+     * The stored value, decoded: one that does not decode, whatever the reason — not JSON, a field missing, a value an older or
+     * newer SDK wrote under the same `stateVersion` — drops the cache with it, or the identity key alone, and reads as absent.
+     */
+    private fun <T> readValue(key: String, decode: (String) -> T): T? {
+        val raw = getRaw(key) ?: return null
+        return try {
+            decode(raw)
+        } catch (exception: Exception) {
+            if (key in CACHE_KEYS) deleteCacheKeys() else putRaw(key, null)
+            null
+        }
     }
 
     private fun writeObject(key: String, value: JSONObject?) = putRaw(key, value?.toString())

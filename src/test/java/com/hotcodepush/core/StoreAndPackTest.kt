@@ -131,6 +131,40 @@ class StateStoreTest {
         assertNull(state.nextRelease)
         assertEquals(36, StateStore(store).deviceId.length)
     }
+
+    @Test
+    fun shouldDropTheCacheWhenAStoredReleaseIsMissingAField() {
+        val store = InMemoryStore()
+        val state = StateStore(store)
+        state.fallbackRelease = Release("r1", 1, "b1", "1", false)
+        store.putString("hotcodepush.currentRelease", JSONObject().put("id", "r2").put("number", 2).toString())
+        assertNull(state.currentRelease)
+        assertNull(state.fallbackRelease)
+    }
+
+    @Test
+    fun shouldDropTheCacheWhenAStoredValueHoldsWhatThisSdkDoesNotKnow() {
+        val notice = JSONObject().put("from", Release("r1", 1, "b1", "1", false).toJson()).put("to", JSONObject.NULL).put("reason", "REASON_OF_A_LATER_SDK")
+        for ((key, value) in listOf("pendingRollbackEvent" to notice.toString(), "lastCheck" to JSONObject().put("at", "yesterday").toString(), "lastBuiltAt" to "yesterday")) {
+            val store = InMemoryStore()
+            val state = StateStore(store)
+            state.nextRelease = Release("r1", 1, "b1", "1", false)
+            store.putString("hotcodepush.$key", value)
+            assertNull(key, state.pendingRollbackEvent ?: state.lastCheck ?: state.lastBuiltAt)
+            assertNull(key, state.nextRelease)
+        }
+    }
+
+    @Test
+    fun shouldDropAnIdentityKeyThatDoesNotParseAndKeepTheCache() {
+        val store = InMemoryStore()
+        val state = StateStore(store)
+        state.nextRelease = Release("r1", 1, "b1", "1", false)
+        store.putString("hotcodepush.channel", "not json")
+        assertNull(state.channel)
+        assertNull(store.getString("hotcodepush.channel"))
+        assertEquals(Release("r1", 1, "b1", "1", false), state.nextRelease)
+    }
 }
 
 class FileStoreTest {
