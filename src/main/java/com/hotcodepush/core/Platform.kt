@@ -58,6 +58,7 @@ fun interface Clock {
 class PlainException(message: String) : Exception(message)
 
 object AttributeRules {
+    private const val VALUE_MAX_CODE_POINTS = 256
     private val keyPattern = Regex("^[A-Za-z0-9_.-]{1,64}$")
 
     fun validate(key: String, value: String) {
@@ -67,6 +68,13 @@ object AttributeRules {
 
     /** The value rule alone, shared with the app's rollback reason. */
     fun validate(value: String) {
-        if (value.length > 256 || value.any { it.code < 0x20 || it.code == 0x7F }) throw PlainException("A value is a printable string without control characters, at most 256 characters")
+        if (!isValidValue(value)) throw PlainException("A value is at most $VALUE_MAX_CODE_POINTS Unicode code points without a control character")
     }
+
+    /**
+     * At most 256 code points, counted neither in UTF-16 units nor in the characters a reader sees, and no control character,
+     * Unicode's `Cc`: C0, DEL and C1, which all lie in the Basic Multilingual Plane, so a check per UTF-16 unit finds them.
+     */
+    fun isValidValue(value: String): Boolean =
+        value.codePointCount(0, value.length) <= VALUE_MAX_CODE_POINTS && value.none { it.code <= 0x1F || it.code in 0x7F..0x9F }
 }

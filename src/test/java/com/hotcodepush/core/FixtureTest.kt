@@ -140,6 +140,13 @@ class FixtureTest {
         }
     }
 
+    @Test
+    fun shouldMatchEveryAttributeValueFixture() {
+        for (case in cases("attribute-values.json", "cases")) {
+            assertEquals(case.getString("name"), case.getBoolean("isValid"), AttributeRules.isValidValue(case.getString("value")))
+        }
+    }
+
     /** A base of `null` is a production build, whose resource file names no host: the reader's defaults are the production hosts. */
     @Test
     fun shouldMatchEveryConfiguredHostFixture() {

@@ -804,6 +804,30 @@ class CoreTest {
     }
 
     @Test
+    fun shouldTakeAnAttributeValueOf256CodePointsAndRefuseOneWithAC1ControlCharacter() = runBlocking {
+        val harness = Harness()
+        val emoji = "\uD83D\uDE00".repeat(256)
+        harness.core.setAttributes(mapOf("mood" to emoji))
+        assertEquals(emoji, harness.core.deviceResult().attributes["mood"])
+        val error = runCatching { harness.core.setAttributes(mapOf("plan" to "beta\u0085")) }.exceptionOrNull()
+        assertTrue(error is PlainException)
+        assertEquals(mapOf("mood" to emoji), harness.core.deviceResult().attributes)
+    }
+
+    @Test
+    fun shouldRefuseARollbackDetailWithAC1ControlCharacterAndRollNothingBack() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.notifyReady()
+        val error = runCatching { harness.core.rollbackUpdate("checkout\u009f") }.exceptionOrNull()
+        assertTrue(error is PlainException)
+        assertEquals("b2", harness.core.getState().currentRelease?.bundleId)
+    }
+
+    @Test
     fun shouldCarryTheAppsRollbackReasonOnTheFailureEvent() = runBlocking {
         val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
