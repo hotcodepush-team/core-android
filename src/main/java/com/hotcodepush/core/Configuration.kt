@@ -61,6 +61,12 @@ data class Configuration(
     val filesBaseUrl: String,
     val updatesBaseUrl: String,
 ) {
+    /**
+     * Whether a manifest, pack or delta URL lies under the files or the updates host: it starts with the base URL and a `/`,
+     * so another scheme, userinfo, a look-alike host, another port or another path is off the host.
+     */
+    fun isUrlOnConfiguredHost(url: String): Boolean = listOf(filesBaseUrl, updatesBaseUrl).any { url.startsWith("$it/") }
+
     companion object {
         const val DEFAULT_FILES_BASE_URL = "https://files.hotcodepush.com"
         const val DEFAULT_UPDATES_BASE_URL = "https://updates.hotcodepush.com"
@@ -84,8 +90,8 @@ data class Configuration(
             fingerprint = json.optNullableString("fingerprint"),
             embeddedBundleManifest = json.getNullableObject("embeddedBundleManifest")?.let(EmbeddedBundleManifest::fromJson),
             embeddedBundleId = json.optNullableString("embeddedBundleId"),
-            filesBaseUrl = json.optNullableString("filesBaseUrl") ?: DEFAULT_FILES_BASE_URL,
-            updatesBaseUrl = json.optNullableString("updatesBaseUrl") ?: DEFAULT_UPDATES_BASE_URL,
+            filesBaseUrl = json.getOptionalWireString("filesBaseUrl", WireRule.URL) ?: DEFAULT_FILES_BASE_URL,
+            updatesBaseUrl = json.getOptionalWireString("updatesBaseUrl", WireRule.URL) ?: DEFAULT_UPDATES_BASE_URL,
         )
     }
 }

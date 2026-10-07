@@ -140,6 +140,17 @@ class FixtureTest {
         }
     }
 
+    /** A base of `null` is a production build, whose resource file names no host: the reader's defaults are the production hosts. */
+    @Test
+    fun shouldMatchEveryConfiguredHostFixture() {
+        val resourceFile = cases("resource-files.json", "cases").first().getJSONObject("resourceFile")
+        for (case in cases("configured-hosts.json", "cases")) {
+            val json = JSONObject(resourceFile.toString())
+            for (key in listOf("filesBaseUrl", "updatesBaseUrl")) if (case.isNull(key)) json.remove(key) else json.put(key, case.getString(key))
+            assertEquals(case.getString("name"), case.getBoolean("isOnConfiguredHost"), Configuration.fromJson(json).isUrlOnConfiguredHost(case.getString("url")))
+        }
+    }
+
     /** Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form; `SigningTest` verifies them. */
     @Test
     fun shouldDecodeTheManifestOfEverySignatureFixture() {

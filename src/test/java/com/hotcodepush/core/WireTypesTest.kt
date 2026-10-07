@@ -5,6 +5,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.io.File
 
 class WireTypesTest {
     private val sha256 = Hashing.sha256Hex("content")
@@ -75,6 +76,15 @@ class WireTypesTest {
         }
         assertEquals(bundleId, decodeEnvelope(bundleId).bundleId)
         assertEquals(bundleId, decodeIndexRelease("1c6e2a3b-7f4d-4e1a-9b2c-3d4e5f6a7b8c", bundleId).bundleId)
+    }
+
+    @Test
+    fun shouldRefuseAResourceFileWhoseHostIsNotAnHttpOrHttpsUrl() {
+        val resourceFile = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").getJSONObject(0).getJSONObject("resourceFile")
+        for (url in listOf("ftp://files.test", "file:///files", "files.test")) {
+            assertThrows(url, JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("filesBaseUrl", url)) }
+            assertThrows(url, JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("updatesBaseUrl", url)) }
+        }
     }
 
     private fun decodeManifest(path: String, sha256: String): BundleManifest {

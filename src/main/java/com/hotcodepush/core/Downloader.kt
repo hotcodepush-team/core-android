@@ -210,8 +210,7 @@ class Downloader(
 
     /** The URL of a manifest, pack or delta only when it is on a configured host: the SDK fetches from our hosts and nowhere else. */
     internal fun resolvePinnedUrl(url: String): String {
-        val isOnConfiguredHost = listOf(configuration.filesBaseUrl, configuration.updatesBaseUrl).any { url.startsWith("$it/") }
-        if (!isOnConfiguredHost) throw DownloadFailure.ManifestInvalid("$url is not on a configured host")
+        if (!configuration.isUrlOnConfiguredHost(url)) throw DownloadFailure.ManifestInvalid("$url is not on a configured host")
         return url
     }
 

@@ -280,7 +280,7 @@ internal enum class WireRule {
     /** At least one character. */
     NON_EMPTY,
 
-    /** An absolute URL with a scheme and a host. */
+    /** An absolute `http` or `https` URL with a host: `javascript:`, `file:`, `data:` and every other scheme are refused. */
     URL,
 
     /** The scheme, a colon and the base64 of the signature. */
@@ -294,12 +294,13 @@ internal enum class WireRule {
         SHA256 -> sha256Pattern.matches(value)
         RELATIVE_PATH -> '\\' !in value && '\u0000' !in value && value.split('/').none { it.isEmpty() || it == "." || it == ".." }
         NON_EMPTY -> value.isNotEmpty()
-        URL -> runCatching { URI(value) }.getOrNull()?.let { !it.scheme.isNullOrEmpty() && !it.host.isNullOrEmpty() } ?: false
+        URL -> runCatching { URI(value) }.getOrNull()?.let { it.scheme?.lowercase() in URL_SCHEMES && !it.host.isNullOrEmpty() } ?: false
         SIGNATURE_VALUE -> signatureValuePattern.matches(value)
         BASE64 -> base64Pattern.matches(value)
     }
 }
 
+private val URL_SCHEMES = setOf("http", "https")
 private val identifierPattern = Regex("[A-Za-z0-9_-]{1,64}")
 private val sha256Pattern = Regex("[0-9a-f]{64}")
 private val signatureValuePattern = Regex("[a-z0-9_-]+:[A-Za-z0-9+/]+=*")
@@ -317,6 +318,9 @@ internal fun JSONObject.getNullableWireString(key: String, rule: WireRule? = nul
     if (!has(key)) throw JSONException("$key is absent; the wire carries it as null when there is none")
     return if (isNull(key)) null else getWireString(key, rule)
 }
+
+/** A key the format may leave out, `null` when it does: the resource file's hosts, absent in a production build. */
+internal fun JSONObject.getOptionalWireString(key: String, rule: WireRule? = null): String? = if (isNull(key)) null else getWireString(key, rule)
 
 internal fun JSONObject.getNullableObject(key: String): JSONObject? {
     if (!has(key)) throw JSONException("$key is absent; the wire carries it as null when there is none")
