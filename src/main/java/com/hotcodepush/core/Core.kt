@@ -8,6 +8,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -79,31 +80,90 @@ class Core(
     /** The release a switch in this process replaced, `null` for the embedded bundle, until `notifyReady()` reads it. */
     private var switchedFromRelease: Release? = null
 
+    /** The start rule ran in this process; it runs once, since the current release is unconfirmed in the run that switched to it. */
+    private var isStartResolved = false
+
+    /** `handleAppStart()` ran in this process, so a later call reports a reload the core did not perform. */
+    private var hasStarted = false
+
     // Lifecycle
 
     /**
-     * The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
-     * has not come up after and the gate. The cleanup follows on its own, so the start never waits for it.
+     * The bundle the host serves at this start, `null` for the embedded bundle, decided before the host loads any and without the
+     * network: the start rule runs at the first call in the process and a later call answers the bundle that runs. The start rule
+     * forgets the stored releases of another binary or whose files are gone, rolls back the release the previous run never
+     * confirmed, and switches to the waiting release the strategies apply at a start. Whatever it throws answers the embedded
+     * bundle and is logged, never thrown at the host.
+     */
+    fun resolveStartBundleId(): String? = runBlocking { lock.withLock { resolveStart() } }
+
+    /**
+     * The start of a run: the start rule unless `resolveStartBundleId()` ran it, the bundle it resolved, a rollback the app has not
+     * come up after and the gate; the cleanup follows on its own, so the start never waits for it. A later call in the process
+     * reports a reload the core did not perform, a JavaScript restart or a development reload: the app is not up until the
+     * reloaded one is, a rollback notice it has not come up after reaches it, and a release not yet confirmed runs through the
+     * gate again. Nothing it throws reaches the host.
      */
     suspend fun handleAppStart() {
-        lock.withLock { beginRun() }
-        launchTask(::deleteUnusedFiles)
+        val isFirstStart = lock.withLock {
+            val isFirstStart = !hasStarted
+            hasStarted = true
+            runLogged("the start") { if (isFirstStart) beginRun() else beginReloadedRun() }
+            isFirstStart
+        }
+        if (isFirstStart) launchTask(::deleteUnusedFiles)
     }
 
-    private fun beginRun() {
+    private fun resolveStart(): String? {
+        if (!isStartResolved) {
+            isStartResolved = true
+            try {
+                applyStartRule()
+            } catch (failure: Throwable) {
+                runEmbeddedBundleAfter(failure)
+            }
+        }
+        return runCatching { state.currentRelease?.bundleId }.getOrNull()
+    }
+
+    private fun applyStartRule() {
         if (state.pendingRollbackEvent == null) state.lastRollback = null
         if (state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest()) dropStoredReleases()
         if (isCurrentReleaseUnconfirmed()) rollbackCurrentRelease(RollbackReason.APP_CRASHED, null)
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
         if (next != null && shouldSwitchAtStart(next)) switchToNextRelease()
-        loadBundle()
+    }
+
+    /** A start rule that threw leaves the stored releases as a new binary does, so the state says what runs: the embedded bundle. */
+    private fun runEmbeddedBundleAfter(failure: Throwable) {
+        log.record(LogEntry(clock.now(), SyncStatus.FAILED.wire, "the start runs the embedded bundle after $failure"))
+        runLogged("forgetting the stored releases", ::dropStoredReleases)
+    }
+
+    private fun beginRun() {
+        loadBundle(resolveStart())
         if (!hasAnnouncedRollback) announceRollback()
         if (isCurrentReleaseUnconfirmed()) {
             startReadyTimer()
             isStartSyncPending = true
         } else if (configuration.autoCheck) {
             startAutomaticCycle(SyncTrigger.START)
+        }
+    }
+
+    private fun beginReloadedRun() {
+        hasStartSettled = false
+        announceRollback()
+        if (isCurrentReleaseUnconfirmed()) startReadyTimer()
+    }
+
+    /** Runs the block and logs what it throws, for the work whose failure must not reach the host or the app's process. */
+    private fun runLogged(task: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (failure: Throwable) {
+            log.record(LogEntry(clock.now(), SyncStatus.FAILED.wire, "$task failed: $failure"))
         }
     }
 
@@ -366,7 +426,9 @@ class Core(
     /** Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event. */
     suspend fun rollbackUpdate(detail: String?) = lock.withLock {
         if (detail != null) AttributeRules.validate(detail)
-        if (state.currentRelease != null) rollbackCurrentRelease(RollbackReason.APP_REQUESTED, detail)
+        if (state.currentRelease == null) return
+        rollbackCurrentRelease(RollbackReason.APP_REQUESTED, detail)
+        reloadApp()
     }
 
     /** Back to the embedded bundle, now or, before the app is up in this run, once it is: every downloaded update and the failed list go, the identity stays. */
@@ -480,9 +542,8 @@ class Core(
         enqueueDeviceEvent(DeviceEvent.applied(next.id))
     }
 
-    private fun loadBundle() {
-        val expected = state.currentRelease?.bundleId
-        if (loader.servedBundleId() != expected) loader.loadServedBundle(expected)
+    private fun loadBundle(bundleId: String?) {
+        if (loader.servedBundleId() != bundleId) loader.loadServedBundle(bundleId)
     }
 
     /** The restart of the web layer: the start is unsettled until the reloaded app is up, a held restart is moot since the reloaded app runs what the state says, the bundle loads, a rollback the app has not come up after is announced, then the gate runs. */
@@ -563,7 +624,11 @@ class Core(
         }
     }
 
-    /** A rollback never waits for the app to be up: the app's own and the crash a start finds reload at once, the timer's, which settles the start, waits only while the app holds restarts. */
+    /**
+     * The fallback becomes the current release and the failure is reported; the caller reloads. A rollback never waits for the app
+     * to be up: the app's own reloads at once and the crash a start finds loads the fallback as the start's bundle, while the
+     * timer's, which settles the start, waits only while the app holds restarts.
+     */
     private fun rollbackCurrentRelease(reason: RollbackReason, detail: String?) {
         val current = state.currentRelease ?: return
         stopReadyTimer()
@@ -577,7 +642,6 @@ class Core(
         enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.name, detail))
         enqueueDeviceEvent(DeviceEvent.rolledBack(current.id, fallback?.id))
         loader.persistServedBundle(fallback?.bundleId)
-        if (reason == RollbackReason.READINESS_TIMED_OUT) restartThroughGate(isAskedByApp = false) { reloadApp() } else reloadApp()
     }
 
     /** The release to fall back to right now: the last confirmed one while it can still run, else the embedded bundle. */
@@ -612,6 +676,7 @@ class Core(
         if (!isCurrentReleaseUnconfirmed()) return
         hasStartSettled = true
         rollbackCurrentRelease(RollbackReason.READINESS_TIMED_OUT, null)
+        restartThroughGate(isAskedByApp = false, ::reloadApp)
     }
 
     private fun scheduleIntervalSync(afterSeconds: Double) {

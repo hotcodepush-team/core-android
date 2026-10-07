@@ -32,6 +32,10 @@ class FakeLoader(private val root: File) : BundleLoader {
     var served: String? = null
     var isMetered = false
 
+    /** Thrown from persistServedBundle and loadServedBundle, as a framework's loader with a bug throws. */
+    var persistFailure: Throwable? = null
+    var loadFailure: Throwable? = null
+
     override fun projectionDirectory(bundleId: String): File = File(File(root, "www"), bundleId)
 
     override fun deleteProjection(bundleId: String) {
@@ -39,11 +43,13 @@ class FakeLoader(private val root: File) : BundleLoader {
     }
 
     override fun persistServedBundle(bundleId: String?) {
+        persistFailure?.let { throw it }
         persisted = bundleId
         hasPersisted = true
     }
 
     override fun loadServedBundle(bundleId: String?) {
+        loadFailure?.let { throw it }
         loaded += bundleId
         served = bundleId
     }
