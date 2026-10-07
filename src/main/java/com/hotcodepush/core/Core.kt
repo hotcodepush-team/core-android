@@ -271,13 +271,16 @@ class Core(
         }
     }
 
-    /** A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far as the stage goes. */
+    /**
+     * A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far
+     * as the stage goes. An adopted release runs already, so a download answers `UP_TO_DATE` where a sync answers `UPDATED`.
+     */
     private suspend fun update(target: IndexRelease, isMandatory: Boolean, trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
         val release = resolveRelease(target, isMandatory)
         val current = state.currentRelease
         if (stage != Stage.CHECK && current != null && current.bundleId == target.bundleId) {
             lock.withLock { adoptInPlace(release) }
-            return SyncResult.updated(release, target.notes, InstallMoment.IMMEDIATE)
+            return if (stage == Stage.DOWNLOAD) SyncResult.upToDate(release) else SyncResult.updated(release, target.notes, InstallMoment.IMMEDIATE)
         }
         val strategy = resolveInstallStrategy(isMandatory, options)
         if (isDownloaded(target)) {

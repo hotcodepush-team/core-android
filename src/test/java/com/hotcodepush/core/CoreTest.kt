@@ -314,6 +314,22 @@ class CoreTest {
     }
 
     @Test
+    fun shouldAnswerUpToDateWhenADownloadAdoptsAReleaseCarryingTheRunningBundle() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.notifyReady()
+        val rollback = Fixture.release(2, "b2", v2Content)
+        harness.publish(listOf(v2, rollback), 2, etag = "\"e2\"")
+        assertEquals(SyncResult.upToDate(rollback.release.release), harness.core.downloadUpdate())
+        assertEquals(listOf("b2"), harness.loader.loaded)
+        assertEquals("r2", harness.core.getState().currentRelease?.id)
+    }
+
+    @Test
     fun shouldRevertToTheEmbeddedBundleWhenTheRunningReleaseIsRevoked() = runBlocking {
         val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
