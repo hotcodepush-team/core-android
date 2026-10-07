@@ -13,6 +13,9 @@ class FakeHttpClient : HttpClient {
     val posts = mutableListOf<Triple<String, Map<String, String>, ByteArray>>()
     var isOffline = false
 
+    /** Thrown from the next downloads, as a large file's OutOfMemoryError is. */
+    var downloadFailure: Throwable? = null
+
     /** Runs once inside the next post, before it answers: what the app does while a batch is on its way. */
     var whilePosting: (suspend () -> Unit)? = null
 
@@ -43,6 +46,7 @@ class FakeHttpClient : HttpClient {
 
     override suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit) {
         requests += url to emptyMap()
+        downloadFailure?.let { throw it }
         if (isOffline) throw java.io.IOException("offline")
         val stub = stubs[url] ?: throw HttpStatusException(404)
         if (stub.status != 200) throw HttpStatusException(stub.status)

@@ -514,6 +514,43 @@ class CoreTest {
     }
 
     @Test
+    fun shouldAnswerFailedAndSyncAgainWhenSomethingThrowsInsideACycle() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.listener.updateAvailableFailure = IllegalStateException("the listener broke")
+        val failed = harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(FailedReason.INDEX_INVALID.name, failed.reason)
+        assertTrue(failed.message, failed.message!!.contains("the listener broke"))
+        harness.listener.updateAvailableFailure = null
+        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
+    }
+
+    @Test
+    fun shouldLogAndNeverThrowOutOfAnAutomaticCycleAndSyncAgainAfterIt() = runBlocking {
+        val harness = Harness(Fixture.configuration(autoCheck = true))
+        harness.http.isOffline = true
+        harness.listener.updateFailedFailure = IllegalStateException("the listener broke")
+        harness.core.handleAppStart()
+        assertTrue(harness.uncaught.isEmpty())
+        assertTrue(harness.core.debugSnapshot().log.any { it.message.contains("the listener broke") })
+        harness.listener.updateFailedFailure = null
+        assertEquals(FailedReason.DEVICE_OFFLINE.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(1, harness.listener.failed.size)
+    }
+
+    @Test
+    fun shouldFailTheDownloadAndKeepTheProcessWhenTheDownloadRunsOutOfMemory() = runBlocking {
+        val harness = Harness()
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.http.downloadFailure = OutOfMemoryError("a large file")
+        val result = harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(FailedReason.DOWNLOAD_FAILED.name, result.reason)
+        assertEquals(FailedReason.DOWNLOAD_FAILED.name, StateStore(harness.store).unsentEvents.last().reason)
+        assertNull(harness.core.getState().nextRelease)
+    }
+
+    @Test
     fun shouldMergeAttributesAndRefuseInvalidOnes() = runBlocking {
         val harness = Harness()
         harness.core.setAttributes(mapOf("plan" to "beta", "userId" to "42"))

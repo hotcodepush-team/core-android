@@ -1,5 +1,6 @@
 package com.hotcodepush.core
 
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,9 +59,22 @@ class FakeListener : CoreListener {
     val failed = mutableListOf<UpdateFailedEvent>()
     val rolledBack = mutableListOf<RolledBackEvent>()
 
-    override fun updateAvailable(event: UpdateAvailableEvent) { available += event }
+    /** Thrown from the listener, as an SDK's listener with a bug throws. */
+    var updateAvailableFailure: Throwable? = null
+    var updateFailedFailure: Throwable? = null
+
+    override fun updateAvailable(event: UpdateAvailableEvent) {
+        updateAvailableFailure?.let { throw it }
+        available += event
+    }
+
     override fun updateDownloaded(event: UpdateDownloadedEvent) { downloaded += event }
-    override fun updateFailed(event: UpdateFailedEvent) { failed += event }
+
+    override fun updateFailed(event: UpdateFailedEvent) {
+        updateFailedFailure?.let { throw it }
+        failed += event
+    }
+
     override fun downloadProgress(releaseId: String, downloadedBytes: Long, totalBytes: Long) {}
     override fun rolledBack(event: RolledBackEvent) { rolledBack += event }
 }
@@ -98,7 +112,9 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     val embedded = InMemoryEmbeddedBundle().apply { files[Hashing.sha256Hex(Fixture.embeddedIndexHtml)] = Fixture.embeddedIndexHtml }
     val clock = FixedClock(Fixture.BUILT_AT + 3_600_000)
     val files = FileStore(File(root, "store"))
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+    /** What escaped the core's own tasks to the scope: on a device, the process's crash. */
+    val uncaught = mutableListOf<Throwable>()
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, failure -> uncaught += failure })
     private val device = DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", isDebugBuild)
     var core: Core = build(configuration)
 

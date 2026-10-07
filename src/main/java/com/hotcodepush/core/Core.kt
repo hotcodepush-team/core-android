@@ -1,11 +1,16 @@
 package com.hotcodepush.core
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /** The state machine every framework shares: three named releases, a readiness gate and one cycle of three stages. */
@@ -45,6 +50,9 @@ class Core(
     private val httpClient = http
     private val lock = Mutex()
     private val log = SessionLog()
+
+    /** What escapes a task the core runs on its own is logged, never thrown at the app's process. */
+    private val failureHandler = CoroutineExceptionHandler { _, failure -> log.record(LogEntry(clock.now(), SyncStatus.FAILED.wire, "a task of the core stopped: $failure")) }
 
     private var readyTimer: ScheduledTask? = null
     private var intervalTimer: ScheduledTask? = null
@@ -140,7 +148,11 @@ class Core(
     /** The start's, the resume's and the interval's cycle; a device without a channel starts none, since it could only fail. */
     private fun startAutomaticCycle(trigger: SyncTrigger) {
         if (!hasChannel) return
-        scope.launch { sync(trigger) }
+        launchTask { sync(trigger) }
+    }
+
+    private fun launchTask(task: suspend () -> Unit) {
+        scope.launch(failureHandler) { task() }
     }
 
     // The three stages
@@ -149,11 +161,16 @@ class Core(
     suspend fun sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()): SyncResult {
         verifyChannelId()
         val running = lock.withLock {
-            runningSync ?: scope.async { performCycle(trigger, Stage.SYNC, options) }.also { runningSync = it }
+            runningSync ?: scope.async(start = CoroutineStart.LAZY) { performSync(trigger, options) }.also { runningSync = it }
         }
-        val result = running.await()
-        lock.withLock { if (runningSync === running) runningSync = null }
-        return result
+        return running.await()
+    }
+
+    /** The running sync, which the next sync no longer joins once it ended, however it ended. */
+    private suspend fun performSync(trigger: SyncTrigger, options: SyncOptions): SyncResult = try {
+        performCycle(trigger, Stage.SYNC, options)
+    } finally {
+        withContext(NonCancellable) { lock.withLock { runningSync = null } }
     }
 
     /** The first stage: fetch and evaluate, download nothing. */
@@ -182,7 +199,7 @@ class Core(
     }
 
     private suspend fun performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
-        val result = resolveCycle(trigger, stage, options)
+        val result = resolveCycleSafely(trigger, stage, options)
         lock.withLock {
             if (stage != Stage.DOWNLOAD) state.lastCheck = LastCheck(clock.now(), trigger, result)
             if (stage == Stage.SYNC) {
@@ -195,8 +212,17 @@ class Core(
             val reason = result.reason?.let { name -> FailedReason.entries.firstOrNull { it.name == name } }
             if (reason != null) listener.updateFailed(UpdateFailedEvent(result.release, reason, result.message ?: "", trigger))
         }
-        scope.launch { sendDeviceEvents() }
+        launchTask { sendDeviceEvents() }
         return result
+    }
+
+    /** A cycle answers, whatever is thrown inside it: what no stage turned into its own reason is `FAILED` with `INDEX_INVALID`, the cause in the message. */
+    private suspend fun resolveCycleSafely(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult = try {
+        resolveCycle(trigger, stage, options)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (failure: Throwable) {
+        SyncResult.failed(null, FailedReason.INDEX_INVALID, "The cycle stopped on $failure")
     }
 
     private suspend fun resolveCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
@@ -297,9 +323,12 @@ class Core(
         } catch (failure: DownloadFailure) {
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, failure.reason.name)) }
             return SyncResult.failed(release, failure.reason, failure.message ?: "")
-        } catch (exception: Exception) {
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Throwable) {
+            // An OutOfMemoryError from a large file among them: the download fails, the process lives.
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, FailedReason.DOWNLOAD_FAILED.name)) }
-            return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, exception.message ?: "")
+            return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, failure.message ?: failure.toString())
         }
         if (strategy != InstallStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, strategy, trigger))
         val outcome = lock.withLock { applyDownloaded(release, target.notes, strategy) }
@@ -547,7 +576,7 @@ class Core(
 
     private fun startReadyTimer() {
         stopReadyTimer()
-        readyTimer = scheduler.schedule(configuration.readyTimeout) { scope.launch { handleReadyTimeout() } }
+        readyTimer = scheduler.schedule(configuration.readyTimeout) { launchTask { handleReadyTimeout() } }
     }
 
     private fun stopReadyTimer() {
@@ -565,7 +594,7 @@ class Core(
     private fun scheduleIntervalSync(afterSeconds: Double) {
         intervalTimer?.cancel()
         if (!configuration.autoCheck) return
-        intervalTimer = scheduler.schedule(afterSeconds) { scope.launch { lock.withLock { startAutomaticCycle(SyncTrigger.INTERVAL) } } }
+        intervalTimer = scheduler.schedule(afterSeconds) { launchTask { lock.withLock { startAutomaticCycle(SyncTrigger.INTERVAL) } } }
     }
 
     /** Everything no kept release lists: the served tree of every other bundle first, since its links hold the bytes. */
