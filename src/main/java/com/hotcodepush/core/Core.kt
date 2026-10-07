@@ -204,10 +204,7 @@ class Core(
     suspend fun applyUpdate(): ApplyResult = lock.withLock {
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease ?: return ApplyResult(ApplyStatus.NOTHING_TO_APPLY, state.currentRelease)
-        restartThroughGate(isAskedByApp = true) {
-            switchToNextRelease()
-            reloadApp()
-        }
+        restartThroughGate(isAskedByApp = true, ::applyNextRelease)
         ApplyResult(ApplyStatus.APPLIED, next)
     }
 
@@ -496,10 +493,15 @@ class Core(
     /** The install the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does. */
     private fun installNextRelease() {
         state.nextRelease?.let { loader.persistServedBundle(it.bundleId) }
-        restartThroughGate(isAskedByApp = false) {
-            switchToNextRelease()
-            reloadApp()
-        }
+        restartThroughGate(isAskedByApp = false, ::applyNextRelease)
+    }
+
+    /** The switch and the reload as the gate runs them: a release that left the index while they were held is discarded, and nothing reloads. */
+    private fun applyNextRelease() {
+        discardNextReleaseThatLeftTheIndex()
+        if (state.nextRelease == null) return
+        switchToNextRelease()
+        reloadApp()
     }
 
     /** A restart waits until the app is up in this run, and the SDK's own also while the app holds restarts. One is held at most: the app's replaces a held one, the SDK's yields to it. */

@@ -364,6 +364,38 @@ class CoreTest {
     }
 
     @Test
+    fun shouldDiscardAHeldInstallWhoseReleaseWasRevokedWhileItWaitedAndReloadNothing() = runBlocking {
+        val harness = Harness(immediateInstall)
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.IMMEDIATE), harness.core.sync(SyncTrigger.MANUAL))
+        harness.publish(listOf(v2), 2, revoked = listOf("r1"), etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.handleRendered()
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertNull(harness.core.getState().currentRelease)
+        assertNull(harness.core.getState().nextRelease)
+        assertTrue(harness.loader.hasPersisted && harness.loader.persisted == null)
+    }
+
+    @Test
+    fun shouldDiscardAHeldApplyUpdateWhoseReleaseWasRevokedWhileItWaitedAndReloadNothing() = runBlocking {
+        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.MANUAL))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(ApplyResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
+        harness.publish(listOf(v2), 2, revoked = listOf("r1"), etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.handleRendered()
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertNull(harness.core.getState().currentRelease)
+        assertNull(harness.core.getState().nextRelease)
+    }
+
+    @Test
     fun shouldRevertToTheEmbeddedBundleWhenTheRunningReleaseIsRevoked() = runBlocking {
         val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
