@@ -45,7 +45,7 @@ class PackEntriesOnDeviceTest {
             for (file in manifestFiles) harness.http.stub(DownloaderHarness.fileUrl(file.sha256), body = contents.getValue(file.sha256))
             val patchEntry = case.getJSONObject("patchEntry")
             val toSha256 = patchEntry.getString("toSha256")
-            val patch = PackEntry.Patch(patchEntry.getString("fromSha256"), toSha256, Base64.decode(patchEntry.getString("bodyBase64"), Base64.DEFAULT))
+            val patch = PackedEntry.patch(patchEntry.getString("fromSha256"), toSha256, Base64.decode(patchEntry.getString("bodyBase64"), Base64.DEFAULT))
             harness.download(harness.publish(DownloaderHarness.manifest(manifestFiles), deltas = mapOf("b1" to PackWriter.pack(listOf(patch)))), "b1")
             val isFetched = harness.http.requests.any { it.first == DownloaderHarness.fileUrl(toSha256) }
             when (case.getString("outcome")) {

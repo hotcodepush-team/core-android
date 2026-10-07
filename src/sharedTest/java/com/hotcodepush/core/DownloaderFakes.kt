@@ -117,7 +117,7 @@ object Fixture {
     fun release(number: Int, bundleId: String, content: ByteArray, createdAt: Long = BUILT_AT + 60_000, rollout: Int = 100, conditions: List<Condition> = emptyList(), isMandatory: Boolean = false): Published {
         val sha256 = Hashing.sha256Hex(content)
         val js = "js-$bundleId".toByteArray()
-        val pack = PackWriter.pack(listOf(PackEntry.File(sha256, Gzip.compress(content)), PackEntry.File(Hashing.sha256Hex(js), Gzip.compress(js))))
+        val pack = PackWriter.pack(listOf(PackedEntry.file(sha256, Gzip.compress(content)), PackedEntry.file(Hashing.sha256Hex(js), Gzip.compress(js))))
         val manifest = BundleManifest(appId = APP_ID, bundleVersion = "1.$number.0", files = listOf(BundleManifest.File("index.html", sha256, content.size.toLong()), BundleManifest.File("assets/app.js", Hashing.sha256Hex(js), js.size.toLong())), platforms = listOf("android"))
         val manifestJson = manifest.toJson().toString()
         val envelope = ManifestEnvelope(bundleId, createdAt, manifestJson, null, ManifestEnvelope.Pack("$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/pack", pack.size.toLong()), emptyList())
@@ -169,7 +169,7 @@ class DownloaderHarness {
         /** The manifest of these files and the pack that carries them, each entry the gzip bytes the bucket serves. */
         fun bundle(files: Map<String, ByteArray>): Bundle {
             val sorted = files.toSortedMap()
-            val pack = PackWriter.pack(sorted.values.map { PackEntry.File(Hashing.sha256Hex(it), Gzip.compress(it)) })
+            val pack = PackWriter.pack(sorted.values.map { PackedEntry.file(Hashing.sha256Hex(it), Gzip.compress(it)) })
             val entries = sorted.map { (path, content) -> BundleManifest.File(path, Hashing.sha256Hex(content), content.size.toLong()) }
             return Bundle(manifest(entries), pack)
         }

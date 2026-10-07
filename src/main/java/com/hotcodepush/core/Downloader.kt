@@ -2,6 +2,7 @@ package com.hotcodepush.core
 
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.InputStream
 
 sealed class DownloadFailure(message: String) : Exception(message) {
     /** A downloaded file or pack off what the manifest promised: a hash, the pack's length, an entry's size, the archive's form. */
@@ -135,7 +136,8 @@ class Downloader(
     /**
      * Streams the pack to disk, resuming what an earlier attempt left and never past its bound, then inflates each wanted
      * file entry up to its file's size, an entry always the gzip bytes the bucket serves, and applies each patch entry to a
-     * wanted file. A pack whose size the envelope states holds exactly that many bytes; a streamed one has no size to hold it to.
+     * wanted file, every entry streamed from the pack to the store. A pack whose size the envelope states holds exactly that
+     * many bytes; a streamed one has no size to hold it to.
      */
     internal suspend fun downloadPackEntries(source: PackSource, bundleId: String, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): Long {
         val pinnedUrl = resolvePinnedUrl(source.url)
@@ -152,15 +154,15 @@ class Downloader(
         try {
             if (source.sizeBytes != null && file.length() != source.sizeBytes) throw DownloadFailure.ContentMismatched("The pack holds ${file.length()} of its ${source.sizeBytes} bytes")
             file.inputStream().buffered().use { input ->
-                PackReader.forEachEntry(input, file.length()) { entry ->
+                PackReader.forEachEntry(input, file.length()) { entry, body ->
                     when (entry) {
                         is PackEntry.File -> {
                             val sizeBytes = wanted[entry.sha256] ?: return@forEachEntry
-                            files.writeFile(Gzip.decompress(entry.body, sizeBytes), entry.sha256)
+                            Gzip.inflate(body, sizeBytes).use { content -> files.writeFile(content, entry.sha256) }
                         }
                         is PackEntry.Patch -> {
                             val sizeBytes = wanted[entry.toSha256] ?: return@forEachEntry
-                            applyPatch(entry, sizeBytes)
+                            applyPatch(entry, body, sizeBytes)
                         }
                     }
                 }
@@ -180,9 +182,9 @@ class Downloader(
      * Whatever stops it — no base, a malformed patch, another hash, no native library for the ABI, no memory — leaves the
      * file missing, fetched whole after the pack: an update never fails because of a patch.
      */
-    internal fun applyPatch(entry: PackEntry.Patch, maximumBytes: Long) {
+    internal fun applyPatch(entry: PackEntry.Patch, body: InputStream, maximumBytes: Long) {
         try {
-            writePatchedFile(entry, maximumBytes)
+            writePatchedFile(entry, body, maximumBytes)
         } catch (failure: Throwable) {
             val isPatchFailure = failure is Exception || failure is LinkageError || failure is OutOfMemoryError
             if (!isPatchFailure) throw failure
@@ -190,15 +192,15 @@ class Downloader(
     }
 
     /** The patched bytes into the store, which refuses them unless they hash to `toSha256`. */
-    private fun writePatchedFile(entry: PackEntry.Patch, maximumBytes: Long) {
+    private fun writePatchedFile(entry: PackEntry.Patch, body: InputStream, maximumBytes: Long) {
         val directory = File(temporaryDirectory, "${entry.toSha256}.patching")
         directory.mkdirs()
         try {
             val base = preparePatchBase(entry.fromSha256, directory)
-            val patch = File(directory, "patch").apply { writeBytes(entry.body) }
+            val patch = File(directory, "patch").apply { outputStream().use { body.copyTo(it) } }
             val patched = File(directory, "patched")
             Bspatch.apply(patch, base, patched, maximumBytes)
-            files.writeFile(patched.readBytes(), entry.toSha256)
+            patched.inputStream().use { content -> files.writeFile(content, entry.toSha256) }
         } finally {
             directory.deleteRecursively()
         }
@@ -233,13 +235,12 @@ class Downloader(
             } catch (exception: Exception) {
                 throw DownloadFailure.DownloadFailed("The file ${file.path} could not be downloaded: ${exception.message}")
             }
-            val content = temporary.readBytes()
             try {
-                files.writeFile(content, file.sha256)
+                temporary.inputStream().use { content -> files.writeFile(content, file.sha256) }
             } catch (exception: HashMismatchException) {
                 throw DownloadFailure.ContentMismatched("The file ${file.path} did not match its hash")
             }
-            return content.size.toLong()
+            return temporary.length()
         } finally {
             temporary.delete()
         }

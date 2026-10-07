@@ -101,7 +101,7 @@ class DownloaderTest {
     @Test
     fun shouldRefuseAPackEntryThatIsNotGzip() {
         val harness = DownloaderHarness()
-        val pack = PackWriter.pack(listOf(indexHtml, appJs).map { PackEntry.File(Hashing.sha256Hex(it), it) })
+        val pack = PackWriter.pack(listOf(indexHtml, appJs).map { PackedEntry.file(Hashing.sha256Hex(it), it) })
         val manifest = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs)).manifest
         assertEquals(FailedReason.CONTENT_MISMATCHED, harness.downloadFailure(harness.publish(manifest, pack))?.reason)
         assertFalse(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
@@ -159,7 +159,7 @@ class StreamedDeltaTest {
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
         val release = harness.publish(bundle.manifest, bundle.pack)
         val fileUrl = "${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/files/${Hashing.sha256Hex(appJs)}"
-        harness.http.stub(streamedUrl, body = PackWriter.pack(listOf(PackEntry.File(Hashing.sha256Hex(indexHtml), Gzip.compress(indexHtml)))))
+        harness.http.stub(streamedUrl, body = PackWriter.pack(listOf(PackedEntry.file(Hashing.sha256Hex(indexHtml), Gzip.compress(indexHtml)))))
         harness.http.stub(fileUrl, body = appJs)
         assertEquals(PackKind.STREAMED, harness.download(release, "b1").packKind)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL, streamedUrl, fileUrl), harness.http.requests.map { it.first })

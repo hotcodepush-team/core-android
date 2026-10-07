@@ -199,7 +199,7 @@ class FixtureTest {
         assertEquals(expected.length(), entries.size)
         for (index in entries.indices) {
             val entry = expected.getJSONObject(index)
-            assertEquals(entry.getString("sha256"), (entries[index] as PackEntry.File).sha256)
+            assertEquals(PackEntry.File(entry.getString("sha256")), entries[index].entry)
             assertEquals(entry.getString("content"), String(entries[index].body, Charsets.UTF_8))
         }
         assertTrue(PackWriter.pack(entries).contentEquals(pack))
@@ -223,9 +223,9 @@ class FixtureTest {
     }
 
     /** An entry as the values a test compares, its body by content. */
-    private fun describeEntry(entry: PackEntry): List<String> = when (entry) {
-        is PackEntry.File -> listOf("file", entry.sha256, Base64.getEncoder().encodeToString(entry.body))
-        is PackEntry.Patch -> listOf("patch", entry.fromSha256, entry.toSha256, Base64.getEncoder().encodeToString(entry.body))
+    private fun describeEntry(packed: PackedEntry): List<String> = when (val entry = packed.entry) {
+        is PackEntry.File -> listOf("file", entry.sha256, Base64.getEncoder().encodeToString(packed.body))
+        is PackEntry.Patch -> listOf("patch", entry.fromSha256, entry.toSha256, Base64.getEncoder().encodeToString(packed.body))
     }
 
     private fun describeFixtureEntry(json: JSONObject): List<String> = when (json.getString("type")) {

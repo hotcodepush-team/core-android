@@ -2,7 +2,10 @@ package com.hotcodepush.core
 
 import android.os.Build
 import java.io.File
+import java.io.InputStream
 import java.nio.file.Files
+import java.security.DigestInputStream
+import java.security.MessageDigest
 
 class HashMismatchException(val expected: String, val actual: String) : Exception("Expected $expected, got $actual")
 
@@ -15,15 +18,20 @@ class FileStore(val rootDirectory: File) {
 
     fun hasFile(sha256: String): Boolean = file(sha256).isFile
 
-    /** Verifies the content against its hash, then writes it atomically; a file that exists is the file. */
-    fun writeFile(content: ByteArray, sha256: String) {
-        val actual = Hashing.sha256Hex(content)
-        if (actual != sha256) throw HashMismatchException(sha256, actual)
+    /**
+     * Streams the content into a temporary file while hashing it, then renames it into place once it hashes to `sha256`, so a
+     * file that exists is the file; the content is never held whole in memory, and the caller closes it.
+     */
+    fun writeFile(content: InputStream, sha256: String) {
         filesDirectory.mkdirs()
         val temporary = File(filesDirectory, "$sha256.part")
-        temporary.writeBytes(content)
-        if (!temporary.renameTo(file(sha256))) {
-            file(sha256).writeBytes(content)
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            temporary.outputStream().use { output -> DigestInputStream(content, digest).copyTo(output) }
+            val actual = Hashing.hex(digest.digest())
+            if (actual != sha256) throw HashMismatchException(sha256, actual)
+            if (!temporary.renameTo(file(sha256))) temporary.copyTo(file(sha256), overwrite = true)
+        } finally {
             temporary.delete()
         }
     }
