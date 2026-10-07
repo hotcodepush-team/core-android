@@ -11,6 +11,7 @@ class FakeHttpClient : HttpClient {
 
     val stubs = mutableMapOf<String, Stub>()
     val requests = mutableListOf<Pair<String, Map<String, String>>>()
+    val requestThreads = mutableListOf<Thread>()
     val posts = mutableListOf<Triple<String, Map<String, String>, ByteArray>>()
     var isOffline = false
 
@@ -31,6 +32,7 @@ class FakeHttpClient : HttpClient {
 
     override suspend fun get(url: String, headers: Map<String, String>): HttpResponse {
         requests += url to headers
+        requestThreads += Thread.currentThread()
         if (isOffline) throw java.io.IOException("offline")
         val stub = stubs[url] ?: return HttpResponse(404, emptyMap(), ByteArray(0))
         return HttpResponse(stub.status, stub.headers, stub.body)

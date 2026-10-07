@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference
 
 /** The SDK's debug screen, one implementation every framework's SDK presents: `showDebugScreen()` ends here. */
@@ -75,11 +76,18 @@ class DebugScreenActivity : Activity() {
         scope.cancel()
     }
 
-    /** The first stage alone: the check answers why, and downloads and reloads nothing behind the screen. */
+    /**
+     * The first stage alone: the check answers why, and downloads and reloads nothing behind the screen. It runs off the main
+     * thread, where Android refuses the network.
+     */
     private fun checkNow(core: Core, button: Button) {
         button.isEnabled = false
         scope.launch {
-            core.checkForUpdate()
+            try {
+                withContext(Dispatchers.IO) { core.checkForUpdate() }
+            } catch (mistake: PlainException) {
+                // Nothing was checked: the report's channel section shows the id the check refused.
+            }
             button.isEnabled = true
             render(core)
         }

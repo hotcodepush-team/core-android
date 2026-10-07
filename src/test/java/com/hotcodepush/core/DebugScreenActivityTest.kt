@@ -16,6 +16,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /** The screen itself, on the JVM through Robolectric: what it shows, what the check adds and what the share sheet receives. */
 @RunWith(RobolectricTestRunner::class)
@@ -38,8 +39,9 @@ class DebugScreenActivityTest {
         assertTrue(report.text.toString(), report.text.contains("Last check\n  When: never"))
 
         (buttons.getChildAt(0) as Button).performClick()
-        shadowOf(Looper.getMainLooper()).idle()
-        assertTrue(report.text.toString(), report.text.contains("Result: FAILED DEVICE_OFFLINE"))
+        idleMainLooperUntil { report.text.contains("Result: FAILED DEVICE_OFFLINE") }
+        assertTrue(harness.http.requestThreads.isNotEmpty())
+        assertTrue(harness.http.requestThreads.none { it == Looper.getMainLooper().thread })
 
         (buttons.getChildAt(1) as Button).performClick()
         val chooser = shadowOf(activity).nextStartedActivity
@@ -47,6 +49,15 @@ class DebugScreenActivityTest {
         val shared = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
         assertEquals(report.text.toString(), shared?.getStringExtra(Intent.EXTRA_TEXT))
         assertTrue(shared?.getStringExtra(Intent.EXTRA_TEXT)?.contains("Result: FAILED DEVICE_OFFLINE") == true)
+    }
+
+    /** The check runs off the main thread and renders back on it: the main looper runs until the screen shows the answer, ten seconds at most. */
+    private fun idleMainLooperUntil(condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (!condition()) {
+            assertTrue("the condition held within ten seconds", System.currentTimeMillis() < deadline)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10))
+        }
     }
 
     @Test
