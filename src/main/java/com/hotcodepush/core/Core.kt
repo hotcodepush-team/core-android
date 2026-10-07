@@ -47,12 +47,15 @@ class Core(
     /** A restart held at the gate and who asked for it: the app's own is never held by `setRestartAllowed(false)`. */
     private class QueuedRestart(val isAskedByApp: Boolean, val restart: () -> Unit)
 
+    /** The cycle that runs, which a call of its stage joins and a call of another stage waits for. */
+    private class RunningCycle(val stage: Stage, val result: Deferred<SyncResult>)
+
     private val state = StateStore(store)
     private val downloader = Downloader(configuration, device.platform, files, embedded, http, temporaryDirectory)
     private val httpClient = http
     private val lock = Mutex()
 
-    /** One cycle at a time, whatever its stage: two never fetch, download or write the same files beside each other. */
+    /** A cycle and the file cleanup, one at a time: a download writes files no kept release lists yet. */
     private val cycleLock = Mutex()
     private val log = SessionLog()
 
@@ -64,7 +67,7 @@ class Core(
     /** The gate runs while the app is in the background, its timer stopped until the resume starts its full window again. */
     private var isReadyTimerPaused = false
     private var intervalTimer: ScheduledTask? = null
-    private var runningSync: Deferred<SyncResult>? = null
+    private var runningCycle: RunningCycle? = null
     private var isRestartAllowed = true
     private var queuedRestart: QueuedRestart? = null
 
@@ -252,32 +255,46 @@ class Core(
 
     // The three stages
 
-    /** One full cycle; a second call while one runs joins the running one. */
+    /**
+     * One full cycle; a second call while one runs joins the running one. Each stage throws the plain error, fetching nothing,
+     * for a channel id in effect that is not a UUID.
+     */
     suspend fun sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()): SyncResult {
         verifyChannelId()
-        val running = lock.withLock {
-            runningSync ?: scope.async(start = CoroutineStart.LAZY) { performSync(trigger, options) }.also { runningSync = it }
-        }
-        return running.await()
+        return runCycle(trigger, Stage.SYNC, options)
     }
 
-    /** The running sync, which the next sync no longer joins once it ended, however it ended. */
-    private suspend fun performSync(trigger: SyncTrigger, options: SyncOptions): SyncResult = try {
-        cycleLock.withLock { performCycle(trigger, Stage.SYNC, options) }
-    } finally {
-        withContext(NonCancellable) { lock.withLock { runningSync = null } }
-    }
-
-    /** The first stage: fetch and evaluate, download nothing; after the cycle that runs, never beside it. */
+    /** The first stage: fetch and evaluate, download nothing. */
     suspend fun checkForUpdate(): SyncResult {
         verifyChannelId()
-        return cycleLock.withLock { performCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions()) }
+        return runCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions())
     }
 
-    /** The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then install per the strategies; after the cycle that runs, never beside it. */
+    /** The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then install per the strategies. */
     suspend fun downloadUpdate(): SyncResult {
         verifyChannelId()
-        return cycleLock.withLock { performCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions()) }
+        return runCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions())
+    }
+
+    /** One cycle at a time: a call joins the running cycle of its own stage, and waits for one of another stage before it starts its own. */
+    private suspend fun runCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
+        while (true) {
+            val cycle = lock.withLock { runningCycle ?: startCycle(trigger, stage, options) }
+            if (cycle.stage == stage) return cycle.result.await()
+            cycle.result.join()
+        }
+    }
+
+    /** The cycle runs once the caller awaits it, and is forgotten however it ends, so the next call starts its own. */
+    private fun startCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): RunningCycle {
+        val result = scope.async(start = CoroutineStart.LAZY) {
+            try {
+                cycleLock.withLock { performCycle(trigger, stage, options) }
+            } finally {
+                withContext(NonCancellable) { lock.withLock { runningCycle = null } }
+            }
+        }
+        return RunningCycle(stage, result).also { runningCycle = it }
     }
 
     /** The third stage: apply the downloaded update and reload the app, now or, before the app is up in this run, once it is. */

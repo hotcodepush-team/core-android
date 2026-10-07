@@ -705,6 +705,20 @@ class CoreTest {
     }
 
     @Test
+    fun shouldJoinARunningDownloadWhenTheAppAsksForTheDownloadAgain() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.downloadGate = CompletableDeferred()
+        val download = harness.scope.async { harness.core.downloadUpdate() }
+        val secondDownload = harness.scope.async { harness.core.downloadUpdate() }
+        harness.http.downloadGate?.complete(Unit)
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), download.await())
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), secondDownload.await())
+        assertEquals(1, harness.http.requests.count { it.first == Fixture.indexUrl() })
+    }
+
+    @Test
     fun shouldMergeAttributesAndRefuseInvalidOnes() = runBlocking {
         val harness = Harness()
         harness.core.setAttributes(mapOf("plan" to "beta", "userId" to "42"))
