@@ -113,7 +113,7 @@ class FixedClock(var now: Long) : Clock {
 }
 
 /** A core over fakes, in a fresh temporary directory. */
-class Harness(configuration: Configuration = Fixture.configuration(), isDebugBuild: Boolean = false) {
+class Harness(configuration: Configuration = Fixture.configuration(), isDebugBuild: Boolean = false, private val device: DeviceFacts = DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", isDebugBuild)) {
     val root: File = Files.createTempDirectory("hotcodepush-tests").toFile()
     val store = InMemoryStore()
     val http = FakeHttpClient()
@@ -126,7 +126,6 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     /** What escaped the core's own tasks to the scope: on a device, the process's crash. */
     val uncaught = mutableListOf<Throwable>()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, failure -> uncaught += failure })
-    private val device = DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", isDebugBuild)
     var core: Core = build(configuration)
 
     private fun build(configuration: Configuration, scope: CoroutineScope = this.scope) = Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"))

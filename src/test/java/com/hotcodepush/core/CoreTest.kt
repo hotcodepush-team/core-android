@@ -672,6 +672,39 @@ class CoreTest {
     }
 
     @Test
+    fun shouldSendTheEventsWithoutTheReportAndLogItWhenAStoredAttributeIsOneTheEventsEndpointRefuses() = runBlocking {
+        val harness = Harness()
+        harness.acknowledgeEvents()
+        StateStore(harness.store).attributes = mapOf("plan" to "beta\u0085")
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.sync(SyncTrigger.MANUAL)
+        val batch = JSONObject(String(harness.http.posts.last().third))
+        assertTrue(batch.isNull("report"))
+        assertTrue(batch.getJSONArray("events").length() > 0)
+        assertTrue(harness.core.debugSnapshot().log.any { it.code == "REPORT_UNREADABLE" })
+    }
+
+    @Test
+    fun shouldSendTheEventsWithoutTheReportWhenTheBinaryVersionIsEmpty() = runBlocking {
+        val harness = Harness(device = DeviceFacts("android", "", "57", "14", "0.0.0", false))
+        harness.acknowledgeEvents()
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertTrue(JSONObject(String(harness.http.posts.last().third)).isNull("report"))
+    }
+
+    @Test
+    fun shouldKeepTheBatchInTheOutboxAndSendNothingWhenTheSdkVersionIsOneTheEventsEndpointRefuses() = runBlocking {
+        val harness = Harness(device = DeviceFacts("android", "2.4.1", "57", "14", "0.0.0\u0000", false))
+        harness.acknowledgeEvents()
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertTrue(harness.http.posts.isEmpty())
+        assertTrue(StateStore(harness.store).unsentEvents.isNotEmpty())
+        assertTrue(harness.core.debugSnapshot().log.any { it.code == "REPORT_UNREADABLE" })
+    }
+
+    @Test
     fun shouldMergeAttributesAndRefuseInvalidOnes() = runBlocking {
         val harness = Harness()
         harness.core.setAttributes(mapOf("plan" to "beta", "userId" to "42"))

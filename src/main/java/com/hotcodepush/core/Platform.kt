@@ -62,7 +62,7 @@ object AttributeRules {
     private val keyPattern = Regex("^[A-Za-z0-9_.-]{1,64}$")
 
     fun validate(key: String, value: String) {
-        if (!keyPattern.matches(key)) throw PlainException("An attribute key is an identifier of letters, digits, '_', '-' and '.', at most 64 characters: $key")
+        if (!isValidKey(key)) throw PlainException("An attribute key is an identifier of letters, digits, '_', '-' and '.', at most 64 characters: $key")
         validate(value)
     }
 
@@ -71,10 +71,8 @@ object AttributeRules {
         if (!isValidValue(value)) throw PlainException("A value is at most $VALUE_MAX_CODE_POINTS Unicode code points without a control character")
     }
 
-    /**
-     * At most 256 code points, counted neither in UTF-16 units nor in the characters a reader sees, and no control character,
-     * Unicode's `Cc`: C0, DEL and C1, which all lie in the Basic Multilingual Plane, so a check per UTF-16 unit finds them.
-     */
-    fun isValidValue(value: String): Boolean =
-        value.codePointCount(0, value.length) <= VALUE_MAX_CODE_POINTS && value.none { it.code <= 0x1F || it.code in 0x7F..0x9F }
+    fun isValidKey(key: String): Boolean = keyPattern.matches(key)
+
+    /** At most 256 code points, counted neither in UTF-16 units nor in the characters a reader sees, and no control character, Unicode's `Cc`. */
+    fun isValidValue(value: String): Boolean = value.codePointCount(0, value.length) <= VALUE_MAX_CODE_POINTS && value.none { it.isControlCharacter() }
 }

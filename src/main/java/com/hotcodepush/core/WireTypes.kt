@@ -290,6 +290,9 @@ internal enum class WireRule {
     /** At least one character. */
     NON_EMPTY,
 
+    /** At least one character and no control character: the text a device reports, which the server stores as sent. */
+    PRINTABLE,
+
     /** An absolute `http` or `https` URL with a host: `javascript:`, `file:`, `data:` and every other scheme are refused. */
     URL,
 
@@ -305,6 +308,7 @@ internal enum class WireRule {
         SHA256 -> sha256Pattern.matches(value)
         RELATIVE_PATH -> '\\' !in value && '\u0000' !in value && value.split('/').none { it.isEmpty() || it == "." || it == ".." }
         NON_EMPTY -> value.isNotEmpty()
+        PRINTABLE -> value.isNotEmpty() && value.none { it.isControlCharacter() }
         URL -> runCatching { URI(value) }.getOrNull()?.let { it.scheme?.lowercase() in URL_SCHEMES && !it.host.isNullOrEmpty() } ?: false
         SIGNATURE_VALUE -> signatureValuePattern.matches(value)
         BASE64 -> base64Pattern.matches(value)
@@ -312,6 +316,9 @@ internal enum class WireRule {
 }
 
 private val URL_SCHEMES = setOf("http", "https")
+
+/** Unicode's `Cc`: C0, DEL and C1, all in the Basic Multilingual Plane, so a check per UTF-16 unit finds every one. */
+internal fun Char.isControlCharacter(): Boolean = code <= 0x1F || code in 0x7F..0x9F
 private val identifierPattern = Regex("[A-Za-z0-9_-]{1,64}")
 private val uuidPattern = Regex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 private val sha256Pattern = Regex("[0-9a-f]{64}")

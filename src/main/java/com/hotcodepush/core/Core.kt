@@ -851,24 +851,34 @@ class Core(
     }
 
     private fun enqueueDeviceEvent(event: DeviceEvent) {
-        state.unsentEvents = (state.unsentEvents + event).takeLast(200)
+        state.unsentEvents = (state.unsentEvents + event).takeLast(DeviceEventsRequest.MAXIMUM_EVENT_COUNT)
         if (isSendingDeviceEvents) eventCountEnqueuedInFlight += 1
         LogEntry.ofDeviceEvent(event, clock.now())?.let(log::record)
     }
 
     /**
-     * One batch to the events endpoint, the outbox as it stands and the report when it changed: a readable 202 takes both,
-     * a refusal drops the events and leaves the report unacknowledged, anything else keeps both for the next sync.
+     * One batch to the events endpoint, the outbox as it stands and the report when it changed and the endpoint reads it: a
+     * readable 202 takes both, a refusal drops the events and leaves the report unacknowledged, anything else keeps both for the
+     * next sync. A batch the endpoint would refuse whole is not sent, and its events stay in the outbox.
      */
     private suspend fun sendDeviceEvents() {
         val request = lock.withLock {
             if (isSendingDeviceEvents || isDisabledInThisBuild) return
             val events = state.unsentEvents
-            val report = buildDeviceReport()
+            var report = buildDeviceReport()
+            if (report?.isReadable == false) {
+                log.record(LogEntry(clock.now(), REPORT_UNREADABLE, "the device report stays unsent: a fact or an attribute is one the events endpoint refuses"))
+                report = null
+            }
             if (events.isEmpty() && report == null) return
+            val request = DeviceEventsRequest(state.deviceId, events, device.platform, report, device.sdkVersion)
+            if (!request.isReadable) {
+                log.record(LogEntry(clock.now(), REPORT_UNREADABLE, "${events.size} events kept: the SDK's version or the platform is one the events endpoint refuses"))
+                return
+            }
             isSendingDeviceEvents = true
             eventCountEnqueuedInFlight = 0
-            DeviceEventsRequest(state.deviceId, events, device.platform, report, device.sdkVersion)
+            request
         }
         val url = "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/events"
         val answer = BatchAnswer.of(runCatching { httpClient.post(url, mapOf("Content-Type" to "application/json"), request.toJson().toString().toByteArray()) }.getOrNull())
@@ -913,6 +923,9 @@ class Core(
     companion object {
         /** The longest `handleAppStartBlocking()` waits for the start's answer, in seconds, before it answers the embedded bundle. */
         const val START_TIMEOUT = 2.0
+
+        /** The session log's code for a report or a batch the events endpoint would refuse, which the device does not send. */
+        private const val REPORT_UNREADABLE = "REPORT_UNREADABLE"
 
         /** What a build without a channel answers, without a request: it can never update until the app sets a channel at runtime. */
         const val MISSING_CHANNEL_MESSAGE = "The build carries no channel: it was built without a token or offline, so the channel's name was never resolved. Build it with a token to receive updates."

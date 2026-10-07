@@ -94,6 +94,15 @@ data class DeviceReport(
         .put("osVersion", osVersion)
         .put("releaseId", releaseId ?: JSONObject.NULL)
 
+    /**
+     * Whether the events endpoint reads the report: every text fact printable, every attribute under the attribute rules and
+     * every id an identifier. A report it refuses costs the batch's events at every sync, so the device never sends one.
+     */
+    internal val isReadable: Boolean
+        get() = listOfNotNull(binaryBuild, binaryVersion, channelId, osVersion, fingerprint).all(WireRule.PRINTABLE::accepts) &&
+            listOfNotNull(embeddedBundleId, releaseId).all(WireRule.IDENTIFIER::accepts) &&
+            attributes.all { (key, value) -> AttributeRules.isValidKey(key) && AttributeRules.isValidValue(value) }
+
     companion object {
         fun fromJson(json: JSONObject) = DeviceReport(
             attributes = json.getJSONObject("attributes").toStringMap(),
@@ -117,6 +126,16 @@ data class DeviceEventsRequest(val deviceId: String, val events: List<DeviceEven
         .put("platform", platform)
         .put("report", report?.toJson() ?: JSONObject.NULL)
         .put("sdkVersion", sdkVersion)
+
+    /** Whether the events endpoint reads the batch whole: the device's id and the SDK's version printable, a platform it knows, no more events than the outbox holds and a readable report. */
+    internal val isReadable: Boolean
+        get() = listOf(deviceId, sdkVersion).all(WireRule.PRINTABLE::accepts) && platform in ChannelIndex.PLATFORMS &&
+            events.size <= MAXIMUM_EVENT_COUNT && (report?.isReadable ?: true)
+
+    companion object {
+        /** The outbox's cap and so the largest batch a device sends; the events endpoint refuses a larger one. */
+        const val MAXIMUM_EVENT_COUNT = 200
+    }
 }
 
 /** The `202`: the server time the device stores as `reportedAt`. */

@@ -136,6 +136,21 @@ class DeviceEventsContractTest {
         }
     }
 
+    /** No batch the endpoint refuses can be rebuilt into one the device would send: the core's types cannot hold it, or it is not readable, or it writes back otherwise. */
+    @Test
+    fun shouldNeverWriteABatchTheDeviceEventsFixtureRefuses() {
+        val fixture = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/device-events.json").readText())
+        val cases = fixture.getJSONArray("refusedBatches").map { it }
+        assertTrue(cases.size > 10)
+        for (case in cases) {
+            val batch = case.getJSONObject("batch")
+            val request = runCatching {
+                DeviceEventsRequest(batch.getString("deviceId"), batch.getJSONArray("events").map(DeviceEvent::fromJson), batch.getString("platform"), batch.getNullableObject("report")?.let(DeviceReport::fromJson), batch.getString("sdkVersion"))
+            }.getOrNull() ?: continue
+            if (request.isReadable) assertFalse(case.getString("name"), resolveComparable(request.toJson()) == resolveComparable(batch))
+        }
+    }
+
     private fun retainKeys(json: JSONObject, keys: Set<String>): JSONObject = JSONObject(json.toString()).apply { json.keys().asSequence().filter { it !in keys }.toList().forEach(::remove) }
 
     /** A JSON value as plain values that compare by content: an object as a map, an array as a list, a whole number as a Long. */
