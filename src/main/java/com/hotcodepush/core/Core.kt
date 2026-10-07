@@ -59,6 +59,10 @@ class Core(
     private val failureHandler = CoroutineExceptionHandler { _, failure -> log.record(LogEntry(clock.now(), SyncStatus.FAILED.wire, "a task of the core stopped: $failure")) }
 
     private var readyTimer: ScheduledTask? = null
+
+    /** The gate's window left while the gate runs, counted in the foreground alone, and when its timer last began counting it. */
+    private var readyTimeLeft: Double? = null
+    private var readyTimerStartedAt = 0L
     private var intervalTimer: ScheduledTask? = null
     private var runningSync: Deferred<SyncResult>? = null
     private var isRestartAllowed = true
@@ -203,17 +207,22 @@ class Core(
         result
     }
 
-    /** The background: the interval timer stops, since interval checks belong to the foreground, and the moment is kept for `next-resume`. */
+    /**
+     * The background: the interval timer stops, since interval checks belong to the foreground, the gate's window pauses, since a
+     * release nobody sees cannot render, and the moment is kept for `next-resume`.
+     */
     suspend fun handleAppPause() = lock.withLock {
         backgroundedAt = clock.now()
         intervalTimer?.cancel()
         intervalTimer = null
+        pauseReadyTimer()
     }
 
     /** A resume installs a `next-resume` release after enough time in the background, else checks when the interval has passed. */
     suspend fun handleAppResume() = lock.withLock {
         val backgroundDuration = backgroundedAt?.let { (clock.now() - it) / 1000.0 }
         backgroundedAt = null
+        resumeReadyTimer()
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
         if (backgroundDuration != null && next != null && shouldInstallAtResume(next) && backgroundDuration >= configuration.installOnResumeAfter) {
@@ -666,14 +675,31 @@ class Core(
         restartThroughGate(isAskedByApp = false) { reloadApp() }
     }
 
+    /** The gate's full window, counted from now in the foreground, or from the next resume in the background. */
     private fun startReadyTimer() {
         stopReadyTimer()
-        readyTimer = scheduler.schedule(configuration.readyTimeout) { launchTask { handleReadyTimeout() } }
+        readyTimeLeft = configuration.readyTimeout
+        if (backgroundedAt == null) resumeReadyTimer()
     }
 
     private fun stopReadyTimer() {
         readyTimer?.cancel()
         readyTimer = null
+        readyTimeLeft = null
+    }
+
+    private fun pauseReadyTimer() {
+        val timer = readyTimer ?: return
+        timer.cancel()
+        readyTimer = null
+        readyTimeLeft = readyTimeLeft?.let { maxOf(0.0, it - (clock.now() - readyTimerStartedAt) / 1000.0) }
+    }
+
+    private fun resumeReadyTimer() {
+        val timeLeft = readyTimeLeft ?: return
+        if (readyTimer != null) return
+        readyTimerStartedAt = clock.now()
+        readyTimer = scheduler.schedule(timeLeft) { launchTask { handleReadyTimeout() } }
     }
 
     /** The timer running out settles the start, so its rollback waits only while the app holds restarts. */

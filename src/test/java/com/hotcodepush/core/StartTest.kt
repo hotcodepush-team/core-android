@@ -64,6 +64,36 @@ class StartTest {
     }
 
     @Test
+    fun shouldPauseTheGatesWindowInTheBackgroundAndRollBackOnlyWhenTheForegroundTimeRanOut() = runBlocking {
+        val (harness, v2) = harnessWithAWaitingRelease()
+        harness.core.handleAppStart()
+        assertEquals(10.0, harness.scheduler.tasks.single().seconds, 0.0)
+        harness.clock.now += 3_000
+        harness.core.handleAppPause()
+        assertTrue(harness.scheduler.tasks.single().isCancelled)
+        harness.clock.now += 600_000
+        harness.core.handleAppResume()
+        val resumed = harness.scheduler.tasks.last { !it.isCancelled }
+        assertEquals(7.0, resumed.seconds, 0.001)
+        assertEquals(v2.release.release, harness.core.getState().currentRelease)
+        harness.scheduler.fire()
+        assertEquals(RollbackReason.READINESS_TIMED_OUT, harness.listener.rolledBack.single().reason)
+    }
+
+    @Test
+    fun shouldConfirmAReleaseThatRendersAfterALongBackground() = runBlocking {
+        val (harness, v2) = harnessWithAWaitingRelease()
+        harness.core.handleAppStart()
+        harness.core.handleAppPause()
+        harness.clock.now += 3_600_000
+        harness.scheduler.fire()
+        harness.core.handleAppResume()
+        harness.core.handleRendered()
+        assertEquals(v2.release.release, harness.core.getState().fallbackRelease)
+        assertTrue(harness.listener.rolledBack.isEmpty())
+    }
+
+    @Test
     fun shouldResolveTheEmbeddedBundleAsTheStartsBundleWhenThePreviousRunNeverConfirmedTheRelease() = runBlocking {
         val (harness, _) = harnessWithAWaitingRelease()
         harness.core.handleAppStart()
