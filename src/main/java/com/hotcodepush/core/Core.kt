@@ -49,6 +49,9 @@ class Core(
     private val downloader = Downloader(configuration, device.platform, files, embedded, http, temporaryDirectory)
     private val httpClient = http
     private val lock = Mutex()
+
+    /** One cycle at a time, whatever its stage: two never fetch, download or write the same files beside each other. */
+    private val cycleLock = Mutex()
     private val log = SessionLog()
 
     /** What escapes a task the core runs on its own is logged, never thrown at the app's process. */
@@ -168,23 +171,21 @@ class Core(
 
     /** The running sync, which the next sync no longer joins once it ended, however it ended. */
     private suspend fun performSync(trigger: SyncTrigger, options: SyncOptions): SyncResult = try {
-        performCycle(trigger, Stage.SYNC, options)
+        cycleLock.withLock { performCycle(trigger, Stage.SYNC, options) }
     } finally {
         withContext(NonCancellable) { lock.withLock { runningSync = null } }
     }
 
-    /** The first stage: fetch and evaluate, download nothing. */
+    /** The first stage: fetch and evaluate, download nothing; after the cycle that runs, never beside it. */
     suspend fun checkForUpdate(): SyncResult {
         verifyChannelId()
-        lock.withLock { runningSync }?.await()
-        return performCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions())
+        return cycleLock.withLock { performCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions()) }
     }
 
-    /** The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then install per the strategies. */
+    /** The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then install per the strategies; after the cycle that runs, never beside it. */
     suspend fun downloadUpdate(): SyncResult {
         verifyChannelId()
-        lock.withLock { runningSync }?.await()
-        return performCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions())
+        return cycleLock.withLock { performCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions()) }
     }
 
     /** The third stage: apply the downloaded update and reload the app, now or, before the app is up in this run, once it is. */

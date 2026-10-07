@@ -1,5 +1,7 @@
 package com.hotcodepush.core
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -548,6 +550,27 @@ class CoreTest {
         assertEquals(FailedReason.DOWNLOAD_FAILED.name, result.reason)
         assertEquals(FailedReason.DOWNLOAD_FAILED.name, StateStore(harness.store).unsentEvents.last().reason)
         assertNull(harness.core.getState().nextRelease)
+    }
+
+    @Test
+    fun shouldDownloadOnceWhenASyncASecondDownloadAndACheckAreAskedWhileADownloadRuns() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.downloadGate = CompletableDeferred()
+        val download = harness.scope.async { harness.core.downloadUpdate() }
+        val sync = harness.scope.async { harness.core.sync(SyncTrigger.MANUAL) }
+        val secondDownload = harness.scope.async { harness.core.downloadUpdate() }
+        val check = harness.scope.async { harness.core.checkForUpdate() }
+        assertEquals(1, harness.http.requests.count { it.first.contains("/deltas/") })
+        assertEquals(1, harness.http.requests.count { it.first == Fixture.indexUrl() })
+        harness.http.downloadGate?.complete(Unit)
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), download.await())
+        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.NEXT_START), sync.await())
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), secondDownload.await())
+        assertEquals(SyncResult.available(v2.release.release, "notes 1", v2.release.sizeBytes), check.await())
+        assertEquals(1, harness.http.requests.count { it.first.contains("/deltas/") })
+        assertEquals(1, harness.http.requests.count { it.first == v2.envelope.pack.url })
     }
 
     @Test
