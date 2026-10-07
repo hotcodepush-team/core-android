@@ -39,6 +39,31 @@ class StartTest {
     }
 
     @Test
+    fun shouldApplyNoWaitingReleaseAndArmNoGateAtAHeadlessStartAndSwitchAtTheNextStartThatRenders() = runBlocking {
+        val (harness, v2) = harnessWithAWaitingRelease()
+        harness.loader.served = "b2"
+        assertNull(harness.core.resolveStartBundleId(isHeadless = true))
+        harness.core.handleAppStart()
+        assertNull(harness.core.getState().currentRelease)
+        assertEquals(v2.release.release, harness.core.getState().nextRelease)
+        assertEquals(listOf<String?>(null), harness.loader.loaded)
+        assertTrue(harness.scheduler.tasks.isEmpty())
+        harness.restart()
+        assertEquals("b2", harness.core.resolveStartBundleId())
+        harness.core.handleAppStart()
+        assertEquals(1, harness.scheduler.tasks.size)
+    }
+
+    @Test
+    fun shouldArmNoGateWhenHandleAppStartSaysTheStartIsHeadless() = runBlocking {
+        val (harness, v2) = harnessWithAWaitingRelease()
+        harness.core.handleAppStart(isHeadless = true)
+        assertEquals(v2.release.release, harness.core.getState().nextRelease)
+        assertTrue(harness.scheduler.tasks.isEmpty())
+        assertTrue(harness.loader.loaded.isEmpty())
+    }
+
+    @Test
     fun shouldResolveTheEmbeddedBundleAsTheStartsBundleWhenThePreviousRunNeverConfirmedTheRelease() = runBlocking {
         val (harness, _) = harnessWithAWaitingRelease()
         harness.core.handleAppStart()

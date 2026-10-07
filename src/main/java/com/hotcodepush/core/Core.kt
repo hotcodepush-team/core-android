@@ -94,31 +94,35 @@ class Core(
      * forgets the stored releases of another binary or whose files are gone, rolls back the release the previous run never
      * confirmed, and switches to the waiting release the strategies apply at a start. Whatever it throws answers the embedded
      * bundle and is logged, never thrown at the host.
+     *
+     * `isHeadless` says no screen will render in this run, an Android process started without an activity or an Expo background
+     * task: such a start applies no waiting release, which keeps waiting for a start that renders, so the gate has nothing to
+     * judge. The first call of this or `handleAppStart()` in the process decides.
      */
-    fun resolveStartBundleId(): String? = runBlocking { lock.withLock { resolveStart() } }
+    fun resolveStartBundleId(isHeadless: Boolean = false): String? = runBlocking { lock.withLock { resolveStart(isHeadless) } }
 
     /**
      * The start of a run: the start rule unless `resolveStartBundleId()` ran it, the bundle it resolved, a rollback the app has not
      * come up after and the gate; the cleanup follows on its own, so the start never waits for it. A later call in the process
      * reports a reload the core did not perform, a JavaScript restart or a development reload: the app is not up until the
      * reloaded one is, a rollback notice it has not come up after reaches it, and a release not yet confirmed runs through the
-     * gate again. Nothing it throws reaches the host.
+     * gate again. Nothing it throws reaches the host. `isHeadless` is `resolveStartBundleId()`'s.
      */
-    suspend fun handleAppStart() {
+    suspend fun handleAppStart(isHeadless: Boolean = false) {
         val isFirstStart = lock.withLock {
             val isFirstStart = !hasStarted
             hasStarted = true
-            runLogged("the start") { if (isFirstStart) beginRun() else beginReloadedRun() }
+            runLogged("the start") { if (isFirstStart) beginRun(isHeadless) else beginReloadedRun() }
             isFirstStart
         }
         if (isFirstStart) launchTask(::deleteUnusedFiles)
     }
 
-    private fun resolveStart(): String? {
+    private fun resolveStart(isHeadless: Boolean): String? {
         if (!isStartResolved) {
             isStartResolved = true
             try {
-                applyStartRule()
+                applyStartRule(isHeadless)
             } catch (failure: Throwable) {
                 runEmbeddedBundleAfter(failure)
             }
@@ -126,13 +130,14 @@ class Core(
         return runCatching { state.currentRelease?.bundleId }.getOrNull()
     }
 
-    private fun applyStartRule() {
+    /** After it the current release is confirmed unless it switched, so a headless start, which never switches, arms no gate. */
+    private fun applyStartRule(isHeadless: Boolean) {
         if (state.pendingRollbackEvent == null) state.lastRollback = null
         if (state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest()) dropStoredReleases()
         if (isCurrentReleaseUnconfirmed()) rollbackCurrentRelease(RollbackReason.APP_CRASHED, null)
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
-        if (next != null && shouldSwitchAtStart(next)) switchToNextRelease()
+        if (!isHeadless && next != null && shouldSwitchAtStart(next)) switchToNextRelease()
     }
 
     /** A start rule that threw leaves the stored releases as a new binary does, so the state says what runs: the embedded bundle. */
@@ -141,8 +146,8 @@ class Core(
         runLogged("forgetting the stored releases", ::dropStoredReleases)
     }
 
-    private fun beginRun() {
-        loadBundle(resolveStart())
+    private fun beginRun(isHeadless: Boolean) {
+        loadBundle(resolveStart(isHeadless))
         if (!hasAnnouncedRollback) announceRollback()
         if (isCurrentReleaseUnconfirmed()) {
             startReadyTimer()
