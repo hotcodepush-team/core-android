@@ -16,7 +16,7 @@ class DownloaderTest {
     fun shouldRefuseAManifestUrlOffTheConfiguredHosts() {
         val harness = DownloaderHarness()
         val release = harness.publish(DownloaderHarness.bundle(mapOf("index.html" to indexHtml)).manifest, manifestUrl = "https://elsewhere.test/manifest.json")
-        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(release)?.reason)
+        assertEquals(FailedReason.MANIFEST_INVALID, harness.downloadFailure(release)?.reason)
         assertTrue(harness.http.requests.isEmpty())
     }
 
@@ -24,7 +24,7 @@ class DownloaderTest {
     fun shouldRefuseAPackUrlOffTheConfiguredHosts() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
-        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, packUrl = "https://elsewhere.test/pack"))?.reason)
+        assertEquals(FailedReason.MANIFEST_INVALID, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, packUrl = "https://elsewhere.test/pack"))?.reason)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
     }
 
@@ -32,7 +32,7 @@ class DownloaderTest {
     fun shouldRefuseAManifestPathThatClimbsOutOfTheServedTree() {
         val harness = DownloaderHarness()
         val failure = harness.downloadFailure(harness.publish(DownloaderHarness.bundle(mapOf("../../escape.html" to indexHtml)).manifest))
-        assertEquals(FailedReason.VERIFICATION_FAILED, failure?.reason)
+        assertEquals(FailedReason.MANIFEST_INVALID, failure?.reason)
         assertTrue(harness.files.bundleIds().isEmpty())
         assertFalse(File(harness.root, "escape.html").exists())
     }
@@ -41,7 +41,7 @@ class DownloaderTest {
     fun shouldRefuseAnEnvelopeNamingAnotherBundle() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
-        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, bundleId = "b3"))?.reason)
+        assertEquals(FailedReason.CONTENT_MISMATCHED, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, bundleId = "b3"))?.reason)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
     }
 
@@ -59,7 +59,7 @@ class DownloaderTest {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
         val manifest = bundle.manifest.copy(files = bundle.manifest.files.map { it.copy(sizeBytes = it.sizeBytes - 1) })
-        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(manifest, bundle.pack))?.reason)
+        assertEquals(FailedReason.CONTENT_MISMATCHED, harness.downloadFailure(harness.publish(manifest, bundle.pack))?.reason)
         assertFalse(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
     }
 
@@ -67,7 +67,7 @@ class DownloaderTest {
     fun shouldRefuseAPackWhoseLengthDiffersFromTheEnvelope() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
-        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, packSizeBytes = bundle.pack.size + 1L))?.reason)
+        assertEquals(FailedReason.CONTENT_MISMATCHED, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, packSizeBytes = bundle.pack.size + 1L))?.reason)
         assertEquals(emptyList<String>(), File(harness.root, "tmp").list()?.toList())
     }
 
@@ -87,7 +87,7 @@ class DownloaderTest {
         val harness = DownloaderHarness()
         val pack = PackWriter.pack(listOf(indexHtml, appJs).map { PackEntry.File(Hashing.sha256Hex(it), it) })
         val manifest = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs)).manifest
-        assertEquals(FailedReason.VERIFICATION_FAILED, harness.downloadFailure(harness.publish(manifest, pack))?.reason)
+        assertEquals(FailedReason.CONTENT_MISMATCHED, harness.downloadFailure(harness.publish(manifest, pack))?.reason)
         assertFalse(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
     }
 

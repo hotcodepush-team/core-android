@@ -16,13 +16,15 @@ import java.util.concurrent.TimeUnit
 class DeviceEventsContractTest {
     private val events = listOf(
         DeviceEvent.checked("r2", SyncStatus.AVAILABLE),
-        DeviceEvent.checked("r3", SyncStatus.SKIPPED, SkippedReason.INCOMPATIBLE, ConditionType.BINARY),
-        DeviceEvent.checked("r4", SyncStatus.SKIPPED, SkippedReason.UNSUPPORTED_CONDITION),
+        DeviceEvent.checked("r3", SyncStatus.SKIPPED, SkippedReason.DEVICE_INCOMPATIBLE, ConditionType.BINARY),
+        DeviceEvent.checked("r4", SyncStatus.SKIPPED, SkippedReason.CONDITION_UNSUPPORTED),
         DeviceEvent.downloaded("r2", "b2", 2048, PackKind.STREAMED),
         DeviceEvent.applied("r2"),
         DeviceEvent.confirmed("r2"),
-        DeviceEvent.failed("r2", FailedReason.INVALID_SIGNATURE.name),
-        DeviceEvent.failed("r2", RollbackReason.REPORTED_BY_APP.name, "checkout broke"),
+        DeviceEvent.failed("r2", FailedReason.SIGNATURE_INVALID.name),
+        DeviceEvent.failed("r2", FailedReason.MANIFEST_INVALID.name),
+        DeviceEvent.failed("r2", FailedReason.CONTENT_MISMATCHED.name),
+        DeviceEvent.failed("r2", RollbackReason.APP_REQUESTED.name, "checkout broke"),
         DeviceEvent.rolledBack("r3", "r2"),
         DeviceEvent.rolledBack("r2", null),
     )
@@ -39,6 +41,8 @@ class DeviceEventsContractTest {
                 setOf("type", "releaseId", "bundleId", "bytes", "packKind"),
                 setOf("type", "releaseId"),
                 setOf("type", "releaseId"),
+                setOf("type", "releaseId", "reason"),
+                setOf("type", "releaseId", "reason"),
                 setOf("type", "releaseId", "reason"),
                 setOf("type", "releaseId", "reason", "detail"),
                 setOf("type", "fromReleaseId", "toReleaseId"),

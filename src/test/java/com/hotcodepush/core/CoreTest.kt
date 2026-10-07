@@ -152,10 +152,10 @@ class CoreTest {
         assertNull(status.currentRelease)
         assertEquals(listOf("b2"), status.failedBundleIds)
         assertEquals(listOf("b2", null), harness.loader.loaded)
-        assertEquals(SyncResult.skipped(v2.release.release, SkippedReason.FAILED_BEFORE), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.skipped(v2.release.release, SkippedReason.BUNDLE_FAILED_BEFORE), harness.core.sync(SyncTrigger.MANUAL))
         val ready = harness.core.notifyReady()
         assertTrue(ready.isRolledBack)
-        assertEquals(RollbackReason.READY_TIMEOUT, ready.rollbackReason)
+        assertEquals(RollbackReason.READINESS_TIMED_OUT, ready.rollbackReason)
         assertEquals(v2.release.release, ready.previousRelease)
     }
 
@@ -174,7 +174,7 @@ class CoreTest {
         val status = harness.core.getState()
         assertNull(status.currentRelease)
         assertEquals(listOf("b2"), status.failedBundleIds)
-        assertEquals(RollbackReason.CRASHED, harness.listener.rolledBack.last().reason)
+        assertEquals(RollbackReason.APP_CRASHED, harness.listener.rolledBack.last().reason)
         assertNull(harness.loader.loaded.last())
     }
 
@@ -222,7 +222,7 @@ class CoreTest {
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(SyncStatus.FAILED, result.status)
-        assertEquals(FailedReason.OFFLINE.name, result.reason)
+        assertEquals(FailedReason.DEVICE_OFFLINE.name, result.reason)
     }
 
     @Test
@@ -249,7 +249,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldFailVerificationOnATamperedManifest() = runBlocking {
+    fun shouldRefuseATamperedManifestAsMismatchedContent() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -257,7 +257,7 @@ class CoreTest {
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(SyncStatus.FAILED, result.status)
-        assertEquals(FailedReason.VERIFICATION_FAILED.name, result.reason)
+        assertEquals(FailedReason.CONTENT_MISMATCHED.name, result.reason)
     }
 
     @Test
@@ -266,7 +266,7 @@ class CoreTest {
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(FailedReason.INVALID_SIGNATURE.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(FailedReason.SIGNATURE_INVALID.name, harness.core.sync(SyncTrigger.MANUAL).reason)
     }
 
     @Test
@@ -289,9 +289,9 @@ class CoreTest {
         harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(signature = fixture.sign(v2.envelope.manifest, "rsa-4096-a")).toJson())
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(FailedReason.INVALID_SIGNATURE.name, result.reason)
+        assertEquals(FailedReason.SIGNATURE_INVALID.name, result.reason)
         assertTrue(result.message?.contains("does not hold") == true)
-        assertEquals(FailedReason.INVALID_SIGNATURE, harness.listener.failed.single().reason)
+        assertEquals(FailedReason.SIGNATURE_INVALID, harness.listener.failed.single().reason)
     }
 
     @Test
@@ -444,7 +444,7 @@ class CoreTest {
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(SyncResult.skipped(v2.release.release, SkippedReason.METERED_CONNECTION), harness.core.sync(SyncTrigger.MANUAL, SyncOptions(downloadStrategy = DownloadStrategy.UNMETERED)))
+        assertEquals(SyncResult.skipped(v2.release.release, SkippedReason.CONNECTION_METERED), harness.core.sync(SyncTrigger.MANUAL, SyncOptions(downloadStrategy = DownloadStrategy.UNMETERED)))
     }
 
     @Test
@@ -456,7 +456,7 @@ class CoreTest {
         assertEquals(SyncResult.upToDate(null), harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(ChannelResult("c-staging", "staging", ChannelSource.RUNTIME), harness.core.channel())
         harness.core.setChannel(ChannelChoice.Name("nowhere"))
-        assertEquals(FailedReason.UNKNOWN_CHANNEL.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(FailedReason.CHANNEL_UNKNOWN.name, harness.core.sync(SyncTrigger.MANUAL).reason)
     }
 
     @Test
@@ -493,7 +493,7 @@ class CoreTest {
         harness.core.sync(SyncTrigger.MANUAL)
         val events = StateStore(harness.store).unsentEvents.filter { it.type == "checked" }
         assertEquals(1, events.size)
-        assertEquals(SkippedReason.INCOMPATIBLE.name, events[0].reason)
+        assertEquals(SkippedReason.DEVICE_INCOMPATIBLE.name, events[0].reason)
         assertEquals(ConditionType.OS, events[0].condition)
     }
 
@@ -641,7 +641,7 @@ class CoreTest {
         harness.acknowledgeEvents()
         harness.publish(emptyList(), 1)
         harness.core.handleAppStart()
-        assertEquals(SyncResult.skipped(null, SkippedReason.DEBUG_BUILD), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.skipped(null, SkippedReason.BUILD_DEBUG), harness.core.sync(SyncTrigger.MANUAL))
         assertTrue(harness.http.posts.isEmpty())
     }
 
@@ -754,7 +754,7 @@ class CoreTest {
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(SyncResult.skipped(v2.release.release, SkippedReason.METERED_CONNECTION), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.skipped(v2.release.release, SkippedReason.CONNECTION_METERED), harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), harness.core.downloadUpdate())
         assertEquals(listOf(InstallMoment.NEXT_START), harness.listener.downloaded.map { it.installAt })
     }
@@ -814,7 +814,7 @@ class CoreTest {
         harness.core.notifyReady()
         harness.core.rollbackUpdate("checkout crashed")
         val failed = StateStore(harness.store).unsentEvents.last { it.type == "failed" }
-        assertEquals(RollbackReason.REPORTED_BY_APP.name, failed.reason)
+        assertEquals(RollbackReason.APP_REQUESTED.name, failed.reason)
         assertEquals("checkout crashed", failed.detail)
         val error = runCatching { harness.core.rollbackUpdate("a\nb") }.exceptionOrNull()
         assertTrue(error is PlainException)
@@ -831,7 +831,7 @@ class CoreTest {
         harness.core.handleAppStart()
         harness.restart(Fixture.configuration(autoCheck = true))
         harness.core.handleAppStart()
-        assertEquals(RollbackReason.CRASHED, harness.listener.rolledBack.last().reason)
+        assertEquals(RollbackReason.APP_CRASHED, harness.listener.rolledBack.last().reason)
         assertEquals(SyncTrigger.START, StateStore(harness.store).lastCheck?.trigger)
         assertTrue(harness.files.bundleIds().isEmpty())
     }
@@ -850,7 +850,7 @@ class CoreTest {
         assertEquals(listOf("b2"), harness.loader.loaded)
         harness.core.setRestartAllowed(true)
         assertEquals(listOf("b2", null), harness.loader.loaded)
-        assertEquals(listOf(RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
     }
 
     @Test
@@ -860,10 +860,10 @@ class CoreTest {
         harness.scheduler.fire()
         assertTrue(harness.listener.rolledBack.isEmpty())
         startAgain(harness, immediateInstall)
-        assertEquals(listOf(RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
         val ready = harness.core.notifyReady()
         assertTrue(ready.isRolledBack)
-        assertEquals(RollbackReason.READY_TIMEOUT, ready.rollbackReason)
+        assertEquals(RollbackReason.READINESS_TIMED_OUT, ready.rollbackReason)
         assertEquals("r1", ready.previousRelease?.id)
     }
 
@@ -873,7 +873,7 @@ class CoreTest {
         harness.core.rollbackUpdate(null)
         assertEquals(1, harness.listener.rolledBack.size)
         startAgain(harness, immediateInstall)
-        assertEquals(listOf(RollbackReason.REPORTED_BY_APP, RollbackReason.REPORTED_BY_APP), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.APP_REQUESTED, RollbackReason.APP_REQUESTED), harness.listener.rolledBack.map { it.reason })
     }
 
     @Test
@@ -907,17 +907,17 @@ class CoreTest {
         harness.core.handleAppStart()
         harness.restart()
         harness.core.handleAppStart()
-        assertEquals(listOf(RollbackReason.CRASHED), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.APP_CRASHED), harness.listener.rolledBack.map { it.reason })
     }
 
     @Test
     fun shouldKeepTheNoticeWhenTheReadinessTimerRanOutAndNothingRendered() = runBlocking {
         val harness = startOnUnconfirmedRelease()
         harness.scheduler.fire()
-        assertEquals(listOf(RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
-        assertEquals(RollbackReason.READY_TIMEOUT, StateStore(harness.store).pendingRollbackEvent?.reason)
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(RollbackReason.READINESS_TIMED_OUT, StateStore(harness.store).pendingRollbackEvent?.reason)
         startAgain(harness, immediateInstall)
-        assertEquals(listOf(RollbackReason.READY_TIMEOUT, RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT, RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
     }
 
     @Test
@@ -926,10 +926,10 @@ class CoreTest {
         harness.core.setRestartAllowed(false)
         harness.scheduler.fire()
         harness.core.handleRendered()
-        assertEquals(RollbackReason.READY_TIMEOUT, StateStore(harness.store).pendingRollbackEvent?.reason)
+        assertEquals(RollbackReason.READINESS_TIMED_OUT, StateStore(harness.store).pendingRollbackEvent?.reason)
         harness.core.setRestartAllowed(true)
-        assertEquals(listOf(RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
-        assertEquals(RollbackReason.READY_TIMEOUT, StateStore(harness.store).pendingRollbackEvent?.reason)
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(RollbackReason.READINESS_TIMED_OUT, StateStore(harness.store).pendingRollbackEvent?.reason)
     }
 
     @Test
@@ -963,8 +963,8 @@ class CoreTest {
         harness.core.setChannel(ChannelChoice.Name("staging"))
         harness.http.isOffline = true
         val result = harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(FailedReason.OFFLINE.name, result.reason)
-        assertEquals(listOf(FailedReason.OFFLINE), harness.listener.failed.map { it.reason })
+        assertEquals(FailedReason.DEVICE_OFFLINE.name, result.reason)
+        assertEquals(listOf(FailedReason.DEVICE_OFFLINE), harness.listener.failed.map { it.reason })
     }
 
     @Test
@@ -1135,7 +1135,7 @@ class CoreTest {
         assertTrue(harness.loader.loaded.isEmpty())
         harness.scheduler.fire()
         assertEquals(listOf<String?>(null), harness.loader.loaded)
-        assertEquals(listOf(RollbackReason.READY_TIMEOUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
     }
 
     @Test
@@ -1143,7 +1143,7 @@ class CoreTest {
         val harness = startOnConfirmedRelease(Fixture.configuration())
         harness.core.rollbackUpdate("fatal")
         assertEquals(listOf<String?>(null), harness.loader.loaded)
-        assertEquals(listOf(RollbackReason.REPORTED_BY_APP), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.APP_REQUESTED), harness.listener.rolledBack.map { it.reason })
     }
 
     @Test

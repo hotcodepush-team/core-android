@@ -15,7 +15,7 @@ data class DeviceEvent(
     val packKind: String? = null,
     val fromReleaseId: String? = null,
     val toReleaseId: String? = null,
-    /** The app's `rollback({ reason })` on `REPORTED_BY_APP`: printable, at most 256 characters. */
+    /** The app's `rollback({ reason })` on `APP_REQUESTED`: printable, at most 256 characters. */
     val detail: String? = null,
 ) {
     /**

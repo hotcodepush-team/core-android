@@ -40,12 +40,12 @@ class ContractTest {
         assertEquals(setOf("status", "release", "notes"), keys(SyncResult.downloaded(release, null).toJson()))
         assertEquals(setOf("status", "release", "notes", "installAt"), keys(SyncResult.updated(release, null, InstallMoment.IMMEDIATE).toJson()))
         assertEquals(setOf("status", "release", "reason"), keys(SyncResult.skipped(null, SkippedReason.CHANNEL_PAUSED).toJson()))
-        assertEquals(setOf("status", "release", "reason", "condition"), keys(SyncResult.skipped(release, SkippedReason.INCOMPATIBLE, ConditionType.OS).toJson()))
-        assertEquals(setOf("status", "release", "reason", "message"), keys(SyncResult.failed(null, FailedReason.OFFLINE, "m").toJson()))
+        assertEquals(setOf("status", "release", "reason", "condition"), keys(SyncResult.skipped(release, SkippedReason.DEVICE_INCOMPATIBLE, ConditionType.OS).toJson()))
+        assertEquals(setOf("status", "release", "reason", "message"), keys(SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "m").toJson()))
         assertEquals(setOf("currentRelease", "previousRelease", "isRolledBack"), keys(NotifyReadyResult(null, null, false, null).toJson()))
         assertEquals(setOf("status", "release"), keys(ApplyResult(ApplyStatus.NOTHING_TO_APPLY, null).toJson()))
         assertTrue(ApplyResult(ApplyStatus.NOTHING_TO_APPLY, null).toJson().isNull("release"))
         assertEquals(setOf("release", "notes", "downloadBytes", "trigger"), keys(UpdateAvailableEvent(release, null, null, SyncTrigger.MANUAL).toJson()))
-        assertEquals(setOf("release", "reason", "message", "trigger"), keys(UpdateFailedEvent(null, FailedReason.OFFLINE, "m", SyncTrigger.START).toJson()))
+        assertEquals(setOf("release", "reason", "message", "trigger"), keys(UpdateFailedEvent(null, FailedReason.DEVICE_OFFLINE, "m", SyncTrigger.START).toJson()))
     }
 }

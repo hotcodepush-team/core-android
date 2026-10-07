@@ -71,14 +71,14 @@ object Evaluator {
 
     fun verdict(release: IndexRelease, index: ChannelIndex, device: DeviceInfo): ReleaseVerdict {
         if (isRevoked(release.id, index)) return ReleaseVerdict(release, false, SkippedReason.RELEASE_REVOKED)
-        if (release.createdAt < device.builtAt) return ReleaseVerdict(release, false, SkippedReason.OLDER_THAN_BINARY)
-        if (release.bundleId in device.failedBundleIds) return ReleaseVerdict(release, false, SkippedReason.FAILED_BEFORE)
+        if (release.createdAt < device.builtAt) return ReleaseVerdict(release, false, SkippedReason.RELEASE_OLDER_THAN_BINARY)
+        if (release.bundleId in device.failedBundleIds) return ReleaseVerdict(release, false, SkippedReason.BUNDLE_FAILED_BEFORE)
         release.conditions.firstOrNull { !isSatisfied(it, device) }?.let { failed ->
-            val type = failed.type ?: return ReleaseVerdict(release, false, SkippedReason.UNSUPPORTED_CONDITION)
-            val reason = if (type == ConditionType.ATTRIBUTE || type == ConditionType.DEVICE) SkippedReason.NOT_TARGETED else SkippedReason.INCOMPATIBLE
+            val type = failed.type ?: return ReleaseVerdict(release, false, SkippedReason.CONDITION_UNSUPPORTED)
+            val reason = if (type == ConditionType.ATTRIBUTE || type == ConditionType.DEVICE) SkippedReason.DEVICE_NOT_TARGETED else SkippedReason.DEVICE_INCOMPATIBLE
             return ReleaseVerdict(release, false, reason, type)
         }
-        if (Hashing.rolloutBucket(device.deviceId, release.id) >= release.rollout) return ReleaseVerdict(release, false, SkippedReason.NOT_IN_ROLLOUT)
+        if (Hashing.rolloutBucket(device.deviceId, release.id) >= release.rollout) return ReleaseVerdict(release, false, SkippedReason.DEVICE_NOT_IN_ROLLOUT)
         return ReleaseVerdict(release, true)
     }
 

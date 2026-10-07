@@ -39,14 +39,14 @@ class DebugScreenActivityTest {
 
         (buttons.getChildAt(0) as Button).performClick()
         shadowOf(Looper.getMainLooper()).idle()
-        assertTrue(report.text.toString(), report.text.contains("Result: FAILED OFFLINE"))
+        assertTrue(report.text.toString(), report.text.contains("Result: FAILED DEVICE_OFFLINE"))
 
         (buttons.getChildAt(1) as Button).performClick()
         val chooser = shadowOf(activity).nextStartedActivity
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         val shared = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
         assertEquals(report.text.toString(), shared?.getStringExtra(Intent.EXTRA_TEXT))
-        assertTrue(shared?.getStringExtra(Intent.EXTRA_TEXT)?.contains("Result: FAILED OFFLINE") == true)
+        assertTrue(shared?.getStringExtra(Intent.EXTRA_TEXT)?.contains("Result: FAILED DEVICE_OFFLINE") == true)
     }
 
     @Test

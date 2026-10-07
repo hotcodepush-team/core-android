@@ -74,7 +74,7 @@ class Core(
     suspend fun handleAppStart() = lock.withLock {
         if (state.pendingRollbackEvent == null) state.lastRollback = null
         if (state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest()) dropStoredReleases()
-        if (isCurrentReleaseUnconfirmed()) rollbackCurrentRelease(RollbackReason.CRASHED, null)
+        if (isCurrentReleaseUnconfirmed()) rollbackCurrentRelease(RollbackReason.APP_CRASHED, null)
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
         if (next != null && shouldSwitchAtStart(next)) switchToNextRelease()
@@ -198,20 +198,20 @@ class Core(
 
     private suspend fun resolveCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
         val current = state.currentRelease
-        if (isDisabledInThisBuild) return SyncResult.skipped(current, SkippedReason.DEBUG_BUILD)
+        if (isDisabledInThisBuild) return SyncResult.skipped(current, SkippedReason.BUILD_DEBUG)
         val channelId = when (val resolution = resolveChannelId()) {
             is ChannelResolution.Id -> resolution.id
-            ChannelResolution.Offline -> return SyncResult.failed(current, FailedReason.OFFLINE, "The channels index could not be fetched to resolve the channel name")
-            ChannelResolution.Unknown -> return SyncResult.failed(current, FailedReason.UNKNOWN_CHANNEL, "The channel set at runtime is not in the app's channels index")
-            ChannelResolution.Missing -> return SyncResult.failed(current, FailedReason.UNKNOWN_CHANNEL, MISSING_CHANNEL_MESSAGE)
-            is ChannelResolution.Invalid -> return SyncResult.failed(current, FailedReason.INVALID_INDEX, resolution.message)
+            ChannelResolution.Offline -> return SyncResult.failed(current, FailedReason.DEVICE_OFFLINE, "The channels index could not be fetched to resolve the channel name")
+            ChannelResolution.Unknown -> return SyncResult.failed(current, FailedReason.CHANNEL_UNKNOWN, "The channel set at runtime is not in the app's channels index")
+            ChannelResolution.Missing -> return SyncResult.failed(current, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE)
+            is ChannelResolution.Invalid -> return SyncResult.failed(current, FailedReason.INDEX_INVALID, resolution.message)
         }
         val index = when (val fetch = fetchChannelIndex(channelId)) {
             is IndexFetch.Index -> fetch.index
-            IndexFetch.Offline -> return SyncResult.failed(current, FailedReason.OFFLINE, "The channel index could not be fetched and no cached copy exists")
-            is IndexFetch.Invalid -> return SyncResult.failed(current, FailedReason.INVALID_INDEX, fetch.message)
+            IndexFetch.Offline -> return SyncResult.failed(current, FailedReason.DEVICE_OFFLINE, "The channel index could not be fetched and no cached copy exists")
+            is IndexFetch.Invalid -> return SyncResult.failed(current, FailedReason.INDEX_INVALID, fetch.message)
             IndexFetch.Absent -> return SyncResult.upToDate(current)
-            IndexFetch.NoChannel -> return SyncResult.failed(current, FailedReason.UNKNOWN_CHANNEL, MISSING_CHANNEL_MESSAGE)
+            IndexFetch.NoChannel -> return SyncResult.failed(current, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE)
         }
         return when (val evaluation = Evaluator.evaluate(index, deviceInfo())) {
             is Evaluation.UpToDate -> SyncResult.upToDate(current)
@@ -256,7 +256,7 @@ class Core(
             Stage.CHECK -> SyncResult.available(release, target.notes, target.sizeBytes)
             Stage.SYNC -> when (options.downloadStrategy ?: configuration.downloadStrategy) {
                 DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, target.sizeBytes)
-                DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.METERED_CONNECTION) else install(target, isMandatory, strategy, trigger, stage)
+                DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else install(target, isMandatory, strategy, trigger, stage)
                 DownloadStrategy.AUTO -> install(target, isMandatory, strategy, trigger, stage)
             }
             Stage.DOWNLOAD -> install(target, isMandatory, strategy, trigger, stage)
@@ -317,7 +317,7 @@ class Core(
     /** Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event. */
     suspend fun rollbackUpdate(detail: String?) = lock.withLock {
         if (detail != null) AttributeRules.validate(detail)
-        if (state.currentRelease != null) rollbackCurrentRelease(RollbackReason.REPORTED_BY_APP, detail)
+        if (state.currentRelease != null) rollbackCurrentRelease(RollbackReason.APP_REQUESTED, detail)
     }
 
     /** Back to the embedded bundle, now or, before the app is up in this run, once it is: every downloaded update and the failed list go, the identity stays. */
@@ -520,7 +520,7 @@ class Core(
         enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.name, detail))
         enqueueDeviceEvent(DeviceEvent.rolledBack(current.id, fallback?.id))
         loader.persistServedBundle(fallback?.bundleId)
-        if (reason == RollbackReason.READY_TIMEOUT) restartThroughGate(isAskedByApp = false) { reloadApp() } else reloadApp()
+        if (reason == RollbackReason.READINESS_TIMED_OUT) restartThroughGate(isAskedByApp = false) { reloadApp() } else reloadApp()
     }
 
     /** The release to fall back to right now: the last confirmed one while it can still run, else the embedded bundle. */
@@ -554,7 +554,7 @@ class Core(
     internal suspend fun handleReadyTimeout() = lock.withLock {
         if (!isCurrentReleaseUnconfirmed()) return
         hasStartSettled = true
-        rollbackCurrentRelease(RollbackReason.READY_TIMEOUT, null)
+        rollbackCurrentRelease(RollbackReason.READINESS_TIMED_OUT, null)
     }
 
     private fun scheduleIntervalSync(afterSeconds: Double) {
@@ -647,7 +647,7 @@ class Core(
         }
     }
 
-    /** Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `DEBUG_BUILD`. */
+    /** Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`. */
     private val isDisabledInThisBuild: Boolean
         get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.enabledInDebugBuilds)
 

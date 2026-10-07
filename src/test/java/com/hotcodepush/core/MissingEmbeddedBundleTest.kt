@@ -12,11 +12,11 @@ import java.io.File
 
 /**
  * A build whose build step found no JavaScript bundled embeds no bundle: live updates are off in it, every cycle skips with
- * `DEBUG_BUILD` without a request, and nothing is sent.
+ * `BUILD_DEBUG` without a request, and nothing is sent.
  */
 class MissingEmbeddedBundleTest {
     private val v2Content = "<html>v2</html>".toByteArray()
-    private val skipped = SyncResult.skipped(null, SkippedReason.DEBUG_BUILD)
+    private val skipped = SyncResult.skipped(null, SkippedReason.BUILD_DEBUG)
     private val withoutEmbeddedBundle: JSONObject = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").let { cases ->
         List(cases.length()) { cases.getJSONObject(it) }.single { it.isNull("embeddedBundleManifest") }
     }
@@ -147,6 +147,6 @@ class MissingEmbeddedBundleTest {
         val text = DebugReport.text(harness.core.debugSnapshot())
         assertTrue(text, text.contains("Embedded bundle: none: the build embeds no bundle, live updates are off in it"))
         assertTrue(text, text.contains("Channel id: none: a build without an embedded bundle resolves no channel name"))
-        assertTrue(text, text.contains("Result: SKIPPED DEBUG_BUILD"))
+        assertTrue(text, text.contains("Result: SKIPPED BUILD_DEBUG"))
     }
 }

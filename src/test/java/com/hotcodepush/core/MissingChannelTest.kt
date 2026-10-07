@@ -12,11 +12,11 @@ import java.io.File
 
 /**
  * A build whose build step ran without a token or offline carries no channel: it checks nothing on its own, answers an explicit
- * call `FAILED` with `UNKNOWN_CHANNEL`, requests nothing and reports nothing until a channel is set at runtime.
+ * call `FAILED` with `CHANNEL_UNKNOWN`, requests nothing and reports nothing until a channel is set at runtime.
  */
 class MissingChannelTest {
     private val v2Content = "<html>v2</html>".toByteArray()
-    private val failed = SyncResult.failed(null, FailedReason.UNKNOWN_CHANNEL, Core.MISSING_CHANNEL_MESSAGE)
+    private val failed = SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, Core.MISSING_CHANNEL_MESSAGE)
     private val resourceFiles: List<JSONObject> = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").let { cases ->
         List(cases.length()) { cases.getJSONObject(it) }
     }
@@ -69,7 +69,7 @@ class MissingChannelTest {
     fun shouldSkipAnExplicitSyncWithDebugBuildWhenTheBuildIsDisabledAndTheDeviceHasNoChannel() = runBlocking {
         val harness = Harness(Fixture.configuration(enabledInDebugBuilds = false, channelId = null), isDebugBuild = true)
         harness.core.handleAppStart()
-        assertEquals(SyncResult.skipped(null, SkippedReason.DEBUG_BUILD), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.skipped(null, SkippedReason.BUILD_DEBUG), harness.core.sync(SyncTrigger.MANUAL))
         assertTrue(harness.listener.failed.isEmpty())
     }
 
@@ -140,7 +140,7 @@ class MissingChannelTest {
         val harness = harness()
         harness.core.setChannel(ChannelChoice.Id("c-gone"))
         harness.core.handleAppStart()
-        assertEquals(listOf(FailedReason.UNKNOWN_CHANNEL), harness.listener.failed.map { it.reason })
+        assertEquals(listOf(FailedReason.CHANNEL_UNKNOWN), harness.listener.failed.map { it.reason })
         assertEquals(listOf(SyncTrigger.START), harness.listener.failed.map { it.trigger })
         harness.scheduler.fire()
         harness.core.handleAppPause()
@@ -230,7 +230,7 @@ class MissingChannelTest {
         val text = DebugReport.text(harness.core.debugSnapshot())
         assertTrue(text, text.contains("Channel\n  Channel id: none: the build carries no channel, it was built without a token or offline\n  Name: none\n  Source: config\n"))
         assertTrue(text, text.contains("Configured channel: none"))
-        assertTrue(text, text.contains("Result: FAILED UNKNOWN_CHANNEL"))
+        assertTrue(text, text.contains("Result: FAILED CHANNEL_UNKNOWN"))
         harness.core.setChannel(ChannelChoice.Id(Fixture.CHANNEL_ID))
         assertTrue(DebugReport.text(harness.core.debugSnapshot()).contains("Channel\n  Channel id: ${Fixture.CHANNEL_ID}\n  Name: none\n  Source: runtime\n"))
     }
@@ -243,7 +243,7 @@ class MissingChannelTest {
 
     /** The explicit call's failure is the only one: one `updateFailed` with the manual trigger and today's message, and no request. */
     private fun assertFailedExplicitly(harness: Harness) {
-        assertEquals(listOf(UpdateFailedEvent(null, FailedReason.UNKNOWN_CHANNEL, Core.MISSING_CHANNEL_MESSAGE, SyncTrigger.MANUAL)), harness.listener.failed)
+        assertEquals(listOf(UpdateFailedEvent(null, FailedReason.CHANNEL_UNKNOWN, Core.MISSING_CHANNEL_MESSAGE, SyncTrigger.MANUAL)), harness.listener.failed)
         assertTrue(harness.http.requests.isEmpty())
         assertTrue(harness.http.posts.isEmpty())
     }

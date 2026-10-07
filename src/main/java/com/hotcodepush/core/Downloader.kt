@@ -4,14 +4,21 @@ import java.io.File
 import java.io.FileNotFoundException
 
 sealed class DownloadFailure(message: String) : Exception(message) {
-    class InvalidSignature(message: String) : DownloadFailure(message)
-    class VerificationFailed(message: String) : DownloadFailure(message)
+    class SignatureInvalid(message: String) : DownloadFailure(message)
+
+    /** A manifest that breaks the wire rules, or a manifest, pack or delta URL off the configured hosts: refused before a byte is written. */
+    class ManifestInvalid(message: String) : DownloadFailure(message)
+
+    /** Downloaded bytes off what the index or the manifest promised: a hash, a pack's length, an entry's size, the archive's form. */
+    class ContentMismatched(message: String) : DownloadFailure(message)
+
     class DownloadFailed(message: String) : DownloadFailure(message)
 
     val reason: FailedReason
         get() = when (this) {
-            is InvalidSignature -> FailedReason.INVALID_SIGNATURE
-            is VerificationFailed -> FailedReason.VERIFICATION_FAILED
+            is SignatureInvalid -> FailedReason.SIGNATURE_INVALID
+            is ManifestInvalid -> FailedReason.MANIFEST_INVALID
+            is ContentMismatched -> FailedReason.CONTENT_MISMATCHED
             is DownloadFailed -> FailedReason.DOWNLOAD_FAILED
         }
 }
@@ -59,18 +66,18 @@ class Downloader(
         }
         if (response.status != 200) throw DownloadFailure.DownloadFailed("HTTP ${response.status} for the manifest")
         val envelope = runCatching { ManifestEnvelope.fromJson(org.json.JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()
-        val manifest = envelope?.let { runCatching { it.decodeManifest() }.getOrNull() } ?: throw DownloadFailure.VerificationFailed("The manifest could not be parsed")
+        val manifest = envelope?.let { runCatching { it.decodeManifest() }.getOrNull() } ?: throw DownloadFailure.ManifestInvalid("The manifest could not be parsed")
         verifyManifestSignature(envelope, target.manifestSha256)
-        if (envelope.bundleId != target.bundleId) throw DownloadFailure.VerificationFailed("The manifest names another bundle")
+        if (envelope.bundleId != target.bundleId) throw DownloadFailure.ContentMismatched("The manifest names another bundle")
         return envelope to manifest
     }
 
     /** The manifest's bytes against the index, and, once the app holds signing keys, its signature under the key it names. */
     internal fun verifyManifestSignature(envelope: ManifestEnvelope, expectedSha256: String) {
-        if (Hashing.sha256Hex(envelope.manifest) != expectedSha256) throw DownloadFailure.VerificationFailed("The manifest's hash does not match the index")
+        if (Hashing.sha256Hex(envelope.manifest) != expectedSha256) throw DownloadFailure.ContentMismatched("The manifest's hash does not match the index")
         if (configuration.publicKeys.isEmpty()) return
         val refusal = SignatureVerifier.verifyManifestSignature(envelope.manifest, envelope.signature, configuration.publicKeys) ?: return
-        throw DownloadFailure.InvalidSignature(resolveSignatureRefusalMessage(refusal, envelope.signature))
+        throw DownloadFailure.SignatureInvalid(resolveSignatureRefusalMessage(refusal, envelope.signature))
     }
 
     private fun resolveSignatureRefusalMessage(refusal: SignatureRefusal, signature: Signature?): String = when (refusal) {
@@ -137,7 +144,7 @@ class Downloader(
             throw DownloadFailure.DownloadFailed("The pack could not be downloaded: ${exception.message}")
         }
         try {
-            if (source.sizeBytes != null && file.length() != source.sizeBytes) throw DownloadFailure.VerificationFailed("The pack holds ${file.length()} of its ${source.sizeBytes} bytes")
+            if (source.sizeBytes != null && file.length() != source.sizeBytes) throw DownloadFailure.ContentMismatched("The pack holds ${file.length()} of its ${source.sizeBytes} bytes")
             file.inputStream().buffered().use { input ->
                 PackReader.forEachEntry(input, file.length()) { entry ->
                     when (entry) {
@@ -156,7 +163,7 @@ class Downloader(
         } catch (failure: DownloadFailure) {
             throw failure
         } catch (exception: Exception) {
-            throw DownloadFailure.VerificationFailed("The pack did not verify: ${exception.message}")
+            throw DownloadFailure.ContentMismatched("The pack did not verify: ${exception.message}")
         } finally {
             file.delete()
         }
@@ -201,7 +208,7 @@ class Downloader(
     /** The URL of a manifest, pack or delta only when it is on a configured host: the SDK fetches from our hosts and nowhere else. */
     internal fun resolvePinnedUrl(url: String): String {
         val isOnConfiguredHost = listOf(configuration.filesBaseUrl, configuration.updatesBaseUrl).any { url.startsWith("$it/") }
-        if (!isOnConfiguredHost) throw DownloadFailure.VerificationFailed("$url is not on a configured host")
+        if (!isOnConfiguredHost) throw DownloadFailure.ManifestInvalid("$url is not on a configured host")
         return url
     }
 
@@ -225,7 +232,7 @@ class Downloader(
             try {
                 files.writeFile(content, file.sha256)
             } catch (exception: HashMismatchException) {
-                throw DownloadFailure.VerificationFailed("The file ${file.path} did not match its hash")
+                throw DownloadFailure.ContentMismatched("The file ${file.path} did not match its hash")
             }
             return content.size.toLong()
         } finally {

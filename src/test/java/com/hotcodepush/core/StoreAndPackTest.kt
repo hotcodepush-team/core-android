@@ -1,5 +1,6 @@
 package com.hotcodepush.core
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -65,7 +66,19 @@ class StateStoreTest {
         val state = StateStore(store)
         assertEquals("device-1", state.deviceId)
         assertNull(state.currentRelease)
-        assertEquals(2, store.getInt("hotcodepush.stateVersion"))
+        assertEquals(StateStore.STATE_VERSION, store.getInt("hotcodepush.stateVersion"))
+    }
+
+    @Test
+    fun shouldDropARollbackNoticeStoredUnderAReasonNameOfVersionTwo() {
+        val store = InMemoryStore()
+        val notice = JSONObject().put("from", Release("r1", 1, "b1", "1", false).toJson()).put("to", JSONObject.NULL).put("reason", "CRASHED")
+        store.putInt("hotcodepush.stateVersion", 2)
+        store.putString("hotcodepush.lastRollback", notice.toString())
+        store.putString("hotcodepush.pendingRollbackEvent", notice.toString())
+        val state = StateStore(store)
+        assertNull(state.lastRollback)
+        assertNull(state.pendingRollbackEvent)
     }
 
     @Test

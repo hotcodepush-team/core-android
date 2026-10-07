@@ -19,10 +19,10 @@ class DebugReportTest {
         val snapshot = harness.core.debugSnapshot()
         val text = DebugReport.text(snapshot)
         assertTrue(text, text.contains("Device id: ${harness.core.deviceResult().id}"))
-        assertTrue(text, text.contains("Result: SKIPPED INCOMPATIBLE binary"))
+        assertTrue(text, text.contains("Result: SKIPPED DEVICE_INCOMPATIBLE binary"))
         assertTrue(text, text.contains("Sequence: 7"))
         assertTrue(text, text.contains("Running: the embedded bundle"))
-        assertTrue(text, text.contains("SKIPPED INCOMPATIBLE binary — manual: release #1 (1.1.0) is not taken"))
+        assertTrue(text, text.contains("SKIPPED DEVICE_INCOMPATIBLE binary — manual: release #1 (1.1.0) is not taken"))
         assertEquals(listOf("Device", "Channel", "Releases", "Last check", "Index", "Configuration", "Log"), DebugReport.sections(snapshot).map { it.title })
     }
 
@@ -149,7 +149,7 @@ class DebugReportTest {
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.handleReadyTimeout()
         val log = harness.core.debugSnapshot().log.filter { !it.code.startsWith("REPORT") }
-        assertEquals(listOf("FAILED READY_TIMEOUT", "ROLLED_BACK"), log.takeLast(2).map { it.code })
+        assertEquals(listOf("FAILED READINESS_TIMED_OUT", "ROLLED_BACK"), log.takeLast(2).map { it.code })
         assertEquals("release r1 rolled back to the embedded bundle", log.last().message)
     }
 
