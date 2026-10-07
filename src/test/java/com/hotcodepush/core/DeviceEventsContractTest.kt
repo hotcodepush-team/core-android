@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -113,6 +114,38 @@ class DeviceEventsContractTest {
         assertFalse(resolveSchemaIssues(batch).isEmpty())
     }
 
+    /**
+     * Every batch the endpoint accepts, read into the core's types, is written back key for key, the events the endpoint skips
+     * left out and the fields the core does not know dropped: a nullable key as `null`, an optional one left out, as the encoder must.
+     */
+    @Test
+    fun shouldWriteEveryAcceptedBatchOfTheDeviceEventsFixtureBackKeyForKey() {
+        val fixture = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/device-events.json").readText())
+        val cases = fixture.getJSONArray("acceptedBatches").map { it }
+        assertTrue(cases.size > 10)
+        for (case in cases) {
+            val batch = case.getJSONObject("batch")
+            val skipped = case.getJSONArray("skippedEventIndexes").let { array -> List(array.length()) { array.getInt(it) } }
+            val events = batch.getJSONArray("events").map { it }.filterIndexed { index, _ -> index !in skipped }
+            val report = batch.getNullableObject("report")
+            val written = DeviceEventsRequest(batch.getString("deviceId"), events.map(DeviceEvent::fromJson), batch.getString("platform"), report?.let(DeviceReport::fromJson), batch.getString("sdkVersion")).toJson()
+            val expected = retainKeys(batch, BATCH_KEYS)
+                .put("events", JSONArray(events.map { retainKeys(it, EVENT_KEYS) }))
+                .put("report", report?.let { retainKeys(it, REPORT_KEYS) } ?: JSONObject.NULL)
+            assertEquals(case.getString("name"), resolveComparable(expected), resolveComparable(written))
+        }
+    }
+
+    private fun retainKeys(json: JSONObject, keys: Set<String>): JSONObject = JSONObject(json.toString()).apply { json.keys().asSequence().filter { it !in keys }.toList().forEach(::remove) }
+
+    /** A JSON value as plain values that compare by content: an object as a map, an array as a list, a whole number as a Long. */
+    private fun resolveComparable(value: Any?): Any? = when (value) {
+        is JSONObject -> value.keys().asSequence().associateWith { resolveComparable(value.get(it)) }
+        is JSONArray -> List(value.length()) { resolveComparable(value.get(it)) }
+        is Int -> value.toLong()
+        else -> value
+    }
+
     /** The issues `DeviceEventsRequestSchema` of the installed protocol package finds in the batch, empty when it accepts it; Node runs the schema. */
     private fun resolveSchemaIssues(batch: JSONObject): String {
         val script = """
@@ -128,5 +161,11 @@ class DeviceEventsContractTest {
         assertTrue("node did not answer within a minute", process.waitFor(1, TimeUnit.MINUTES))
         assertEquals(output, 0, process.exitValue())
         return output
+    }
+
+    private companion object {
+        val BATCH_KEYS = setOf("deviceId", "events", "platform", "report", "sdkVersion")
+        val EVENT_KEYS = setOf("type", "releaseId", "bundleId", "status", "reason", "condition", "bytes", "packKind", "fromReleaseId", "toReleaseId", "detail")
+        val REPORT_KEYS = setOf("attributes", "binaryBuild", "binaryVersion", "channelId", "channelSource", "embeddedBundleId", "fingerprint", "osVersion", "releaseId")
     }
 }
