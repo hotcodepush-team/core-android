@@ -908,6 +908,25 @@ class CoreTest {
     }
 
     @Test
+    fun shouldStartWithoutWaitingForTheCleanupAndCleanUpOnceTheRunningDownloadEnded() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        val stale = "<html>stale</html>".toByteArray()
+        harness.files.writeFile(stale, Hashing.sha256Hex(stale))
+        harness.files.writeManifest(DownloaderHarness.manifest(listOf(BundleManifest.File("index.html", Hashing.sha256Hex(stale), stale.size.toLong()))), "b0")
+        harness.http.downloadGate = CompletableDeferred()
+        val sync = harness.scope.async { harness.core.sync(SyncTrigger.MANUAL) }
+        harness.core.handleAppStart()
+        assertEquals(listOf("b0"), harness.files.bundleIds())
+        harness.http.downloadGate?.complete(Unit)
+        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.NEXT_START), sync.await())
+        assertEquals(listOf("b2"), harness.files.bundleIds())
+        assertTrue(!harness.files.hasFile(Hashing.sha256Hex(stale)))
+        assertTrue(harness.files.hasFile(Hashing.sha256Hex(v2Content)))
+    }
+
+    @Test
     fun shouldClearUpdatesToTheEmbeddedBundleAndKeepTheIdentity() = runBlocking {
         val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
         harness.core.setAttributes(mapOf("plan" to "beta"))

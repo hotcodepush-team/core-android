@@ -83,9 +83,14 @@ class Core(
 
     /**
      * The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
-     * has not come up after, the gate, then the cleanup.
+     * has not come up after and the gate. The cleanup follows on its own, so the start never waits for it.
      */
-    suspend fun handleAppStart() = lock.withLock {
+    suspend fun handleAppStart() {
+        lock.withLock { beginRun() }
+        launchTask(::deleteUnusedFiles)
+    }
+
+    private fun beginRun() {
         if (state.pendingRollbackEvent == null) state.lastRollback = null
         if (state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest()) dropStoredReleases()
         if (isCurrentReleaseUnconfirmed()) rollbackCurrentRelease(RollbackReason.APP_CRASHED, null)
@@ -100,7 +105,6 @@ class Core(
         } else if (configuration.autoCheck) {
             startAutomaticCycle(SyncTrigger.START)
         }
-        deleteUnusedFiles()
     }
 
     /** A mandatory release follows its own strategy, so one the app took over waits across starts; any other switches under `next-start`; a bundle the WebView already serves is adopted. */
@@ -616,9 +620,12 @@ class Core(
         intervalTimer = scheduler.schedule(afterSeconds) { launchTask { lock.withLock { startAutomaticCycle(SyncTrigger.INTERVAL) } } }
     }
 
-    /** Everything no kept release lists: the served tree of every other bundle first, since its links hold the bytes. */
-    private fun deleteUnusedFiles() {
-        val kept = listOfNotNull(state.currentRelease, state.nextRelease, state.fallbackRelease).map { it.bundleId }.toSet()
+    /**
+     * Everything no kept release lists: the served tree of every other bundle first, since its links hold the bytes. Never
+     * beside a cycle, whose download writes files no kept release lists yet; only a download adds a kept release.
+     */
+    private suspend fun deleteUnusedFiles() = cycleLock.withLock {
+        val kept = lock.withLock { listOfNotNull(state.currentRelease, state.nextRelease, state.fallbackRelease).map { it.bundleId }.toSet() }
         files.bundleIds().filter { it !in kept }.forEach(loader::deleteProjection)
         files.deleteUnusedFiles(kept)
     }
