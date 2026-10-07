@@ -4,22 +4,25 @@ import java.io.File
 import java.io.FileNotFoundException
 
 sealed class DownloadFailure(message: String) : Exception(message) {
-    class SignatureInvalid(message: String) : DownloadFailure(message)
-
-    /** A manifest that breaks the wire rules, or a manifest, pack or delta URL off the configured hosts: refused before a byte is written. */
-    class ManifestInvalid(message: String) : DownloadFailure(message)
-
-    /** Downloaded bytes off what the index or the manifest promised: a hash, a pack's length, an entry's size, the archive's form. */
+    /** A downloaded file or pack off what the manifest promised: a hash, the pack's length, an entry's size, the archive's form. */
     class ContentMismatched(message: String) : DownloadFailure(message)
 
     class DownloadFailed(message: String) : DownloadFailure(message)
 
+    /**
+     * A manifest the device does not take, refused before a byte is written: one that breaks the wire rules, whose bytes are
+     * off the index's hash or whose envelope names another bundle, or a manifest, pack or delta URL off the configured hosts.
+     */
+    class ManifestInvalid(message: String) : DownloadFailure(message)
+
+    class SignatureInvalid(message: String) : DownloadFailure(message)
+
     val reason: FailedReason
         get() = when (this) {
-            is SignatureInvalid -> FailedReason.SIGNATURE_INVALID
-            is ManifestInvalid -> FailedReason.MANIFEST_INVALID
             is ContentMismatched -> FailedReason.CONTENT_MISMATCHED
             is DownloadFailed -> FailedReason.DOWNLOAD_FAILED
+            is ManifestInvalid -> FailedReason.MANIFEST_INVALID
+            is SignatureInvalid -> FailedReason.SIGNATURE_INVALID
         }
 }
 
@@ -68,13 +71,13 @@ class Downloader(
         val envelope = runCatching { ManifestEnvelope.fromJson(org.json.JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()
         val manifest = envelope?.let { runCatching { it.decodeManifest() }.getOrNull() } ?: throw DownloadFailure.ManifestInvalid("The manifest could not be parsed")
         verifyManifestSignature(envelope, target.manifestSha256)
-        if (envelope.bundleId != target.bundleId) throw DownloadFailure.ContentMismatched("The manifest names another bundle")
+        if (envelope.bundleId != target.bundleId) throw DownloadFailure.ManifestInvalid("The manifest names another bundle")
         return envelope to manifest
     }
 
     /** The manifest's bytes against the index, and, once the app holds signing keys, its signature under the key it names. */
     internal fun verifyManifestSignature(envelope: ManifestEnvelope, expectedSha256: String) {
-        if (Hashing.sha256Hex(envelope.manifest) != expectedSha256) throw DownloadFailure.ContentMismatched("The manifest's hash does not match the index")
+        if (Hashing.sha256Hex(envelope.manifest) != expectedSha256) throw DownloadFailure.ManifestInvalid("The manifest's hash does not match the index")
         if (configuration.publicKeys.isEmpty()) return
         val refusal = SignatureVerifier.verifyManifestSignature(envelope.manifest, envelope.signature, configuration.publicKeys) ?: return
         throw DownloadFailure.SignatureInvalid(resolveSignatureRefusalMessage(refusal, envelope.signature))

@@ -41,7 +41,7 @@ class DownloaderTest {
     fun shouldRefuseAnEnvelopeNamingAnotherBundle() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
-        assertEquals(FailedReason.CONTENT_MISMATCHED, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, bundleId = "b3"))?.reason)
+        assertEquals(FailedReason.MANIFEST_INVALID, harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, bundleId = "b3"))?.reason)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
     }
 

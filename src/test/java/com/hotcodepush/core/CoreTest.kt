@@ -249,7 +249,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRefuseATamperedManifestAsMismatchedContent() = runBlocking {
+    fun shouldRefuseATamperedManifestAsInvalid() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -257,7 +257,7 @@ class CoreTest {
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(SyncStatus.FAILED, result.status)
-        assertEquals(FailedReason.CONTENT_MISMATCHED.name, result.reason)
+        assertEquals(FailedReason.MANIFEST_INVALID.name, result.reason)
     }
 
     @Test
