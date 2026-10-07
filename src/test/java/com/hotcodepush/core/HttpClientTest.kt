@@ -1,6 +1,7 @@
 package com.hotcodepush.core
 
 import kotlinx.coroutines.runBlocking
+import okhttp3.JavaNetCookieJar
 import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -8,6 +9,8 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import okio.Buffer
 import okio.BufferedSource
 import okio.Source
@@ -21,6 +24,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.io.IOException
+import java.net.CookieManager
+import java.net.CookiePolicy
 import java.nio.file.Files
 
 class HttpClientTest {
@@ -88,6 +93,23 @@ class HttpClientTest {
         val client = client { request -> response(request, 200, ByteArray(200_000).toResponseBody()) }
         assertEquals(FailedReason.DOWNLOAD_FAILED, (download(client, 100_000) as? DownloadFailure)?.reason)
         assertFalse(file.exists())
+    }
+
+    /**
+     * React Native's networking client keeps cookies in this jar, whose okhttp-urlconnection 4.9.2 calls okhttp3.internal.Util:
+     * under OkHttp 5 the jar, and MockWebServer 4 with it, throws NoClassDefFoundError.
+     */
+    @Test
+    fun shouldSendTheCookieAHostSetThroughReactNativesCookieJar() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().addHeader("Set-Cookie", "session=s1; Path=/").setBody("first"))
+            server.enqueue(MockResponse().setBody("second"))
+            val client = OkHttpClientAdapter(OkHttpClient.Builder().cookieJar(JavaNetCookieJar(CookieManager(null, CookiePolicy.ACCEPT_ALL))).build())
+            assertEquals("first", String(client.get(server.url("/index.json").toString(), emptyMap()).body))
+            assertEquals("second", String(client.get(server.url("/index.json").toString(), emptyMap()).body))
+            assertNull(server.takeRequest().getHeader("Cookie"))
+            assertEquals("session=s1", server.takeRequest().getHeader("Cookie"))
+        }
     }
 
     private fun download(client: HttpClient, maximumBytes: Long): Exception? = runBlocking {

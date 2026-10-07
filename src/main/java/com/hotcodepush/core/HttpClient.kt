@@ -3,6 +3,7 @@ package com.hotcodepush.core
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
@@ -35,7 +36,7 @@ class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : Htt
 
     private fun send(request: Request): HttpResponse = client.newCall(request).execute().use { response ->
         val responseHeaders = response.headers.names().associateWith { response.headers[it] ?: "" }
-        HttpResponse(response.code, responseHeaders, response.body.bytes())
+        HttpResponse(response.code, responseHeaders, response.body?.bytes() ?: ByteArray(0))
     }
 
     private fun request(url: String, headers: Map<String, String>) = Request.Builder().url(url).apply { headers.forEach { (name, value) -> header(name, value) } }
@@ -52,7 +53,7 @@ class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : Htt
             val append = response.code == 206 && existing > 0
             var written = if (append) existing else 0L
             FileOutputStream(file, append).use { output ->
-                response.body.byteStream().use { input ->
+                (response.body?.byteStream() ?: ByteArrayInputStream(ByteArray(0))).use { input ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
                         val read = input.read(buffer)

@@ -1,5 +1,17 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", "schedule:weekly", "group:allNonMajor"],
-  "labels": ["dependencies"]
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "OkHttp stays on 4: React Native's okhttp-urlconnection calls internals OkHttp 5 removed",
+      "matchPackageNames": ["com.squareup.okhttp3:**"],
+      "allowedVersions": "<5"
+    },
+    {
+      "description": "The cookie tests run the okhttp-urlconnection React Native ships",
+      "matchPackageNames": ["com.squareup.okhttp3:okhttp-urlconnection"],
+      "enabled": false
+    }
+  ]
 }
