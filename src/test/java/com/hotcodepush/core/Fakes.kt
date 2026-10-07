@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import org.json.JSONObject
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
 
 class InMemoryStore : KeyValueStore {
     val values = mutableMapOf<String, String>()
@@ -36,6 +37,9 @@ class FakeLoader(private val root: File) : BundleLoader {
     var persistFailure: Throwable? = null
     var loadFailure: Throwable? = null
 
+    /** Holds persistServedBundle until it opens, as a slow store would. */
+    var persistLatch: CountDownLatch? = null
+
     override fun projectionDirectory(bundleId: String): File = File(File(root, "www"), bundleId)
 
     override fun deleteProjection(bundleId: String) {
@@ -43,6 +47,7 @@ class FakeLoader(private val root: File) : BundleLoader {
     }
 
     override fun persistServedBundle(bundleId: String?) {
+        persistLatch?.await()
         persistFailure?.let { throw it }
         persisted = bundleId
         hasPersisted = true
@@ -124,11 +129,11 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     private val device = DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", isDebugBuild)
     var core: Core = build(configuration)
 
-    private fun build(configuration: Configuration) = Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"))
+    private fun build(configuration: Configuration, scope: CoroutineScope = this.scope) = Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"))
 
-    /** A second core over the same store and files: the next start of the app. */
-    fun restart(configuration: Configuration = Fixture.configuration()) {
-        core = build(configuration)
+    /** A second core over the same store and files: the next start of the app, its tasks on the scope given. */
+    fun restart(configuration: Configuration = Fixture.configuration(), scope: CoroutineScope = this.scope) {
+        core = build(configuration, scope)
     }
 
     /** The events endpoint answering every batch with the same server time. */

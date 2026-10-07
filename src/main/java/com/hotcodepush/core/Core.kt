@@ -12,6 +12,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 /** The state machine every framework shares: three named releases, a readiness gate and one cycle of three stages. */
@@ -60,9 +61,8 @@ class Core(
 
     private var readyTimer: ScheduledTask? = null
 
-    /** The gate's window left while the gate runs, counted in the foreground alone, and when its timer last began counting it. */
-    private var readyTimeLeft: Double? = null
-    private var readyTimerStartedAt = 0L
+    /** The gate runs while the app is in the background, its timer stopped until the resume starts its full window again. */
+    private var isReadyTimerPaused = false
     private var intervalTimer: ScheduledTask? = null
     private var runningSync: Deferred<SyncResult>? = null
     private var isRestartAllowed = true
@@ -84,54 +84,59 @@ class Core(
     /** The release a switch in this process replaced, `null` for the embedded bundle, until `notifyReady()` reads it. */
     private var switchedFromRelease: Release? = null
 
-    /** The start rule ran in this process; it runs once, since the current release is unconfirmed in the run that switched to it. */
-    private var isStartResolved = false
-
-    /** `handleAppStart()` ran in this process, so a later call reports a reload the core did not perform. */
-    private var hasStarted = false
-
     // Lifecycle
 
     /**
-     * The bundle the host serves at this start, `null` for the embedded bundle, decided before the host loads any and without the
-     * network: the start rule runs at the first call in the process and a later call answers the bundle that runs. The start rule
-     * forgets the stored releases of another binary or whose files are gone, rolls back the release the previous run never
-     * confirmed, and switches to the waiting release the strategies apply at a start. Whatever it throws answers the embedded
-     * bundle and is logged, never thrown at the host.
+     * The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
+     * has not come up after and the gate. Answers the bundle the host serves, `null` for the embedded one, without awaiting the
+     * network: the start's check and the cleanup run after it returns, so a host waiting on the start never waits on them.
+     * Whatever the start throws, the stored releases of a store it cannot read among it, answers the embedded bundle and is
+     * logged, never thrown at the host.
      *
      * `isHeadless` says no screen will render in this run, an Android process started without an activity or an Expo background
-     * task: such a start applies no waiting release, which keeps waiting for a start that renders, so the gate has nothing to
-     * judge. The first call of this or `handleAppStart()` in the process decides.
+     * task: such a start applies no waiting release, which keeps waiting for a start that renders, so it arms no gate either.
      */
-    fun resolveStartBundleId(isHeadless: Boolean = false): String? = runBlocking { lock.withLock { resolveStart(isHeadless) } }
-
-    /**
-     * The start of a run: the start rule unless `resolveStartBundleId()` ran it, the bundle it resolved, a rollback the app has not
-     * come up after and the gate; the cleanup follows on its own, so the start never waits for it. A later call in the process
-     * reports a reload the core did not perform, a JavaScript restart or a development reload: the app is not up until the
-     * reloaded one is, a rollback notice it has not come up after reaches it, and a release not yet confirmed runs through the
-     * gate again. Nothing it throws reaches the host. `isHeadless` is `resolveStartBundleId()`'s.
-     */
-    suspend fun handleAppStart(isHeadless: Boolean = false) {
-        val isFirstStart = lock.withLock {
-            val isFirstStart = !hasStarted
-            hasStarted = true
-            runLogged("the start") { if (isFirstStart) beginRun(isHeadless) else beginReloadedRun() }
-            isFirstStart
-        }
-        if (isFirstStart) launchTask(::deleteUnusedFiles)
-    }
-
-    private fun resolveStart(isHeadless: Boolean): String? {
-        if (!isStartResolved) {
-            isStartResolved = true
+    suspend fun handleAppStart(isHeadless: Boolean = false): String? {
+        val bundleId = lock.withLock {
             try {
                 applyStartRule(isHeadless)
             } catch (failure: Throwable) {
                 runEmbeddedBundleAfter(failure)
             }
+            runLogged("the start", ::beginRun)
+            resolveRunningBundleId()
         }
-        return runCatching { state.currentRelease?.bundleId }.getOrNull()
+        launchTask(::deleteUnusedFiles)
+        return bundleId
+    }
+
+    /**
+     * The start for a host that resolves its bundle in synchronous code before its WebView or JavaScript loads: `handleAppStart()`'s
+     * answer, waited for at most `START_TIMEOUT` seconds. Without an answer in time it answers the embedded bundle, and the start,
+     * once it runs, reloads the host into the bundle it resolved, as it does whenever the host serves another one.
+     */
+    fun handleAppStartBlocking(isHeadless: Boolean = false): String? = handleAppStartBlocking(isHeadless, START_TIMEOUT)
+
+    internal fun handleAppStartBlocking(isHeadless: Boolean, timeout: Double): String? {
+        val start = scope.async { handleAppStart(isHeadless) }
+        return runBlocking { withTimeoutOrNull((timeout * 1000).toLong()) { start.await() } }
+    }
+
+    /**
+     * A reload the core did not perform — a JavaScript restart, a development reload — runs through the gate like any start: an
+     * install held or waiting for the next start takes effect, the reloaded app has to come up again before a restart runs, and a
+     * release not yet confirmed is gated, its full window again. Unlike a start it takes no unconfirmed release for a crash.
+     * Answers the bundle the host serves, `null` for the embedded one; nothing it throws reaches the host.
+     */
+    suspend fun handleAppReload(): String? = lock.withLock {
+        runLogged("the reload") {
+            discardNextReleaseThatLeftTheIndex()
+            val next = state.nextRelease
+            if (next != null && shouldSwitchAtStart(next)) switchToNextRelease()
+            loadBundle()
+            gateReloadedApp()
+        }
+        resolveRunningBundleId()
     }
 
     /** After it the current release is confirmed unless it switched, so a headless start, which never switches, arms no gate. */
@@ -150,8 +155,8 @@ class Core(
         runLogged("forgetting the stored releases", ::dropStoredReleases)
     }
 
-    private fun beginRun(isHeadless: Boolean) {
-        loadBundle(resolveStart(isHeadless))
+    private fun beginRun() {
+        loadBundle()
         if (!hasAnnouncedRollback) announceRollback()
         if (isCurrentReleaseUnconfirmed()) {
             startReadyTimer()
@@ -161,11 +166,8 @@ class Core(
         }
     }
 
-    private fun beginReloadedRun() {
-        hasStartSettled = false
-        announceRollback()
-        if (isCurrentReleaseUnconfirmed()) startReadyTimer()
-    }
+    /** The bundle that runs, `null` for the embedded one, and for a store that cannot be read. */
+    private fun resolveRunningBundleId(): String? = runCatching { state.currentRelease?.bundleId }.getOrNull()
 
     /** Runs the block and logs what it throws, for the work whose failure must not reach the host or the app's process. */
     private fun runLogged(task: String, block: () -> Unit) {
@@ -208,8 +210,8 @@ class Core(
     }
 
     /**
-     * The background: the interval timer stops, since interval checks belong to the foreground, the gate's window pauses, since a
-     * release nobody sees cannot render, and the moment is kept for `next-resume`.
+     * The background: the interval timer stops, since interval checks belong to the foreground, the readiness timer stops, since an
+     * app that cannot render there proves nothing, and the moment is kept for `next-resume`.
      */
     suspend fun handleAppPause() = lock.withLock {
         backgroundedAt = clock.now()
@@ -218,7 +220,7 @@ class Core(
         pauseReadyTimer()
     }
 
-    /** A resume installs a `next-resume` release after enough time in the background, else checks when the interval has passed. */
+    /** A resume starts a paused readiness window again, installs a `next-resume` release after enough time in the background, else checks when the interval has passed. */
     suspend fun handleAppResume() = lock.withLock {
         val backgroundDuration = backgroundedAt?.let { (clock.now() - it) / 1000.0 }
         backgroundedAt = null
@@ -556,15 +558,24 @@ class Core(
         enqueueDeviceEvent(DeviceEvent.applied(next.id))
     }
 
-    private fun loadBundle(bundleId: String?) {
-        if (loader.servedBundleId() != bundleId) loader.loadServedBundle(bundleId)
+    private fun loadBundle() {
+        val expected = state.currentRelease?.bundleId
+        if (loader.servedBundleId() != expected) loader.loadServedBundle(expected)
     }
 
-    /** The restart of the web layer: the start is unsettled until the reloaded app is up, a held restart is moot since the reloaded app runs what the state says, the bundle loads, a rollback the app has not come up after is announced, then the gate runs. */
+    /** The restart of the web layer: the bundle loads, then the reloaded app goes through the gate. */
     private fun reloadApp() {
+        loader.loadServedBundle(state.currentRelease?.bundleId)
+        gateReloadedApp()
+    }
+
+    /**
+     * The reloaded app has to come up again: it runs what the state says, so a held restart is moot; a rollback it has not come up
+     * after is announced, then the gate runs.
+     */
+    private fun gateReloadedApp() {
         hasStartSettled = false
         queuedRestart = null
-        loader.loadServedBundle(state.currentRelease?.bundleId)
         announceRollback()
         if (isCurrentReleaseUnconfirmed()) startReadyTimer()
     }
@@ -675,36 +686,36 @@ class Core(
         restartThroughGate(isAskedByApp = false) { reloadApp() }
     }
 
-    /** The gate's full window, counted from now in the foreground, or from the next resume in the background. */
+    /** The readiness window runs in the foreground alone: a gate armed in the background waits for the resume. */
     private fun startReadyTimer() {
         stopReadyTimer()
-        readyTimeLeft = configuration.readyTimeout
-        if (backgroundedAt == null) resumeReadyTimer()
+        if (backgroundedAt != null) {
+            isReadyTimerPaused = true
+            return
+        }
+        readyTimer = scheduler.schedule(configuration.readyTimeout) { launchTask { handleReadyTimeout() } }
     }
 
     private fun stopReadyTimer() {
         readyTimer?.cancel()
         readyTimer = null
-        readyTimeLeft = null
+        isReadyTimerPaused = false
     }
 
     private fun pauseReadyTimer() {
-        val timer = readyTimer ?: return
-        timer.cancel()
-        readyTimer = null
-        readyTimeLeft = readyTimeLeft?.let { maxOf(0.0, it - (clock.now() - readyTimerStartedAt) / 1000.0) }
+        if (readyTimer == null) return
+        stopReadyTimer()
+        isReadyTimerPaused = true
     }
 
+    /** The full window starts again: the time already spent in the foreground counts for nothing, as the time in the background does. */
     private fun resumeReadyTimer() {
-        val timeLeft = readyTimeLeft ?: return
-        if (readyTimer != null) return
-        readyTimerStartedAt = clock.now()
-        readyTimer = scheduler.schedule(timeLeft) { launchTask { handleReadyTimeout() } }
+        if (isReadyTimerPaused) startReadyTimer()
     }
 
-    /** The timer running out settles the start, so its rollback waits only while the app holds restarts. */
+    /** The timer running out settles the start, so its rollback waits only while the app holds restarts; one that fires as the timer stops, paused or confirmed, is ignored. */
     internal suspend fun handleReadyTimeout() = lock.withLock {
-        if (!isCurrentReleaseUnconfirmed()) return
+        if (readyTimer == null || !isCurrentReleaseUnconfirmed()) return
         hasStartSettled = true
         rollbackCurrentRelease(RollbackReason.READINESS_TIMED_OUT, null)
         restartThroughGate(isAskedByApp = false, ::reloadApp)
@@ -900,6 +911,9 @@ class Core(
     private fun resolveMonth(epochMillis: Long) = Iso8601.format(epochMillis).substring(0, 7)
 
     companion object {
+        /** The longest `handleAppStartBlocking()` waits for the start's answer, in seconds, before it answers the embedded bundle. */
+        const val START_TIMEOUT = 2.0
+
         /** What a build without a channel answers, without a request: it can never update until the app sets a channel at runtime. */
         const val MISSING_CHANNEL_MESSAGE = "The build carries no channel: it was built without a token or offline, so the channel's name was never resolved. Build it with a token to receive updates."
     }
