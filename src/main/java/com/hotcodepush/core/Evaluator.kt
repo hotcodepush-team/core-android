@@ -39,6 +39,9 @@ data class IndexEvaluation(val outcome: Evaluation, val verdicts: List<ReleaseVe
 object Evaluator {
     private const val EMBEDDED_RELEASE_NUMBER = 0
 
+    /** The components a binary version fills before the build: major, minor and patch. */
+    private const val BINARY_VERSION_MIN_COMPONENTS = 3
+
     fun evaluate(index: ChannelIndex, device: DeviceInfo): Evaluation = evaluation(index, device).outcome
 
     fun evaluation(index: ChannelIndex, device: DeviceInfo): IndexEvaluation {
@@ -88,11 +91,15 @@ object Evaluator {
         is Condition.Unknown -> false
     }
 
-    /** The binary version with the build number as its fourth component, when both are numbers. */
-    internal fun resolveBinaryVersion(device: DeviceInfo): List<Int>? {
+    /**
+     * The binary version with the build number after it, when both are numbers: a version of fewer than three components
+     * reads with zeros, so the build is always at least the fourth component and `1.0` build `57` is `1.0.0.57`.
+     */
+    internal fun resolveBinaryVersion(device: DeviceInfo): List<Long>? {
         val version = VersionRange.parseVersion(device.binaryVersion) ?: return null
         val build = VersionRange.parseVersion(device.binaryBuild)
-        return if (build != null && build.size == 1) version + build else version
+        if (build == null || build.size != 1) return version
+        return version + List(maxOf(0, BINARY_VERSION_MIN_COMPONENTS - version.size)) { 0L } + build
     }
 
     internal fun isDeviceBeyondCap(index: ChannelIndex, device: DeviceInfo): Boolean {

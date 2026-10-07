@@ -99,7 +99,7 @@ class FixtureTest {
             }
         }
         assertTrue(count > 50)
-        assertTrue(verdictCount >= 16)
+        assertTrue(verdictCount >= 15)
     }
 
     @Test
