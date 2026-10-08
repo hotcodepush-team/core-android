@@ -252,6 +252,31 @@ class CoreTest {
     }
 
     @Test
+    fun shouldIgnoreAnOlderSequenceWhenTheCachedIndexIsYoungerThanADay() = runBlocking {
+        val harness = Harness()
+        harness.publish(emptyList(), 5)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.clock.now += 23 * 3_600_000L
+        harness.publish(emptyList(), 4, etag = "\"e0\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(5L, harness.core.getState().indexSequence)
+    }
+
+    @Test
+    fun shouldTakeAnOlderSequenceWhenTheCachedIndexIsOlderThanADay() = runBlocking {
+        val harness = Harness()
+        harness.publish(emptyList(), 5)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.clock.now += 25 * 3_600_000L
+        harness.publish(emptyList(), 4, etag = "\"e0\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(4L, harness.core.getState().indexSequence)
+        assertEquals(harness.clock.now, harness.core.getState().indexFetchedAt)
+    }
+
+    @Test
     fun shouldKeepASequenceOfMillisecondsAndIgnoreOneMillisecondOlder() = runBlocking {
         val harness = Harness()
         harness.publish(emptyList(), 1_759_900_000_000)

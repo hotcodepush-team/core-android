@@ -872,7 +872,7 @@ class Core(
                 val index = runCatching { ChannelIndex.fromJson(org.json.JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()
                     ?: return IndexFetch.Invalid("The channel index could not be parsed")
                 if (!isIndexForDevice(index, channelId)) return IndexFetch.Invalid("The channel index names another app, channel or platform")
-                if (cached != null && index.sequence < cached.body.sequence) return IndexFetch.Index(cached.body)
+                if (cached != null && isBehindCachedIndex(index, cached)) return IndexFetch.Index(cached.body)
                 lock.withLock { state.cachedIndex = CachedIndex(response.header("ETag"), clock.now(), index) }
                 IndexFetch.Index(index)
             }
@@ -884,6 +884,13 @@ class Core(
             else -> cached?.let { IndexFetch.Index(it.body) } ?: IndexFetch.Offline
         }
     }
+
+    /**
+     * The never-backwards rule: a fetched index below the kept one's sequence is ignored while the kept index is younger than
+     * `CACHED_INDEX_MAX_AGE`; an older kept index counts as absent, so a far-future sequence cannot freeze the device for good.
+     */
+    private fun isBehindCachedIndex(index: ChannelIndex, cached: CachedIndex): Boolean =
+        index.sequence < cached.body.sequence && clock.now() - cached.fetchedAt < (CACHED_INDEX_MAX_AGE * 1000).toLong()
 
     /** The index the device asked for: its app, the channel it fetched by and its platform, so another index at that URL serves nothing. */
     private fun isIndexForDevice(index: ChannelIndex, channelId: String): Boolean =
@@ -980,6 +987,9 @@ class Core(
     companion object {
         /** The longest `handleAppStartBlocking()` waits for the start's answer, in seconds, before it answers the embedded bundle. */
         const val START_TIMEOUT = 2.0
+
+        /** How long the never-backwards rule trusts the kept index's sequence, in seconds, counted from its `fetchedAt`. */
+        private const val CACHED_INDEX_MAX_AGE = 86_400.0
 
         /** The session log's code for a report or a batch the events endpoint would refuse, which the device does not send. */
         private const val REPORT_UNREADABLE = "REPORT_UNREADABLE"
