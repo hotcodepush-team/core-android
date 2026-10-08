@@ -31,7 +31,10 @@ class Core(
     temporaryDirectory: File,
     private val processState: ProcessState = ActivityManagerProcessState,
 ) {
-    /** How far a cycle goes: the check alone, the download whatever the strategy says, or the whole sync. */
+    /**
+     * The call a cycle runs for, `checkForUpdate()`, `downloadUpdate()` or `sync()`: the first two are a sync with the download
+     * gate closed or open, and a call joins a running cycle of its own stage only.
+     */
     private enum class Stage { CHECK, DOWNLOAD, SYNC }
 
     /** How the channel in effect resolved: the runtime choice, a name through the channels index, else the build's own. */
@@ -192,15 +195,15 @@ class Core(
         }
     }
 
-    /** A mandatory release follows its own strategy, so one the app took over waits across starts; any other switches under `next-start`; a bundle the WebView already serves is adopted. */
-    private fun shouldSwitchAtStart(next: Release): Boolean = when {
-        loader.servedBundleId() == next.bundleId -> true
-        next.isMandatory -> configuration.mandatoryApplyStrategy == MandatoryApplyStrategy.IMMEDIATE
-        else -> configuration.applyStrategy == ApplyStrategy.NEXT_START
-    }
+    /**
+     * The moment stored with the release at its download decides, so a per-call strategy holds for that release: `next-start`,
+     * and an `immediate` apply still held; one the app took over waits across starts; a bundle the WebView already serves is adopted.
+     */
+    private fun shouldSwitchAtStart(next: NextRelease): Boolean =
+        loader.servedBundleId() == next.release.bundleId || next.applyAt == ApplyStrategy.NEXT_START || next.applyAt == ApplyStrategy.IMMEDIATE
 
-    /** A `next-resume` release; a mandatory one follows `mandatoryApplyStrategy` instead, so one the app took over with `manual` waits for `applyUpdate()`. */
-    private fun shouldApplyAtResume(next: Release): Boolean = !next.isMandatory && configuration.applyStrategy == ApplyStrategy.NEXT_RESUME
+    /** A release whose stored moment is `next-resume`; a mandatory one never is, so one the app took over with `manual` waits for `applyUpdate()`. */
+    private fun shouldApplyAtResume(next: NextRelease): Boolean = next.applyAt == ApplyStrategy.NEXT_RESUME
 
     /**
      * The first render of the run or of a reload: the readiness signal when `readySignal` is `render`, and on every setting what
@@ -280,24 +283,28 @@ class Core(
     // The three stages
 
     /**
-     * One full cycle; a second call while one runs joins the running one. Each stage throws the plain error, fetching nothing,
-     * for a channel id in effect that is not a UUID.
+     * One cycle under the strategies, the same the SDK runs on its own at start, resume and interval, stopping at a `manual` gate
+     * for the app; a second call while one runs joins the running one. Each stage throws the plain error, fetching nothing, for
+     * a channel id in effect that is not a UUID.
      */
     suspend fun sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()): SyncResult {
         verifyChannelId()
         return runCycle(trigger, Stage.SYNC, options)
     }
 
-    /** The first stage: fetch and evaluate, download nothing. */
+    /** `sync()` with the download gate closed: fetch and evaluate, download nothing and apply nothing. */
     suspend fun checkForUpdate(): SyncResult {
         verifyChannelId()
-        return runCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions())
+        return runCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions(downloadStrategy = DownloadStrategy.MANUAL))
     }
 
-    /** The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then apply per the strategies. */
-    suspend fun downloadUpdate(): SyncResult {
+    /**
+     * `sync()` with the download gate open, whatever `downloadStrategy` says: the index is checked again, a conditional GET, so
+     * nothing is downloaded from stale state, then the update is downloaded, verified and applied per the apply strategies.
+     */
+    suspend fun downloadUpdate(options: DownloadUpdateOptions = DownloadUpdateOptions()): SyncResult {
         verifyChannelId()
-        return runCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions())
+        return runCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions(options.applyStrategy, DownloadStrategy.AUTO, options.mandatoryApplyStrategy))
     }
 
     /** One cycle at a time: a call joins the running cycle of its own stage, and waits for one of another stage before it starts its own. */
@@ -326,13 +333,13 @@ class Core(
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease ?: return ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, state.currentRelease)
         restartThroughGate(isAskedByApp = true, ::applyNextRelease)
-        ApplyUpdateResult(ApplyStatus.APPLIED, next)
+        ApplyUpdateResult(ApplyStatus.APPLIED, next.release)
     }
 
     private suspend fun performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
         val result = resolveCycleSafely(trigger, stage, options)
         lock.withLock {
-            if (stage != Stage.DOWNLOAD) state.lastCheck = LastCheck(clock.now(), trigger, result)
+            state.lastCheck = LastCheck(clock.now(), trigger, result)
             if (stage == Stage.SYNC) {
                 state.lastSyncAt = clock.now()
                 scheduleIntervalSync(configuration.checkIntervalSeconds)
@@ -399,7 +406,9 @@ class Core(
 
     /**
      * A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far
-     * as the stage goes. An adopted release runs already without a reload, so the cycle answers `UP_TO_DATE` with it.
+     * as the download gate lets it. An adopted release runs already without a reload, so the cycle answers `UP_TO_DATE` with it.
+     * The apply moment is the call's own strategy, else the one a release downloaded already carries, else the configuration's,
+     * so an automatic cycle never overrides the app's choice.
      */
     private suspend fun update(target: IndexRelease, isMandatory: Boolean, trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
         val release = resolveRelease(target, isMandatory)
@@ -408,45 +417,41 @@ class Core(
             lock.withLock { adoptInPlace(release) }
             return SyncResult.upToDate(release)
         }
-        val strategy = resolveApplyStrategy(isMandatory, options)
-        if (isDownloaded(target)) {
+        val requestedApplyAt = resolveRequestedApplyStrategy(isMandatory, options)
+        val downloaded = readDownloadedRelease(target)
+        if (downloaded != null) {
             if (stage == Stage.CHECK) return SyncResult.available(release, target.notes, target.sizeBytes)
-            return lock.withLock { applyDownloaded(release, target.notes, strategy) }
+            return lock.withLock { applyDownloaded(NextRelease(release, requestedApplyAt ?: downloaded.applyAt), target.notes) }
         }
+        val applyAt = requestedApplyAt ?: resolveConfiguredApplyStrategy(isMandatory)
         listener.updateAvailable(UpdateAvailableEvent(release, target.notes, target.sizeBytes, trigger))
-        return when (stage) {
-            Stage.CHECK -> SyncResult.available(release, target.notes, target.sizeBytes)
-            Stage.SYNC -> when (options.downloadStrategy ?: configuration.downloadStrategy) {
-                DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, target.sizeBytes)
-                DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, strategy, trigger)
-                DownloadStrategy.AUTO -> downloadAndApply(target, isMandatory, strategy, trigger)
-            }
-            Stage.DOWNLOAD -> downloadAndApply(target, isMandatory, strategy, trigger)
+        return when (options.downloadStrategy ?: configuration.downloadStrategy) {
+            DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, target.sizeBytes)
+            DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, applyAt, trigger)
+            DownloadStrategy.AUTO -> downloadAndApply(target, isMandatory, applyAt, trigger)
         }
     }
 
     /** The release as the app sees it: the index's entry with the mandatory flag the evaluation decided, transitive included. */
     private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(target.id, target.number, target.bundleId, target.bundleVersion, isMandatory)
 
-    /** A mandatory release follows `mandatoryApplyStrategy`; any other the apply strategy. */
-    private fun resolveApplyStrategy(isMandatory: Boolean, options: SyncOptions): ApplyStrategy {
-        if (isMandatory) {
-            return when (options.mandatoryApplyStrategy ?: configuration.mandatoryApplyStrategy) {
-                MandatoryApplyStrategy.IMMEDIATE -> ApplyStrategy.IMMEDIATE
-                MandatoryApplyStrategy.MANUAL -> ApplyStrategy.MANUAL
-            }
-        }
-        return options.applyStrategy ?: configuration.applyStrategy
+    /** The call's own strategy for this release, `null` when the call names none: a mandatory release follows `mandatoryApplyStrategy`, any other the apply strategy. */
+    private fun resolveRequestedApplyStrategy(isMandatory: Boolean, options: SyncOptions): ApplyStrategy? =
+        if (isMandatory) options.mandatoryApplyStrategy?.toApplyStrategy() else options.applyStrategy
+
+    /** The configuration's strategy for this release, by the same rule. */
+    private fun resolveConfiguredApplyStrategy(isMandatory: Boolean): ApplyStrategy =
+        if (isMandatory) configuration.mandatoryApplyStrategy.toApplyStrategy() else configuration.applyStrategy
+
+    /** The next release when it carries the target's bundle and every file it lists is on disk. */
+    private fun readDownloadedRelease(target: IndexRelease): NextRelease? {
+        val next = state.nextRelease ?: return null
+        if (next.release.bundleId != target.bundleId) return null
+        val manifest = files.readManifest(next.release.bundleId) ?: return null
+        return if (files.isComplete(manifest, embedded)) next else null
     }
 
-    private fun isDownloaded(target: IndexRelease): Boolean {
-        val next = state.nextRelease ?: return false
-        if (next.bundleId != target.bundleId) return false
-        val manifest = files.readManifest(next.bundleId) ?: return false
-        return files.isComplete(manifest, embedded)
-    }
-
-    private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, strategy: ApplyStrategy, trigger: SyncTrigger): SyncResult {
+    private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, applyAt: ApplyStrategy, trigger: SyncTrigger): SyncResult {
         val release = resolveRelease(target, isMandatory)
         try {
             val baseBundleId = state.currentRelease?.bundleId ?: configuration.embeddedBundleId
@@ -463,22 +468,22 @@ class Core(
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, FailedReason.DOWNLOAD_FAILED.name)) }
             return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, failure.message ?: failure.toString())
         }
-        if (strategy != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, strategy, trigger))
-        return lock.withLock { applyDownloaded(release, target.notes, strategy) }
+        if (applyAt != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, applyAt, trigger))
+        return lock.withLock { applyDownloaded(NextRelease(release, applyAt), target.notes) }
     }
 
     /**
-     * Choosing and applying are two acts: the strategy is a policy over the four functions. `APPLIED` when the apply runs now,
-     * the reload following once the gate lets it; else `DOWNLOADED`, the apply scheduled or the app's.
+     * Choosing and applying are two acts: the stored moment is a policy over the four functions. `APPLIED` when the apply runs
+     * now, the reload following once the gate lets it; else `DOWNLOADED`, the apply scheduled or the app's.
      */
-    private fun applyDownloaded(release: Release, notes: String?, strategy: ApplyStrategy): SyncResult {
-        setNextRelease(release)
-        when (strategy) {
+    private fun applyDownloaded(next: NextRelease, notes: String?): SyncResult {
+        setNextRelease(next)
+        when (next.applyAt) {
             ApplyStrategy.IMMEDIATE -> restartIntoNextRelease()
-            ApplyStrategy.NEXT_START -> loader.persistServedBundle(release.bundleId)
+            ApplyStrategy.NEXT_START -> loader.persistServedBundle(next.release.bundleId)
             ApplyStrategy.NEXT_RESUME, ApplyStrategy.MANUAL -> Unit
         }
-        return if (strategy == ApplyStrategy.IMMEDIATE) SyncResult.applied(release, notes) else SyncResult.downloaded(release, notes, strategy)
+        return if (next.applyAt == ApplyStrategy.IMMEDIATE) SyncResult.applied(next.release, notes) else SyncResult.downloaded(next.release, notes, next.applyAt)
     }
 
     /** Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event. */
@@ -520,7 +525,7 @@ class Core(
         val cached = state.cachedIndex
         return StateResult(
             currentRelease = state.currentRelease,
-            nextRelease = state.nextRelease,
+            nextRelease = state.nextRelease?.release,
             fallbackRelease = state.fallbackRelease,
             embeddedBundleId = configuration.embeddedBundleId,
             lastCheck = state.lastCheck,
@@ -562,7 +567,7 @@ class Core(
     // The four functions and the gate
 
     /** A restored phone brings the store's keys back without its files: a current or next release with no manifest on disk names a tree that is not there. */
-    private fun hasReleaseWithoutManifest(): Boolean = listOfNotNull(state.currentRelease, state.nextRelease).any { files.readManifest(it.bundleId) == null }
+    private fun hasReleaseWithoutManifest(): Boolean = listOfNotNull(state.currentRelease, state.nextRelease?.release).any { files.readManifest(it.bundleId) == null }
 
     /**
      * A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded
@@ -581,15 +586,15 @@ class Core(
         loader.persistServedBundle(null)
     }
 
-    private fun setNextRelease(release: Release) {
-        state.nextRelease = release
+    private fun setNextRelease(next: NextRelease) {
+        state.nextRelease = next
     }
 
     /** A downloaded release that has left the cached index since — revoked, or gone from it — is never applied: it is dropped and the served bundle stays the running one. */
     private fun discardNextReleaseThatLeftTheIndex() {
         val next = state.nextRelease ?: return
         val index = state.cachedIndex?.body ?: return
-        if (!hasLeftIndex(next, index)) return
+        if (!hasLeftIndex(next.release, index)) return
         state.nextRelease = null
         loader.persistServedBundle(state.currentRelease?.bundleId)
     }
@@ -597,7 +602,7 @@ class Core(
     private fun hasLeftIndex(release: Release, index: ChannelIndex): Boolean = release.id in index.revokedReleaseIds || index.releases.none { it.id == release.id }
 
     private fun switchToNextRelease() {
-        val next = state.nextRelease ?: return
+        val next = state.nextRelease?.release ?: return
         switchedFromRelease = state.currentRelease
         state.currentRelease = next
         state.nextRelease = null
@@ -645,7 +650,7 @@ class Core(
 
     /** The apply the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does. */
     private fun restartIntoNextRelease() {
-        state.nextRelease?.let { loader.persistServedBundle(it.bundleId) }
+        state.nextRelease?.let { loader.persistServedBundle(it.release.bundleId) }
         restartThroughGate(isAskedByApp = false, ::applyNextRelease)
     }
 
@@ -795,7 +800,7 @@ class Core(
      * beside a cycle, whose download writes files no kept release lists yet; only a download adds a kept release.
      */
     private suspend fun deleteUnusedFiles() = cycleLock.withLock {
-        val kept = lock.withLock { listOfNotNull(state.currentRelease, state.nextRelease, state.fallbackRelease).map { it.bundleId }.toSet() }
+        val kept = lock.withLock { listOfNotNull(state.currentRelease, state.nextRelease?.release, state.fallbackRelease).map { it.bundleId }.toSet() }
         files.bundleIds().filter { it !in kept }.forEach(loader::deleteProjection)
         files.deleteUnusedFiles(kept)
     }

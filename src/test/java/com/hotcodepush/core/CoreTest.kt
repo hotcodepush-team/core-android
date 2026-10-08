@@ -591,6 +591,91 @@ class CoreTest {
     }
 
     @Test
+    fun shouldKeepAReleaseDownloadedUnderACallsManualApplyWaitingAtTheNextStartWhateverTheConfigurationSays() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.sync(SyncTrigger.MANUAL, SyncOptions(applyStrategy = ApplyStrategy.MANUAL)))
+        startAgain(harness, Fixture.configuration())
+        assertNull(harness.core.getState().currentRelease)
+        assertEquals(v2.release.release, harness.core.getState().nextRelease)
+        harness.core.handleRendered()
+        assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
+        assertEquals(listOf("b2"), harness.loader.loaded)
+    }
+
+    @Test
+    fun shouldApplyAReleaseDownloadedUnderACallsNextResumeAtTheResumeAndNotAtTheNextStart() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL, SyncOptions(applyStrategy = ApplyStrategy.NEXT_RESUME))
+        startAgain(harness, Fixture.configuration())
+        assertNull(harness.core.getState().currentRelease)
+        harness.core.handleRendered()
+        harness.core.handleAppPause()
+        harness.clock.now += 300_000
+        harness.core.handleAppResume()
+        assertEquals(listOf("b2"), harness.loader.loaded)
+        assertEquals(v2.release.release, harness.core.getState().currentRelease)
+    }
+
+    @Test
+    fun shouldKeepTheMomentDecidedAtTheDownloadWhenAnAutomaticCycleFindsTheReleaseDownloaded() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.downloadUpdate(DownloadUpdateOptions(applyStrategy = ApplyStrategy.MANUAL)))
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.sync(SyncTrigger.INTERVAL))
+        startAgain(harness, Fixture.configuration())
+        assertNull(harness.core.getState().currentRelease)
+        assertEquals(listOf(ApplyStrategy.MANUAL), harness.listener.downloaded.map { it.applyAt })
+    }
+
+    @Test
+    fun shouldDecideTheMomentAgainWhenACallWithItsOwnStrategyFindsTheReleaseDownloaded() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.downloadUpdate(DownloadUpdateOptions(applyStrategy = ApplyStrategy.MANUAL))
+        assertEquals(SyncResult.applied(v2.release.release, "notes 1"), harness.core.downloadUpdate(DownloadUpdateOptions(applyStrategy = ApplyStrategy.IMMEDIATE)))
+        harness.core.handleRendered()
+        assertEquals(listOf("b2"), harness.loader.loaded)
+    }
+
+    @Test
+    fun shouldApplyADownloadUnderTheCallsApplyStrategies() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_RESUME), harness.core.downloadUpdate(DownloadUpdateOptions(applyStrategy = ApplyStrategy.NEXT_RESUME)))
+        val mandatory = Harness()
+        val v3 = Fixture.release(1, "b3", v2Content, isMandatory = true)
+        mandatory.publish(listOf(v3), 1)
+        mandatory.core.handleAppStart()
+        assertEquals(SyncResult.downloaded(v3.release.release, "notes 1", ApplyStrategy.MANUAL), mandatory.core.downloadUpdate(DownloadUpdateOptions(mandatoryApplyStrategy = MandatoryApplyStrategy.MANUAL)))
+    }
+
+    @Test
+    fun shouldCheckTheIndexAgainBeforeADownloadAndDownloadNothingRevokedSinceTheCheck() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        assertEquals(SyncStatus.AVAILABLE, harness.core.checkForUpdate().status)
+        harness.publish(listOf(v2), 2, revoked = listOf(v2.release.id), etag = "\"e2\"")
+        assertEquals(SyncResult.upToDate(null), harness.core.downloadUpdate())
+        assertEquals("\"e1\"", harness.http.requests.last { it.first == Fixture.indexUrl() }.second["If-None-Match"])
+        assertTrue(harness.http.requests.none { it.first == v2.envelope.pack.url || it.first == v2.release.manifestUrl })
+        assertNull(harness.core.getState().nextRelease)
+    }
+
+    @Test
     fun shouldSkipOnAMeteredConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val harness = Harness()
         harness.loader.isMetered = true
@@ -1061,7 +1146,7 @@ class CoreTest {
         assertTrue(harness.loader.loaded.isEmpty())
         val state = harness.core.getState()
         assertEquals(v2.release.release, state.nextRelease)
-        assertEquals(SyncStatus.AVAILABLE, state.lastCheck?.result?.status)
+        assertEquals(SyncStatus.DOWNLOADED, state.lastCheck?.result?.status)
         assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
         assertEquals(listOf("b2"), harness.loader.loaded)
         assertEquals(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, v2.release.release), harness.core.applyUpdate())

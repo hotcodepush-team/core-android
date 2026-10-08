@@ -138,7 +138,7 @@ class StateStoreTest {
     fun shouldDropTheCacheWhenAValueDoesNotParse() {
         val store = InMemoryStore()
         val state = StateStore(store)
-        state.nextRelease = Release("r1", 1, "b1", "1", false)
+        state.nextRelease = NextRelease(Release("r1", 1, "b1", "1", false), ApplyStrategy.NEXT_START)
         store.putString("hotcodepush.currentRelease", "not json")
         assertNull(state.currentRelease)
         assertNull(state.nextRelease)
@@ -161,7 +161,7 @@ class StateStoreTest {
         for ((key, value) in listOf("pendingRollbackEvent" to notice.toString(), "lastCheck" to JSONObject().put("at", "yesterday").toString(), "lastBuiltAt" to "yesterday")) {
             val store = InMemoryStore()
             val state = StateStore(store)
-            state.nextRelease = Release("r1", 1, "b1", "1", false)
+            state.nextRelease = NextRelease(Release("r1", 1, "b1", "1", false), ApplyStrategy.NEXT_START)
             store.putString("hotcodepush.$key", value)
             assertNull(key, state.pendingRollbackEvent ?: state.lastCheck ?: state.lastBuiltAt)
             assertNull(key, state.nextRelease)
@@ -169,14 +169,27 @@ class StateStoreTest {
     }
 
     @Test
+    fun shouldDropTheCacheWhenTheNextReleaseCarriesNoApplyMomentOrOneThisSdkDoesNotKnow() {
+        val release = Release("r1", 1, "b1", "1", false)
+        for (stored in listOf(release.toJson(), JSONObject().put("release", release.toJson()).put("applyAt", "on-resume"))) {
+            val store = InMemoryStore()
+            val state = StateStore(store)
+            state.currentRelease = release
+            store.putString("hotcodepush.nextRelease", stored.toString())
+            assertNull(stored.toString(), state.nextRelease)
+            assertNull(stored.toString(), state.currentRelease)
+        }
+    }
+
+    @Test
     fun shouldDropAnIdentityKeyThatDoesNotParseAndKeepTheCache() {
         val store = InMemoryStore()
         val state = StateStore(store)
-        state.nextRelease = Release("r1", 1, "b1", "1", false)
+        state.nextRelease = NextRelease(Release("r1", 1, "b1", "1", false), ApplyStrategy.NEXT_START)
         store.putString("hotcodepush.channel", "not json")
         assertNull(state.channel)
         assertNull(store.getString("hotcodepush.channel"))
-        assertEquals(Release("r1", 1, "b1", "1", false), state.nextRelease)
+        assertEquals(NextRelease(Release("r1", 1, "b1", "1", false), ApplyStrategy.NEXT_START), state.nextRelease)
     }
 }
 

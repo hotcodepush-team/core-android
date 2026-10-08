@@ -39,6 +39,12 @@ enum class MandatoryApplyStrategy(val wire: String) {
     }
 }
 
+/** A mandatory strategy in the apply strategies' vocabulary, which holds both of its values. */
+internal fun MandatoryApplyStrategy.toApplyStrategy(): ApplyStrategy = when (this) {
+    MandatoryApplyStrategy.IMMEDIATE -> ApplyStrategy.IMMEDIATE
+    MandatoryApplyStrategy.MANUAL -> ApplyStrategy.MANUAL
+}
+
 /** What ends the readiness gate: the first render, or an explicit `notifyReady()`. */
 enum class ReadySignal(val wire: String) {
     MANUAL("manual"), RENDER("render");

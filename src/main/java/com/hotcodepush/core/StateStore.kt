@@ -1,6 +1,7 @@
 package com.hotcodepush.core
 
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.util.UUID
 
@@ -23,6 +24,21 @@ data class CachedIndex(val etag: String?, val fetchedAt: Long, val body: Channel
 
     companion object {
         fun fromJson(json: JSONObject) = CachedIndex(json.optNullableString("etag"), Iso8601.parse(json.getString("fetchedAt")), ChannelIndex.fromJson(json.getJSONObject("body")))
+    }
+}
+
+/**
+ * The downloaded release waiting for its apply and the moment decided for it at the download, from the strategy in force for
+ * that cycle, a per-call override included: the start and the resume read it here, never the configuration.
+ */
+data class NextRelease(val release: Release, val applyAt: ApplyStrategy) {
+    fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("applyAt", applyAt.wire)
+
+    companion object {
+        fun fromJson(json: JSONObject): NextRelease {
+            val applyAt = json.getWireString("applyAt")
+            return NextRelease(Release.fromJson(json.getJSONObject("release")), ApplyStrategy.fromWire(applyAt) ?: throw JSONException("Not an apply strategy: $applyAt"))
+        }
     }
 }
 
@@ -58,8 +74,8 @@ class StateStore(private val store: KeyValueStore) {
         get() = readObject("currentRelease", Release::fromJson)
         set(value) = writeObject("currentRelease", value?.toJson())
 
-    var nextRelease: Release?
-        get() = readObject("nextRelease", Release::fromJson)
+    var nextRelease: NextRelease?
+        get() = readObject("nextRelease", NextRelease::fromJson)
         set(value) = writeObject("nextRelease", value?.toJson())
 
     var fallbackRelease: Release?

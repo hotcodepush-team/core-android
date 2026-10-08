@@ -232,6 +232,19 @@ class StartTest {
     }
 
     @Test
+    fun shouldApplyAnImmediateApplyStillHeldAtAReload() = runBlocking {
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        assertEquals(SyncStatus.APPLIED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertEquals("b2", harness.core.handleAppReload())
+        assertEquals(v2.release.release, harness.core.getState().currentRelease)
+        assertEquals(listOf("b2"), harness.loader.loaded)
+    }
+
+    @Test
     fun shouldHoldTheAppsRestartUntilTheReloadedAppRenders() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content)
