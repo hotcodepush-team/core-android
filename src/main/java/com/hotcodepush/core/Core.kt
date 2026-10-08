@@ -563,8 +563,13 @@ class Core(
     /** A restored phone brings the store's keys back without its files: a current or next release with no manifest on disk names a tree that is not there. */
     private fun hasReleaseWithoutManifest(): Boolean = listOfNotNull(state.currentRelease, state.nextRelease).any { files.readManifest(it.bundleId) == null }
 
-    /** A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded bundle runs. */
+    /**
+     * A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded
+     * bundle runs. The kept index goes with them, its ETag inside it, so the first check fetches unconditionally and a device a
+     * far-future sequence froze heals with a store update.
+     */
     private fun dropStoredReleases() {
+        state.cachedIndex = null
         state.currentRelease = null
         state.nextRelease = null
         state.fallbackRelease = null

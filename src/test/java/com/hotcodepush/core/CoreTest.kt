@@ -116,6 +116,20 @@ class CoreTest {
     }
 
     @Test
+    fun shouldTakeTheFetchedIndexAfterANewBinaryWhenTheCachedIndexHasAFarFutureSequence() = runBlocking {
+        val harness = Harness()
+        harness.publish(emptyList(), 9_999_999_999_999)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.publish(emptyList(), 1_759_900_000_000, etag = "\"e2\"")
+        harness.restart(Fixture.configuration(builtAt = Fixture.BUILT_AT + 60_000))
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(1_759_900_000_000L, harness.core.getState().indexSequence)
+        assertEquals(Fixture.indexUrl() to emptyMap<String, String>(), harness.http.requests.last())
+    }
+
+    @Test
     fun shouldKeepTheCurrentReleaseWhenTheBinaryIsTheSame() = runBlocking {
         val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
