@@ -54,15 +54,16 @@ object Evaluator {
     private fun outcome(verdicts: List<ReleaseVerdict>, index: ChannelIndex, device: DeviceInfo, currentIndexRelease: IndexRelease?): Evaluation {
         val currentNumber = device.currentRelease?.number ?: EMBEDDED_RELEASE_NUMBER
         val isCurrentRevoked = device.currentRelease?.let { isRevoked(it.id, index) } ?: false
+        val eligibleVerdicts = verdicts.filter { it.isEligible }
         val newerVerdict = verdicts.firstOrNull { it.release.number > currentNumber && it.reason != SkippedReason.RELEASE_REVOKED }
-        val newerEligible = verdicts.firstOrNull { it.isEligible && it.release.number > currentNumber }
-        val olderEligible = verdicts.firstOrNull { it.isEligible && it.release.number < currentNumber }
+        val newerEligible = eligibleVerdicts.firstOrNull { it.release.number > currentNumber }
+        val olderEligible = eligibleVerdicts.firstOrNull { it.release.number < currentNumber }
         if (index.isPaused) {
             if (isCurrentRevoked) return Evaluation.Skipped(olderEligible?.release, SkippedReason.RELEASE_REVOKED)
             if (newerVerdict != null) return Evaluation.Skipped(newerVerdict.release, SkippedReason.CHANNEL_PAUSED)
             return Evaluation.UpToDate(currentIndexRelease)
         }
-        if (newerEligible != null) return Evaluation.Available(newerEligible.release, isMandatoryTransitively(newerEligible.release, currentNumber, verdicts))
+        if (newerEligible != null) return Evaluation.Available(newerEligible.release, isMandatoryTransitively(newerEligible.release, currentNumber, eligibleVerdicts))
         if (isCurrentRevoked) return Evaluation.Skipped(olderEligible?.release, SkippedReason.RELEASE_REVOKED)
         if (newerVerdict?.reason != null) return Evaluation.Skipped(newerVerdict.release, newerVerdict.reason, newerVerdict.condition)
         return Evaluation.UpToDate(currentIndexRelease)
@@ -108,9 +109,12 @@ object Evaluator {
         return reportedAt >= cappedAt
     }
 
-    /** A release is mandatory for the device when it or any release it skipped over is. */
-    internal fun isMandatoryTransitively(target: IndexRelease, currentNumber: Int, verdicts: List<ReleaseVerdict>): Boolean =
-        verdicts.any { it.release.isMandatory && it.release.number > currentNumber && it.release.number <= target.number }
+    /**
+     * A release is mandatory for the device when it or any release it skips over is, counting only the releases the device could
+     * take: one a condition, the floor, a revocation, an earlier failure or the rollout keeps from it never makes the move mandatory.
+     */
+    internal fun isMandatoryTransitively(target: IndexRelease, currentNumber: Int, eligibleVerdicts: List<ReleaseVerdict>): Boolean =
+        eligibleVerdicts.any { it.release.isMandatory && it.release.number > currentNumber && it.release.number <= target.number }
 
     internal fun isRevoked(id: String, index: ChannelIndex): Boolean = id in index.revokedReleaseIds
 }
