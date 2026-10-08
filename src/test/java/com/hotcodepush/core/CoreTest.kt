@@ -13,7 +13,7 @@ import java.nio.file.Files
 
 class CoreTest {
     private val v2Content = "<html>v2</html>".toByteArray()
-    private val immediateInstall = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE)
+    private val immediateApply = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE)
 
     @Test
     fun shouldRunTheEmbeddedBundleAndBeUpToDateOnAnEmptyChannel() = runBlocking {
@@ -33,7 +33,7 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.NEXT_START), result)
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), result)
         assertEquals("b2", harness.loader.persisted)
         assertTrue(harness.loader.loaded.isEmpty())
         assertTrue(harness.files.hasFile(Hashing.sha256Hex(v2Content)))
@@ -77,8 +77,8 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAnswerTheReleaseBeforeTheReloadAsPreviousReleaseAfterAnImmediateInstall() = runBlocking {
-        val harness = Harness(immediateInstall)
+    fun shouldAnswerTheReleaseBeforeTheReloadAsPreviousReleaseAfterAnImmediateApply() = runBlocking {
+        val harness = Harness(immediateApply)
         val v2 = Fixture.release(1, "b2", v2Content)
         val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
         harness.publish(listOf(v2), 1)
@@ -164,7 +164,7 @@ class CoreTest {
         assertNull(status.fallbackRelease)
         assertTrue(harness.loader.hasPersisted && harness.loader.persisted == null)
         assertEquals(listOf("b2", null), harness.loader.loaded)
-        assertTrue(harness.listener.rolledBack.isEmpty())
+        assertTrue(harness.listener.rollbacks.isEmpty())
     }
 
     @Test
@@ -194,7 +194,7 @@ class CoreTest {
         harness.core.handleAppStart()
         harness.core.handleRendered()
         val result = harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(InstallMoment.IMMEDIATE, result.installAt)
+        assertEquals(SyncStatus.APPLIED, result.status)
         assertEquals(listOf("b2"), harness.loader.loaded)
         assertEquals(1, harness.scheduler.tasks.size)
         harness.scheduler.fire()
@@ -224,7 +224,7 @@ class CoreTest {
         val status = harness.core.getState()
         assertNull(status.currentRelease)
         assertEquals(listOf("b2"), status.failedBundleIds)
-        assertEquals(RollbackReason.APP_CRASHED, harness.listener.rolledBack.last().reason)
+        assertEquals(RollbackReason.APP_CRASHED, harness.listener.rollbacks.last().reason)
         assertNull(harness.loader.loaded.last())
     }
 
@@ -258,10 +258,10 @@ class CoreTest {
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
         harness.http.isOffline = true
-        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
         harness.http.isOffline = false
         harness.publish(emptyList(), 4, etag = "\"e0\"")
-        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertEquals(5L, harness.core.getState().indexSequence)
     }
 
@@ -366,7 +366,7 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(signature = fixture.sign(v2.envelope.manifest, "rsa-4096-a")).toJson())
         harness.core.handleAppStart()
-        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
     }
 
     @Test
@@ -384,7 +384,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAdoptAReleaseCarryingTheRunningBundleWithoutAReload() = runBlocking {
+    fun shouldAdoptAReleaseCarryingTheRunningBundleWithoutAReloadAndAnswerUpToDate() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -394,7 +394,7 @@ class CoreTest {
         harness.core.notifyReady()
         val rollback = Fixture.release(2, "b2", v2Content)
         harness.publish(listOf(v2, rollback), 2, etag = "\"e2\"")
-        assertEquals(SyncResult.updated(rollback.release.release, "notes 2", InstallMoment.IMMEDIATE), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.upToDate(rollback.release.release), harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(listOf("b2"), harness.loader.loaded)
         assertEquals("r2", harness.core.getState().currentRelease?.id)
         assertEquals("r2", harness.core.getState().fallbackRelease?.id)
@@ -417,12 +417,12 @@ class CoreTest {
     }
 
     @Test
-    fun shouldDiscardAHeldInstallWhoseReleaseWasRevokedWhileItWaitedAndReloadNothing() = runBlocking {
-        val harness = Harness(immediateInstall)
+    fun shouldDiscardAHeldApplyWhoseReleaseWasRevokedWhileItWaitedAndReloadNothing() = runBlocking {
+        val harness = Harness(immediateApply)
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.IMMEDIATE), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.applied(v2.release.release, "notes 1"), harness.core.sync(SyncTrigger.MANUAL))
         harness.publish(listOf(v2), 2, revoked = listOf("r1"), etag = "\"e2\"")
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.handleRendered()
@@ -439,7 +439,7 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(ApplyResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
         harness.publish(listOf(v2), 2, revoked = listOf("r1"), etag = "\"e2\"")
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.handleRendered()
@@ -471,7 +471,7 @@ class CoreTest {
         harness.core.handleAppStart()
         harness.core.handleRendered()
         harness.core.setRestartAllowed(false)
-        assertEquals(InstallMoment.IMMEDIATE, harness.core.sync(SyncTrigger.MANUAL).installAt)
+        assertEquals(SyncStatus.APPLIED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertTrue(harness.loader.loaded.isEmpty())
         val queued = harness.core.getState()
         assertNull(queued.currentRelease)
@@ -480,9 +480,9 @@ class CoreTest {
         assertTrue(StateStore(harness.store).unsentEvents.none { it.type == "applied" })
         harness.core.setRestartAllowed(true)
         assertEquals(listOf("b2"), harness.loader.loaded)
-        val installed = harness.core.getState()
-        assertEquals(v2.release.release, installed.currentRelease)
-        assertNull(installed.nextRelease)
+        val applied = harness.core.getState()
+        assertEquals(v2.release.release, applied.currentRelease)
+        assertNull(applied.nextRelease)
         assertEquals(1, harness.scheduler.tasks.size)
     }
 
@@ -492,8 +492,8 @@ class CoreTest {
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(InstallMoment.MANUAL, harness.core.sync(SyncTrigger.MANUAL).installAt)
-        assertEquals(ApplyResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
+        assertEquals(ApplyStrategy.MANUAL, harness.core.sync(SyncTrigger.MANUAL).applyAt)
+        assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
         assertTrue(harness.loader.loaded.isEmpty())
         assertNull(harness.core.getState().currentRelease)
         harness.core.setRestartAllowed(false)
@@ -546,7 +546,7 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         harness.core.handleRendered()
-        assertEquals(InstallMoment.NEXT_RESUME, harness.core.sync(SyncTrigger.MANUAL).installAt)
+        assertEquals(ApplyStrategy.NEXT_RESUME, harness.core.sync(SyncTrigger.MANUAL).applyAt)
         harness.core.handleAppPause()
         harness.clock.now += 300_000
         harness.core.handleAppResume()
@@ -581,7 +581,7 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         harness.core.handleRendered()
-        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.MANUAL), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.sync(SyncTrigger.MANUAL))
         harness.core.handleAppPause()
         harness.clock.now += 600_000
         harness.core.handleAppResume()
@@ -676,7 +676,7 @@ class CoreTest {
         assertEquals(FailedReason.INDEX_INVALID.name, failed.reason)
         assertTrue(failed.message, failed.message!!.contains("the listener broke"))
         harness.listener.updateAvailableFailure = null
-        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
     }
 
     @Test
@@ -716,9 +716,9 @@ class CoreTest {
         assertEquals(1, harness.http.requests.count { it.first.contains("/deltas/") })
         assertEquals(1, harness.http.requests.count { it.first == Fixture.indexUrl() })
         harness.http.downloadGate?.complete(Unit)
-        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), download.await())
-        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.NEXT_START), sync.await())
-        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), secondDownload.await())
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), download.await())
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), sync.await())
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), secondDownload.await())
         assertEquals(SyncResult.available(v2.release.release, "notes 1", v2.release.sizeBytes), check.await())
         assertEquals(1, harness.http.requests.count { it.first.contains("/deltas/") })
         assertEquals(1, harness.http.requests.count { it.first == v2.envelope.pack.url })
@@ -766,8 +766,8 @@ class CoreTest {
         val download = harness.scope.async { harness.core.downloadUpdate() }
         val secondDownload = harness.scope.async { harness.core.downloadUpdate() }
         harness.http.downloadGate?.complete(Unit)
-        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), download.await())
-        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), secondDownload.await())
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), download.await())
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), secondDownload.await())
         assertEquals(1, harness.http.requests.count { it.first == Fixture.indexUrl() })
     }
 
@@ -1020,7 +1020,7 @@ class CoreTest {
         harness.core.handleAppStart()
         assertEquals(listOf("b0"), harness.files.bundleIds())
         harness.http.downloadGate?.complete(Unit)
-        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.NEXT_START), sync.await())
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), sync.await())
         assertEquals(listOf("b2"), harness.files.bundleIds())
         assertTrue(!harness.files.hasFile(Hashing.sha256Hex(stale)))
         assertTrue(harness.files.hasFile(Hashing.sha256Hex(v2Content)))
@@ -1055,16 +1055,16 @@ class CoreTest {
         assertEquals(SyncResult.available(v2.release.release, "notes 1", 15), harness.core.sync(SyncTrigger.MANUAL))
         assertTrue(!harness.files.hasFile(Hashing.sha256Hex(v2Content)))
         assertEquals(1, harness.listener.available.size)
-        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), harness.core.downloadUpdate())
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.downloadUpdate())
         assertTrue(harness.files.hasFile(Hashing.sha256Hex(v2Content)))
-        assertEquals(listOf(InstallMoment.MANUAL), harness.listener.downloaded.map { it.installAt })
+        assertEquals(listOf(ApplyStrategy.MANUAL), harness.listener.downloaded.map { it.applyAt })
         assertTrue(harness.loader.loaded.isEmpty())
         val state = harness.core.getState()
         assertEquals(v2.release.release, state.nextRelease)
         assertEquals(SyncStatus.AVAILABLE, state.lastCheck?.result?.status)
-        assertEquals(ApplyResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
         assertEquals(listOf("b2"), harness.loader.loaded)
-        assertEquals(ApplyResult(ApplyStatus.NOTHING_TO_APPLY, v2.release.release), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, v2.release.release), harness.core.applyUpdate())
     }
 
     @Test
@@ -1075,19 +1075,32 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         assertEquals(SyncResult.skipped(v2.release.release, SkippedReason.CONNECTION_METERED), harness.core.sync(SyncTrigger.MANUAL))
-        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1"), harness.core.downloadUpdate())
-        assertEquals(listOf(InstallMoment.NEXT_START), harness.listener.downloaded.map { it.installAt })
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), harness.core.downloadUpdate())
+        assertEquals(listOf(ApplyStrategy.NEXT_START), harness.listener.downloaded.map { it.applyAt })
     }
 
     @Test
-    fun shouldInstallAMandatoryReleaseAtOnceWhateverTheApplyStrategy() = runBlocking {
+    fun shouldAnswerAppliedFromADownloadUnderTheImmediateStrategyAndReloadAtTheFirstRender() = runBlocking {
+        val harness = Harness(immediateApply)
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        assertEquals(SyncResult.applied(v2.release.release, "notes 1"), harness.core.downloadUpdate())
+        assertTrue(harness.listener.downloaded.isEmpty())
+        assertTrue(harness.loader.loaded.isEmpty())
+        harness.core.handleRendered()
+        assertEquals(listOf("b2"), harness.loader.loaded)
+    }
+
+    @Test
+    fun shouldApplyAMandatoryReleaseAtOnceWhateverTheApplyStrategy() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_START))
         val v2 = Fixture.release(1, "b2", v2Content, isMandatory = true)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         harness.core.handleRendered()
         val result = harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(InstallMoment.IMMEDIATE, result.installAt)
+        assertEquals(SyncStatus.APPLIED, result.status)
         assertEquals(true, result.release?.isMandatory)
         assertEquals(listOf("b2"), harness.loader.loaded)
         assertTrue(harness.listener.downloaded.isEmpty())
@@ -1099,7 +1112,7 @@ class CoreTest {
         val v2 = Fixture.release(1, "b2", v2Content, isMandatory = true)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.MANUAL), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(listOf(true), harness.listener.downloaded.map { it.release.isMandatory })
         assertTrue(harness.loader.loaded.isEmpty())
         harness.loader.served = null
@@ -1120,7 +1133,7 @@ class CoreTest {
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals("r2", result.release?.id)
         assertEquals(true, result.release?.isMandatory)
-        assertEquals(InstallMoment.MANUAL, result.installAt)
+        assertEquals(ApplyStrategy.MANUAL, result.applyAt)
     }
 
     @Test
@@ -1175,7 +1188,7 @@ class CoreTest {
         harness.core.handleAppStart()
         harness.restart(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         harness.core.handleAppStart()
-        assertEquals(RollbackReason.APP_CRASHED, harness.listener.rolledBack.last().reason)
+        assertEquals(RollbackReason.APP_CRASHED, harness.listener.rollbacks.last().reason)
         assertEquals(SyncTrigger.START, StateStore(harness.store).lastCheck?.trigger)
         assertTrue(harness.files.bundleIds().isEmpty())
     }
@@ -1190,11 +1203,11 @@ class CoreTest {
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.setRestartAllowed(false)
         harness.scheduler.fire()
-        assertTrue(harness.listener.rolledBack.isEmpty())
+        assertTrue(harness.listener.rollbacks.isEmpty())
         assertEquals(listOf("b2"), harness.loader.loaded)
         harness.core.setRestartAllowed(true)
         assertEquals(listOf("b2", null), harness.loader.loaded)
-        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rollbacks.map { it.reason })
     }
 
     @Test
@@ -1202,9 +1215,9 @@ class CoreTest {
         val harness = startOnUnconfirmedRelease()
         harness.core.setRestartAllowed(false)
         harness.scheduler.fire()
-        assertTrue(harness.listener.rolledBack.isEmpty())
-        startAgain(harness, immediateInstall)
-        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
+        assertTrue(harness.listener.rollbacks.isEmpty())
+        startAgain(harness, immediateApply)
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rollbacks.map { it.reason })
         val ready = harness.core.notifyReady()
         assertTrue(ready.isRolledBack)
         assertEquals(RollbackReason.READINESS_TIMED_OUT, ready.rollbackReason)
@@ -1215,9 +1228,9 @@ class CoreTest {
     fun shouldAnnounceARollbackAgainAtTheNextStartWhenTheAppNeverCameUpAfterTheReload() = runBlocking {
         val harness = startOnUnconfirmedRelease()
         harness.core.rollbackUpdate(null)
-        assertEquals(1, harness.listener.rolledBack.size)
-        startAgain(harness, immediateInstall)
-        assertEquals(listOf(RollbackReason.APP_REQUESTED, RollbackReason.APP_REQUESTED), harness.listener.rolledBack.map { it.reason })
+        assertEquals(1, harness.listener.rollbacks.size)
+        startAgain(harness, immediateApply)
+        assertEquals(listOf(RollbackReason.APP_REQUESTED, RollbackReason.APP_REQUESTED), harness.listener.rollbacks.map { it.reason })
     }
 
     @Test
@@ -1225,8 +1238,8 @@ class CoreTest {
         val harness = startOnUnconfirmedRelease()
         harness.core.rollbackUpdate(null)
         harness.core.handleRendered()
-        startAgain(harness, immediateInstall)
-        assertEquals(1, harness.listener.rolledBack.size)
+        startAgain(harness, immediateApply)
+        assertEquals(1, harness.listener.rollbacks.size)
         assertNull(StateStore(harness.store).pendingRollbackEvent)
     }
 
@@ -1235,8 +1248,8 @@ class CoreTest {
         val harness = startOnUnconfirmedRelease()
         harness.core.rollbackUpdate(null)
         harness.core.notifyReady()
-        startAgain(harness, immediateInstall)
-        assertEquals(1, harness.listener.rolledBack.size)
+        startAgain(harness, immediateApply)
+        assertEquals(1, harness.listener.rollbacks.size)
         assertNull(StateStore(harness.store).pendingRollbackEvent)
     }
 
@@ -1251,17 +1264,17 @@ class CoreTest {
         harness.core.handleAppStart()
         harness.restart()
         harness.core.handleAppStart()
-        assertEquals(listOf(RollbackReason.APP_CRASHED), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.APP_CRASHED), harness.listener.rollbacks.map { it.reason })
     }
 
     @Test
     fun shouldKeepTheNoticeWhenTheReadinessTimerRanOutAndNothingRendered() = runBlocking {
         val harness = startOnUnconfirmedRelease()
         harness.scheduler.fire()
-        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rollbacks.map { it.reason })
         assertEquals(RollbackReason.READINESS_TIMED_OUT, StateStore(harness.store).pendingRollbackEvent?.reason)
-        startAgain(harness, immediateInstall)
-        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT, RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
+        startAgain(harness, immediateApply)
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT, RollbackReason.READINESS_TIMED_OUT), harness.listener.rollbacks.map { it.reason })
     }
 
     @Test
@@ -1272,7 +1285,7 @@ class CoreTest {
         harness.core.handleRendered()
         assertEquals(RollbackReason.READINESS_TIMED_OUT, StateStore(harness.store).pendingRollbackEvent?.reason)
         harness.core.setRestartAllowed(true)
-        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rollbacks.map { it.reason })
         assertEquals(RollbackReason.READINESS_TIMED_OUT, StateStore(harness.store).pendingRollbackEvent?.reason)
     }
 
@@ -1283,7 +1296,7 @@ class CoreTest {
         harness.loader.served = null
         harness.restart(Fixture.configuration(builtAt = Fixture.BUILT_AT + 86_400_000))
         harness.core.handleAppStart()
-        assertEquals(1, harness.listener.rolledBack.size)
+        assertEquals(1, harness.listener.rollbacks.size)
         assertNull(StateStore(harness.store).pendingRollbackEvent)
         assertEquals(false, harness.core.notifyReady().isRolledBack)
     }
@@ -1297,8 +1310,8 @@ class CoreTest {
         assertEquals(listOf("b2", null), harness.loader.loaded)
         assertNull(StateStore(harness.store).pendingRollbackEvent)
         assertNull(StateStore(harness.store).lastRollback)
-        startAgain(harness, immediateInstall)
-        assertTrue(harness.listener.rolledBack.isEmpty())
+        startAgain(harness, immediateApply)
+        assertTrue(harness.listener.rollbacks.isEmpty())
     }
 
     @Test
@@ -1320,7 +1333,7 @@ class CoreTest {
         harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(deltas = listOf(ManifestEnvelope.Delta("embedded", deltaUrl, v2.pack.size.toLong()))).toJson())
         harness.http.stub(deltaUrl, body = v2.pack)
         harness.core.handleAppStart()
-        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertTrue(harness.http.requests.any { it.first == deltaUrl })
         assertEquals(PackKind.DELTA.wire, StateStore(harness.store).unsentEvents.first { it.type == "downloaded" }.packKind)
     }
@@ -1340,14 +1353,14 @@ class CoreTest {
         harness.publish(listOf(v4, v3, v2), 2, etag = "\"e2\"")
         harness.http.stubJson(v4.release.manifestUrl, v4.envelope.copy(deltas = listOf(ManifestEnvelope.Delta("b3", "${v4.envelope.pack.url}-delta-b3", v4.pack.size.toLong()))).toJson())
         harness.http.stub(streamedUrl, body = v4.pack)
-        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertEquals(SyncStatus.APPLIED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertTrue(harness.http.requests.any { it.first == streamedUrl })
         assertTrue(harness.http.requests.none { it.first == v4.envelope.pack.url })
         assertEquals(PackKind.STREAMED.wire, StateStore(harness.store).unsentEvents.last { it.type == "downloaded" }.packKind)
     }
 
     @Test
-    fun shouldDiscardADownloadedReleaseRevokedBeforeTheStartThatWouldInstallIt() = runBlocking {
+    fun shouldDiscardADownloadedReleaseRevokedBeforeTheStartThatWouldApplyIt() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1372,10 +1385,10 @@ class CoreTest {
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(SyncResult.updated(v2.release.release, "notes 1", InstallMoment.MANUAL), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.sync(SyncTrigger.MANUAL))
         harness.publish(emptyList(), 2, etag = "\"e2\"")
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(ApplyResult(ApplyStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
         assertTrue(harness.loader.loaded.isEmpty())
         assertNull(harness.core.getState().nextRelease)
     }
@@ -1410,12 +1423,12 @@ class CoreTest {
     }
 
     @Test
-    fun shouldReloadAnImmediateInstallAtTheFirstRenderAndNotBefore() = runBlocking {
+    fun shouldReloadAnImmediateApplyAtTheFirstRenderAndNotBefore() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(InstallMoment.IMMEDIATE, harness.core.sync(SyncTrigger.MANUAL).installAt)
+        assertEquals(SyncStatus.APPLIED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertTrue(harness.loader.loaded.isEmpty())
         assertEquals(v2.release.release, harness.core.getState().nextRelease)
         harness.core.handleRendered()
@@ -1429,7 +1442,7 @@ class CoreTest {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_START))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content, isMandatory = true)), 1)
         harness.core.handleAppStart()
-        assertEquals(InstallMoment.IMMEDIATE, harness.core.sync(SyncTrigger.MANUAL).installAt)
+        assertEquals(SyncStatus.APPLIED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertTrue(harness.loader.loaded.isEmpty())
         harness.core.handleRendered()
         assertEquals(listOf("b2"), harness.loader.loaded)
@@ -1479,7 +1492,7 @@ class CoreTest {
         assertTrue(harness.loader.loaded.isEmpty())
         harness.scheduler.fire()
         assertEquals(listOf<String?>(null), harness.loader.loaded)
-        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rollbacks.map { it.reason })
     }
 
     @Test
@@ -1487,7 +1500,7 @@ class CoreTest {
         val harness = startOnConfirmedRelease(Fixture.configuration())
         harness.core.rollbackUpdate("fatal")
         assertEquals(listOf<String?>(null), harness.loader.loaded)
-        assertEquals(listOf(RollbackReason.APP_REQUESTED), harness.listener.rolledBack.map { it.reason })
+        assertEquals(listOf(RollbackReason.APP_REQUESTED), harness.listener.rollbacks.map { it.reason })
     }
 
     @Test
@@ -1537,7 +1550,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldReloadAnImmediateInstallAtNotifyReadyAndNotBefore() = runBlocking {
+    fun shouldReloadAnImmediateApplyAtNotifyReadyAndNotBefore() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE, readySignal = ReadySignal.MANUAL))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
@@ -1559,7 +1572,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldSwitchToAHeldImmediateInstallAtTheNextStartWhenItNeverRan() = runBlocking {
+    fun shouldSwitchToAHeldImmediateApplyAtTheNextStartWhenItNeverRan() = runBlocking {
         val configuration = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE)
         val harness = Harness(configuration)
         val v2 = Fixture.release(1, "b2", v2Content)
@@ -1629,9 +1642,9 @@ class CoreTest {
         assertTrue(!next.isNull("report"))
     }
 
-    /** A run that installs v2 at once after the first render and has not confirmed it: its readiness timer is the one scheduled. */
+    /** A run that applies v2 at once after the first render and has not confirmed it: its readiness timer is the one scheduled. */
     private suspend fun startOnUnconfirmedRelease(): Harness {
-        val harness = Harness(immediateInstall)
+        val harness = Harness(immediateApply)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.handleRendered()

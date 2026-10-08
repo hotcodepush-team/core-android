@@ -68,7 +68,7 @@ class FakeListener : CoreListener {
     val available = mutableListOf<UpdateAvailableEvent>()
     val downloaded = mutableListOf<UpdateDownloadedEvent>()
     val failed = mutableListOf<UpdateFailedEvent>()
-    val rolledBack = mutableListOf<RolledBackEvent>()
+    val rollbacks = mutableListOf<UpdateRolledBackEvent>()
 
     /** Thrown from the listener, as an SDK's listener with a bug throws. */
     var updateAvailableFailure: Throwable? = null
@@ -87,7 +87,7 @@ class FakeListener : CoreListener {
     }
 
     override fun downloadProgress(releaseId: String, downloadedBytes: Long, totalBytes: Long) {}
-    override fun rolledBack(event: RolledBackEvent) { rolledBack += event }
+    override fun updateRolledBack(event: UpdateRolledBackEvent) { rollbacks += event }
 }
 
 class ManualScheduler : Scheduler {

@@ -84,7 +84,7 @@ class DebugReportTest {
     }
 
     @Test
-    fun shouldLogTheDownloadTheInstallAndTheReportOfASync() = runBlocking {
+    fun shouldLogTheDownloadTheApplyAndTheReportOfASync() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.acknowledgeEvents()
         val v2 = Fixture.release(1, "b2", v2Content)
@@ -95,10 +95,22 @@ class DebugReportTest {
         harness.core.notifyReady()
         val log = harness.core.debugSnapshot().log
         val lifecycle = log.filter { !it.code.startsWith("REPORT") }
-        assertEquals(listOf("DOWNLOADED", "APPLIED", "UPDATED", "CONFIRMED"), lifecycle.map { it.code })
+        assertEquals(listOf("DOWNLOADED", "APPLIED", "APPLIED", "CONFIRMED"), lifecycle.map { it.code })
         assertEquals("release r1: ${v2.pack.size} bytes as full pack", lifecycle[0].message)
-        assertEquals("manual: release #1 (1.1.0) installs immediate", lifecycle[2].message)
+        assertEquals("manual: release #1 (1.1.0) is applied and the app reloads", lifecycle[2].message)
         assertTrue(log.map { it.code }.joinToString(), log.any { it.code == "REPORTED" })
+    }
+
+    @Test
+    fun shouldLogTheMomentADownloadedUpdateIsAppliedAtOrThatItWaitsForApplyUpdate() = runBlocking {
+        for ((applyStrategy, sentence) in listOf(ApplyStrategy.NEXT_START to "applies at next-start", ApplyStrategy.MANUAL to "waits for applyUpdate()")) {
+            val harness = Harness(Fixture.configuration(applyStrategy = applyStrategy))
+            harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+            harness.core.handleAppStart()
+            harness.core.sync(SyncTrigger.MANUAL)
+            val cycle = harness.core.debugSnapshot().log.last { it.message.startsWith("manual:") }
+            assertEquals("manual: release #1 (1.1.0) is downloaded and $sentence", cycle.message)
+        }
     }
 
     @Test

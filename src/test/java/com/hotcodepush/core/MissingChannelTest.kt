@@ -172,7 +172,7 @@ class MissingChannelTest {
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.setChannel(ChannelChoice.Id(Fixture.CHANNEL_ID))
-        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
         val report = JSONObject(String(harness.http.posts.single().third)).getJSONObject("report")
         assertEquals(Fixture.CHANNEL_ID, report.getString("channelId"))
         assertEquals("runtime", report.getString("channelSource"))
@@ -185,7 +185,7 @@ class MissingChannelTest {
         harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", JSONObject().put("schema", 1).put("channels", org.json.JSONArray(listOf(JSONObject().put("id", Fixture.CHANNEL_ID).put("name", "beta")))))
         harness.core.handleAppStart()
         harness.core.setChannel(ChannelChoice.Name("beta"))
-        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertEquals(ChannelResult(Fixture.CHANNEL_ID, "beta", ChannelSource.RUNTIME), harness.core.channel())
     }
 
@@ -218,7 +218,7 @@ class MissingChannelTest {
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003"))
-        assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
         assertEquals(ChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.channel())
     }
 

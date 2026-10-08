@@ -103,7 +103,7 @@ class MissingEmbeddedBundleTest {
         assertNull(started.nextRelease)
         assertNull(started.fallbackRelease)
         assertTrue(started.failedBundleIds.isEmpty())
-        assertTrue(harness.listener.rolledBack.isEmpty())
+        assertTrue(harness.listener.rollbacks.isEmpty())
         assertEquals(timerCount, harness.scheduler.tasks.size)
         assertEquals(outbox, StateStore(harness.store).unsentEvents)
         assertNull(harness.loader.persisted)
@@ -132,11 +132,11 @@ class MissingEmbeddedBundleTest {
     fun shouldAnswerNothingToApplyAndNoRollbackWhenTheBuildEmbedsNoBundle() = runBlocking {
         val harness = harnessWithoutEmbeddedBundle()
         harness.core.handleAppStart()
-        assertEquals(ApplyResult(ApplyStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
         assertEquals(NotifyReadyResult(null, null, false, null), harness.core.notifyReady())
         harness.core.rollbackUpdate(null)
         assertTrue(harness.loader.loaded.isEmpty())
-        assertTrue(harness.listener.rolledBack.isEmpty())
+        assertTrue(harness.listener.rollbacks.isEmpty())
     }
 
     @Test

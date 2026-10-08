@@ -39,11 +39,16 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
             return when (result.status) {
                 SyncStatus.UP_TO_DATE -> "${release ?: "the embedded bundle"} is current"
                 SyncStatus.AVAILABLE -> "${release ?: "a release"} is available"
-                SyncStatus.DOWNLOADED -> "${release ?: "a release"} is downloaded and waits for applyUpdate()"
-                SyncStatus.UPDATED -> "${release ?: "a release"} installs ${result.installAt?.wire ?: ""}"
+                SyncStatus.DOWNLOADED -> "${release ?: "a release"} is downloaded and ${resolveApplySentence(result.applyAt)}"
+                SyncStatus.APPLIED -> "${release ?: "a release"} is applied and the app reloads"
                 SyncStatus.SKIPPED -> "${release ?: "the newest release"} is not taken"
                 SyncStatus.FAILED -> result.message ?: ""
             }
+        }
+
+        private fun resolveApplySentence(applyAt: ApplyStrategy?): String = when (applyAt) {
+            ApplyStrategy.MANUAL, null -> "waits for applyUpdate()"
+            else -> "applies at ${applyAt.wire}"
         }
     }
 }

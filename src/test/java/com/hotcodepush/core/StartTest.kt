@@ -126,7 +126,7 @@ class StartTest {
     }
 
     @Test
-    fun shouldKeepAHeldInstallPersistedAcrossAHeadlessStartAndApplyItAtTheNextStart() = runBlocking {
+    fun shouldKeepAHeldApplyPersistedAcrossAHeadlessStartAndApplyItAtTheNextStart() = runBlocking {
         val configuration = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE)
         val harness = Harness(configuration)
         val v2 = Fixture.release(1, "b2", v2Content)
@@ -165,7 +165,7 @@ class StartTest {
         harness.restart()
         assertNull(harness.core.handleAppStart())
         assertEquals(listOf("b2"), StateStore(harness.store).failedBundleIds)
-        assertEquals(RollbackReason.APP_CRASHED, harness.listener.rolledBack.single().reason)
+        assertEquals(RollbackReason.APP_CRASHED, harness.listener.rollbacks.single().reason)
     }
 
     @Test
@@ -253,10 +253,10 @@ class StartTest {
         harness.restart()
         harness.core.handleAppStart()
         harness.core.handleAppReload()
-        assertEquals(2, harness.listener.rolledBack.size)
+        assertEquals(2, harness.listener.rollbacks.size)
         harness.core.handleRendered()
         harness.core.handleAppReload()
-        assertEquals(2, harness.listener.rolledBack.size)
+        assertEquals(2, harness.listener.rollbacks.size)
     }
 
     @Test
@@ -271,7 +271,7 @@ class StartTest {
         assertEquals(10.0, harness.scheduler.tasks.last().seconds, 0.0)
         assertEquals(v2.release.release, harness.core.getState().currentRelease)
         harness.scheduler.fire()
-        assertEquals(RollbackReason.READINESS_TIMED_OUT, harness.listener.rolledBack.single().reason)
+        assertEquals(RollbackReason.READINESS_TIMED_OUT, harness.listener.rollbacks.single().reason)
     }
 
     @Test
@@ -285,7 +285,7 @@ class StartTest {
         harness.core.handleAppResume()
         assertEquals(10.0, harness.scheduler.tasks.single().seconds, 0.0)
         harness.scheduler.fire()
-        assertEquals(RollbackReason.READINESS_TIMED_OUT, harness.listener.rolledBack.single().reason)
+        assertEquals(RollbackReason.READINESS_TIMED_OUT, harness.listener.rollbacks.single().reason)
     }
 
     @Test
@@ -296,7 +296,7 @@ class StartTest {
         harness.core.handleAppPause()
         timer.block()
         assertEquals(v2.release.release, harness.core.getState().currentRelease)
-        assertTrue(harness.listener.rolledBack.isEmpty())
+        assertTrue(harness.listener.rollbacks.isEmpty())
     }
 
     @Test
@@ -309,6 +309,6 @@ class StartTest {
         harness.core.handleAppResume()
         harness.core.handleRendered()
         assertEquals(v2.release.release, harness.core.getState().fallbackRelease)
-        assertTrue(harness.listener.rolledBack.isEmpty())
+        assertTrue(harness.listener.rollbacks.isEmpty())
     }
 }

@@ -122,6 +122,19 @@ class StateStoreTest {
     }
 
     @Test
+    fun shouldDropALastCheckStoredUnderTheStatusAndFieldNamesOfVersionThree() {
+        val store = InMemoryStore()
+        val release = Release("r1", 1, "b1", "1", false)
+        val result = JSONObject().put("status", "UPDATED").put("release", release.toJson()).put("notes", JSONObject.NULL).put("installAt", "next-start")
+        store.putInt("hotcodepush.stateVersion", 3)
+        store.putString("hotcodepush.currentRelease", release.toJson().toString())
+        store.putString("hotcodepush.lastCheck", JSONObject().put("at", "2026-10-08T10:00:00.000Z").put("trigger", "manual").put("result", result).toString())
+        val state = StateStore(store)
+        assertNull(state.lastCheck)
+        assertNull(state.currentRelease)
+    }
+
+    @Test
     fun shouldDropTheCacheWhenAValueDoesNotParse() {
         val store = InMemoryStore()
         val state = StateStore(store)

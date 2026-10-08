@@ -137,7 +137,7 @@ class Core(
 
     /**
      * A reload the core did not perform — a JavaScript restart, a development reload — runs through the gate like any start: an
-     * install held or waiting for the next start takes effect, the reloaded app has to come up again before a restart runs, and a
+     * apply held or waiting for the next start takes effect, the reloaded app has to come up again before a restart runs, and a
      * release not yet confirmed is gated, its full window again. Unlike a start it takes no unconfirmed release for a crash.
      * Answers the bundle the host serves, `null` for the embedded one; nothing it throws reaches the host.
      */
@@ -200,7 +200,7 @@ class Core(
     }
 
     /** A `next-resume` release; a mandatory one follows `mandatoryApplyStrategy` instead, so one the app took over with `manual` waits for `applyUpdate()`. */
-    private fun shouldInstallAtResume(next: Release): Boolean = !next.isMandatory && configuration.applyStrategy == ApplyStrategy.NEXT_RESUME
+    private fun shouldApplyAtResume(next: Release): Boolean = !next.isMandatory && configuration.applyStrategy == ApplyStrategy.NEXT_RESUME
 
     /**
      * The first render of the run or of a reload: the readiness signal when `readySignal` is `render`, and on every setting what
@@ -247,15 +247,15 @@ class Core(
         pauseReadyTimer()
     }
 
-    /** A resume starts a paused readiness window again, installs a `next-resume` release after enough time in the background, else checks when the interval has passed. */
+    /** A resume starts a paused readiness window again, applies a `next-resume` release after enough time in the background, else checks when the interval has passed. */
     suspend fun handleAppResume() = lock.withLock {
         val backgroundDuration = backgroundedAt?.let { (clock.now() - it) / 1000.0 }
         backgroundedAt = null
         resumeReadyTimer()
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
-        if (backgroundDuration != null && next != null && shouldInstallAtResume(next) && backgroundDuration >= configuration.applyOnResumeAfterSeconds) {
-            installNextRelease()
+        if (backgroundDuration != null && next != null && shouldApplyAtResume(next) && backgroundDuration >= configuration.applyOnResumeAfterSeconds) {
+            restartIntoNextRelease()
             return
         }
         if (!isCheckAutomatic) return
@@ -294,7 +294,7 @@ class Core(
         return runCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions())
     }
 
-    /** The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then install per the strategies. */
+    /** The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then apply per the strategies. */
     suspend fun downloadUpdate(): SyncResult {
         verifyChannelId()
         return runCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions())
@@ -322,11 +322,11 @@ class Core(
     }
 
     /** The third stage: apply the downloaded update and reload the app, now or, before the app is up in this run, once it is. */
-    suspend fun applyUpdate(): ApplyResult = lock.withLock {
+    suspend fun applyUpdate(): ApplyUpdateResult = lock.withLock {
         discardNextReleaseThatLeftTheIndex()
-        val next = state.nextRelease ?: return ApplyResult(ApplyStatus.NOTHING_TO_APPLY, state.currentRelease)
+        val next = state.nextRelease ?: return ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, state.currentRelease)
         restartThroughGate(isAskedByApp = true, ::applyNextRelease)
-        ApplyResult(ApplyStatus.APPLIED, next)
+        ApplyUpdateResult(ApplyStatus.APPLIED, next)
     }
 
     private suspend fun performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
@@ -390,7 +390,7 @@ class Core(
                     SyncResult.skipped(null, SkippedReason.RELEASE_REVOKED)
                 }
                 else -> {
-                    val outcome = install(evaluation.release, true, ApplyStrategy.IMMEDIATE, trigger, Stage.SYNC)
+                    val outcome = downloadAndApply(evaluation.release, true, ApplyStrategy.IMMEDIATE, trigger)
                     if (outcome.status == SyncStatus.FAILED) outcome else SyncResult.skipped(evaluation.release.release, SkippedReason.RELEASE_REVOKED)
                 }
             }
@@ -399,37 +399,36 @@ class Core(
 
     /**
      * A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far
-     * as the stage goes. An adopted release runs already, so a download answers `UP_TO_DATE` where a sync answers `UPDATED`.
+     * as the stage goes. An adopted release runs already without a reload, so the cycle answers `UP_TO_DATE` with it.
      */
     private suspend fun update(target: IndexRelease, isMandatory: Boolean, trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
         val release = resolveRelease(target, isMandatory)
         val current = state.currentRelease
         if (stage != Stage.CHECK && current != null && current.bundleId == target.bundleId) {
             lock.withLock { adoptInPlace(release) }
-            return if (stage == Stage.DOWNLOAD) SyncResult.upToDate(release) else SyncResult.updated(release, target.notes, InstallMoment.IMMEDIATE)
+            return SyncResult.upToDate(release)
         }
         val strategy = resolveApplyStrategy(isMandatory, options)
         if (isDownloaded(target)) {
             if (stage == Stage.CHECK) return SyncResult.available(release, target.notes, target.sizeBytes)
-            val outcome = lock.withLock { applyDownloaded(release, target.notes, strategy) }
-            return if (stage == Stage.DOWNLOAD) SyncResult.downloaded(release, target.notes) else outcome
+            return lock.withLock { applyDownloaded(release, target.notes, strategy) }
         }
         listener.updateAvailable(UpdateAvailableEvent(release, target.notes, target.sizeBytes, trigger))
         return when (stage) {
             Stage.CHECK -> SyncResult.available(release, target.notes, target.sizeBytes)
             Stage.SYNC -> when (options.downloadStrategy ?: configuration.downloadStrategy) {
                 DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, target.sizeBytes)
-                DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else install(target, isMandatory, strategy, trigger, stage)
-                DownloadStrategy.AUTO -> install(target, isMandatory, strategy, trigger, stage)
+                DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, strategy, trigger)
+                DownloadStrategy.AUTO -> downloadAndApply(target, isMandatory, strategy, trigger)
             }
-            Stage.DOWNLOAD -> install(target, isMandatory, strategy, trigger, stage)
+            Stage.DOWNLOAD -> downloadAndApply(target, isMandatory, strategy, trigger)
         }
     }
 
     /** The release as the app sees it: the index's entry with the mandatory flag the evaluation decided, transitive included. */
     private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(target.id, target.number, target.bundleId, target.bundleVersion, isMandatory)
 
-    /** A mandatory release follows `mandatoryApplyStrategy`; any other the install strategy. */
+    /** A mandatory release follows `mandatoryApplyStrategy`; any other the apply strategy. */
     private fun resolveApplyStrategy(isMandatory: Boolean, options: SyncOptions): ApplyStrategy {
         if (isMandatory) {
             return when (options.mandatoryApplyStrategy ?: configuration.mandatoryApplyStrategy) {
@@ -447,7 +446,7 @@ class Core(
         return files.isComplete(manifest, embedded)
     }
 
-    private suspend fun install(target: IndexRelease, isMandatory: Boolean, strategy: ApplyStrategy, trigger: SyncTrigger, stage: Stage): SyncResult {
+    private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, strategy: ApplyStrategy, trigger: SyncTrigger): SyncResult {
         val release = resolveRelease(target, isMandatory)
         try {
             val baseBundleId = state.currentRelease?.bundleId ?: configuration.embeddedBundleId
@@ -465,19 +464,21 @@ class Core(
             return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, failure.message ?: failure.toString())
         }
         if (strategy != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, strategy, trigger))
-        val outcome = lock.withLock { applyDownloaded(release, target.notes, strategy) }
-        return if (stage == Stage.DOWNLOAD) SyncResult.downloaded(release, target.notes) else outcome
+        return lock.withLock { applyDownloaded(release, target.notes, strategy) }
     }
 
-    /** Choosing and applying are two acts: the strategy is a policy over the four functions. */
+    /**
+     * Choosing and applying are two acts: the strategy is a policy over the four functions. `APPLIED` when the apply runs now,
+     * the reload following once the gate lets it; else `DOWNLOADED`, the apply scheduled or the app's.
+     */
     private fun applyDownloaded(release: Release, notes: String?, strategy: ApplyStrategy): SyncResult {
         setNextRelease(release)
         when (strategy) {
-            ApplyStrategy.IMMEDIATE -> installNextRelease()
+            ApplyStrategy.IMMEDIATE -> restartIntoNextRelease()
             ApplyStrategy.NEXT_START -> loader.persistServedBundle(release.bundleId)
             ApplyStrategy.NEXT_RESUME, ApplyStrategy.MANUAL -> Unit
         }
-        return SyncResult.updated(release, notes, strategy)
+        return if (strategy == ApplyStrategy.IMMEDIATE) SyncResult.applied(release, notes) else SyncResult.downloaded(release, notes, strategy)
     }
 
     /** Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event. */
@@ -584,7 +585,7 @@ class Core(
         state.nextRelease = release
     }
 
-    /** A downloaded release that has left the cached index since — revoked, or gone from it — is never installed: it is dropped and the served bundle stays the running one. */
+    /** A downloaded release that has left the cached index since — revoked, or gone from it — is never applied: it is dropped and the served bundle stays the running one. */
     private fun discardNextReleaseThatLeftTheIndex() {
         val next = state.nextRelease ?: return
         val index = state.cachedIndex?.body ?: return
@@ -642,8 +643,8 @@ class Core(
         queuedRestart = null
     }
 
-    /** The install the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does. */
-    private fun installNextRelease() {
+    /** The apply the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does. */
+    private fun restartIntoNextRelease() {
         state.nextRelease?.let { loader.persistServedBundle(it.bundleId) }
         restartThroughGate(isAskedByApp = false, ::applyNextRelease)
     }
@@ -683,7 +684,7 @@ class Core(
     private fun announceRollback() {
         val event = state.pendingRollbackEvent ?: return
         hasAnnouncedRollback = true
-        listener.rolledBack(event)
+        listener.updateRolledBack(event)
     }
 
     private fun adoptInPlace(release: Release) {
@@ -724,7 +725,7 @@ class Core(
         state.currentRelease = fallback
         state.nextRelease = null
         state.lastRollback = LastRollback(current, fallback, reason)
-        state.pendingRollbackEvent = RolledBackEvent(current, fallback, reason)
+        state.pendingRollbackEvent = UpdateRolledBackEvent(current, fallback, reason)
         hasAnnouncedRollback = false
         enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.name, detail))
         enqueueDeviceEvent(DeviceEvent.rolledBack(current.id, fallback?.id))

@@ -40,7 +40,7 @@ interface CoreListener {
     fun updateDownloaded(event: UpdateDownloadedEvent)
     fun updateFailed(event: UpdateFailedEvent)
     fun downloadProgress(releaseId: String, downloadedBytes: Long, totalBytes: Long)
-    fun rolledBack(event: RolledBackEvent)
+    fun updateRolledBack(event: UpdateRolledBackEvent)
 }
 
 fun interface ScheduledTask {

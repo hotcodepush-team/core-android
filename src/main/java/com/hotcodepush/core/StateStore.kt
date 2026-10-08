@@ -103,9 +103,9 @@ class StateStore(private val store: KeyValueStore) {
         get() = readObject("lastRollback", LastRollback::fromJson)
         set(value) = writeObject("lastRollback", value?.toJson())
 
-    /** The `rolledBack` event the app has not come up after yet: announced at every start until it does. */
-    var pendingRollbackEvent: RolledBackEvent?
-        get() = readObject("pendingRollbackEvent", RolledBackEvent::fromJson)
+    /** The `updateRolledBack` event the app has not come up after yet: announced at every start until it does. */
+    var pendingRollbackEvent: UpdateRolledBackEvent?
+        get() = readObject("pendingRollbackEvent", UpdateRolledBackEvent::fromJson)
         set(value) = writeObject("pendingRollbackEvent", value?.toJson())
 
     var lastSyncAt: Long?
@@ -143,7 +143,7 @@ class StateStore(private val store: KeyValueStore) {
     private fun putRaw(key: String, value: String?) = store.putString(PREFIX + key, value)
 
     companion object {
-        const val STATE_VERSION = 3
+        const val STATE_VERSION = 4
         const val PREFIX = "hotcodepush."
         private val CACHE_KEYS = listOf(
             "currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport",

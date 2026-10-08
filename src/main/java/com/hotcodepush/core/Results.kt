@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 enum class SyncTrigger(val wire: String) { START("start"), RESUME("resume"), INTERVAL("interval"), MANUAL("manual") }
 
-enum class SyncStatus(val wire: String) { UP_TO_DATE("UP_TO_DATE"), AVAILABLE("AVAILABLE"), DOWNLOADED("DOWNLOADED"), UPDATED("UPDATED"), SKIPPED("SKIPPED"), FAILED("FAILED") }
+enum class SyncStatus(val wire: String) { UP_TO_DATE("UP_TO_DATE"), AVAILABLE("AVAILABLE"), DOWNLOADED("DOWNLOADED"), APPLIED("APPLIED"), SKIPPED("SKIPPED"), FAILED("FAILED") }
 
 enum class SkippedReason {
     BUILD_DEBUG, BUNDLE_FAILED_BEFORE, CHANNEL_PAUSED, CONDITION_UNSUPPORTED, CONNECTION_METERED, DEVICE_INCOMPATIBLE,
@@ -16,20 +16,21 @@ enum class FailedReason { CHANNEL_UNKNOWN, CONTENT_MISMATCHED, DEVICE_OFFLINE, D
 
 enum class RollbackReason { APP_CRASHED, APP_REQUESTED, READINESS_TIMED_OUT }
 
-/** When a downloaded update runs, in the strategies' vocabulary. */
-typealias InstallMoment = ApplyStrategy
-
 enum class PackKind(val wire: String) { FULL("full"), DELTA("delta"), STREAMED("streamed"), FILES("files") }
 
-/** One shape for `SyncResult`, `CheckResult` and `DownloadResult`: the status says which fields are set. */
+/**
+ * One shape for `SyncResult`, `CheckForUpdateResult` and `DownloadUpdateResult`: the status says which fields are set.
+ * `DOWNLOADED` carries `applyAt`, the moment the apply runs or `manual` for the app's `applyUpdate()`; `APPLIED` says the
+ * apply happened and the reload follows the result.
+ */
 data class SyncResult(
     val status: SyncStatus,
     val release: Release?,
     val reason: String? = null,
     val condition: ConditionType? = null,
     val notes: String? = null,
-    val installAt: InstallMoment? = null,
-    val downloadBytes: Long? = null,
+    val applyAt: ApplyStrategy? = null,
+    val downloadSizeBytes: Long? = null,
     val message: String? = null,
 ) {
     fun toJson(): JSONObject = JSONObject()
@@ -37,16 +38,16 @@ data class SyncResult(
         .put("release", release?.toJson() ?: JSONObject.NULL)
         .putIfNotNull("reason", reason)
         .putIfNotNull("condition", condition?.wire)
-        .putIfNotNull("notes", notes, nullWhenStatus = status == SyncStatus.UPDATED || status == SyncStatus.AVAILABLE || status == SyncStatus.DOWNLOADED)
-        .putIfNotNull("installAt", installAt?.wire)
-        .putIfNotNull("downloadBytes", downloadBytes, nullWhenStatus = status == SyncStatus.AVAILABLE)
+        .putIfNotNull("notes", notes, nullWhenStatus = status == SyncStatus.APPLIED || status == SyncStatus.AVAILABLE || status == SyncStatus.DOWNLOADED)
+        .putIfNotNull("applyAt", applyAt?.wire)
+        .putIfNotNull("downloadSizeBytes", downloadSizeBytes, nullWhenStatus = status == SyncStatus.AVAILABLE)
         .putIfNotNull("message", message)
 
     companion object {
         fun upToDate(release: Release?) = SyncResult(SyncStatus.UP_TO_DATE, release)
-        fun available(release: Release, notes: String?, downloadBytes: Long?) = SyncResult(SyncStatus.AVAILABLE, release, notes = notes, downloadBytes = downloadBytes)
-        fun downloaded(release: Release, notes: String?) = SyncResult(SyncStatus.DOWNLOADED, release, notes = notes)
-        fun updated(release: Release, notes: String?, installAt: InstallMoment) = SyncResult(SyncStatus.UPDATED, release, notes = notes, installAt = installAt)
+        fun available(release: Release, notes: String?, downloadSizeBytes: Long?) = SyncResult(SyncStatus.AVAILABLE, release, notes = notes, downloadSizeBytes = downloadSizeBytes)
+        fun downloaded(release: Release, notes: String?, applyAt: ApplyStrategy) = SyncResult(SyncStatus.DOWNLOADED, release, notes = notes, applyAt = applyAt)
+        fun applied(release: Release, notes: String?) = SyncResult(SyncStatus.APPLIED, release, notes = notes)
         fun skipped(release: Release?, reason: SkippedReason, condition: ConditionType? = null) = SyncResult(SyncStatus.SKIPPED, release, reason = reason.name, condition = condition)
         fun failed(release: Release?, reason: FailedReason, message: String) = SyncResult(SyncStatus.FAILED, release, reason = reason.name, message = message)
 
@@ -56,8 +57,8 @@ data class SyncResult(
             reason = json.optNullableString("reason"),
             condition = json.optNullableString("condition")?.let { wire -> ConditionType.entries.firstOrNull { it.wire == wire } },
             notes = json.optNullableString("notes"),
-            installAt = json.optNullableString("installAt")?.let { wire -> InstallMoment.entries.firstOrNull { it.wire == wire } },
-            downloadBytes = if (json.isNull("downloadBytes")) null else json.optLong("downloadBytes"),
+            applyAt = json.optNullableString("applyAt")?.let(ApplyStrategy::fromWire),
+            downloadSizeBytes = if (json.isNull("downloadSizeBytes")) null else json.optLong("downloadSizeBytes"),
             message = json.optNullableString("message"),
         )
     }
@@ -66,7 +67,7 @@ data class SyncResult(
 enum class ApplyStatus(val wire: String) { APPLIED("APPLIED"), NOTHING_TO_APPLY("NOTHING_TO_APPLY") }
 
 /** What `applyUpdate()` answers: the update is the current release and the reload follows, or nothing waits. */
-data class ApplyResult(val status: ApplyStatus, val release: Release?) {
+data class ApplyUpdateResult(val status: ApplyStatus, val release: Release?) {
     fun toJson(): JSONObject = JSONObject().put("status", status.wire).put("release", release?.toJson() ?: JSONObject.NULL)
 }
 
@@ -142,17 +143,17 @@ data class DeviceResult(
 // Events — what the SDK did on its own; results answer what the app called.
 
 /** A check found a release the device qualifies for. */
-data class UpdateAvailableEvent(val release: Release, val notes: String?, val downloadBytes: Long?, val trigger: SyncTrigger) {
+data class UpdateAvailableEvent(val release: Release, val notes: String?, val downloadSizeBytes: Long?, val trigger: SyncTrigger) {
     fun toJson(): JSONObject = JSONObject()
         .put("release", release.toJson())
         .put("notes", notes ?: JSONObject.NULL)
-        .put("downloadBytes", downloadBytes ?: JSONObject.NULL)
+        .put("downloadSizeBytes", downloadSizeBytes ?: JSONObject.NULL)
         .put("trigger", trigger.wire)
 }
 
-/** The download completed and the update waits for its install. */
-data class UpdateDownloadedEvent(val release: Release, val installAt: InstallMoment, val trigger: SyncTrigger) {
-    fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("installAt", installAt.wire).put("trigger", trigger.wire)
+/** The download completed and the update waits for its apply: `applyAt` names the moment, or `manual` for the app's `applyUpdate()`. */
+data class UpdateDownloadedEvent(val release: Release, val applyAt: ApplyStrategy, val trigger: SyncTrigger) {
+    fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("applyAt", applyAt.wire).put("trigger", trigger.wire)
 }
 
 /** A check or a download failed. */
@@ -165,11 +166,11 @@ data class UpdateFailedEvent(val release: Release?, val reason: FailedReason, va
 }
 
 /** At each start that follows a rollback until the app is up after one, before the readiness gate; `to` is `null` for the embedded bundle. */
-data class RolledBackEvent(val from: Release, val to: Release?, val reason: RollbackReason) {
+data class UpdateRolledBackEvent(val from: Release, val to: Release?, val reason: RollbackReason) {
     fun toJson(): JSONObject = JSONObject().put("from", from.toJson()).put("to", to?.toJson() ?: JSONObject.NULL).put("reason", reason.name)
 
     companion object {
-        fun fromJson(json: JSONObject) = RolledBackEvent(Release.fromJson(json.getJSONObject("from")), json.optJSONObject("to")?.let(Release::fromJson), RollbackReason.valueOf(json.getString("reason")))
+        fun fromJson(json: JSONObject) = UpdateRolledBackEvent(Release.fromJson(json.getJSONObject("from")), json.optJSONObject("to")?.let(Release::fromJson), RollbackReason.valueOf(json.getString("reason")))
     }
 }
 
