@@ -8,7 +8,8 @@ import java.net.URI
 /** The channel's index for a platform: `/apps/{appId}/channels/{channelId}/{platform}/v1/index.json`. */
 data class ChannelIndex(
     val schema: Int,
-    val sequence: Int,
+    /** The rebuild's time in milliseconds, which the never-backwards rule compares: beyond a 32-bit integer. */
+    val sequence: Long,
     val appId: String,
     val channelId: String,
     val platform: String,
@@ -40,7 +41,7 @@ data class ChannelIndex(
             if (platform !in PLATFORMS) throw JSONException("Not a platform: $platform")
             return ChannelIndex(
                 schema = schema,
-                sequence = json.getWireInt("sequence", minimum = 0),
+                sequence = json.getWireLong("sequence", minimum = 0),
                 appId = json.getWireString("appId", WireRule.NON_EMPTY),
                 channelId = json.getWireString("channelId", WireRule.NON_EMPTY),
                 platform = platform,

@@ -13,14 +13,14 @@ class DebugReportTest {
     @Test
     fun shouldCarryTheLastChecksCodeInTheShareText() = runBlocking {
         val harness = Harness()
-        harness.publish(listOf(Fixture.release(1, "b2", v2Content, conditions = listOf(Condition.Binary(">=9.0.0")))), 7)
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content, conditions = listOf(Condition.Binary(">=9.0.0")))), 1_759_900_000_000)
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
         val snapshot = harness.core.debugSnapshot()
         val text = DebugReport.text(snapshot)
         assertTrue(text, text.contains("Device id: ${harness.core.deviceResult().id}"))
         assertTrue(text, text.contains("Result: SKIPPED DEVICE_INCOMPATIBLE binary"))
-        assertTrue(text, text.contains("Sequence: 7"))
+        assertTrue(text, text.contains("Sequence: 1759900000000"))
         assertTrue(text, text.contains("Running: the embedded bundle"))
         assertTrue(text, text.contains("SKIPPED DEVICE_INCOMPATIBLE binary — manual: release #1 (1.1.0) is not taken"))
         assertEquals(listOf("Device", "Channel", "Releases", "Last check", "Index", "Configuration", "Log"), DebugReport.sections(snapshot).map { it.title })

@@ -125,7 +125,7 @@ object Fixture {
         return Published(release, manifest, envelope, pack)
     }
 
-    fun index(sequence: Int, releases: List<IndexRelease>, revoked: List<String> = emptyList(), isPaused: Boolean = false, cappedAt: Long? = null) =
+    fun index(sequence: Long, releases: List<IndexRelease>, revoked: List<String> = emptyList(), isPaused: Boolean = false, cappedAt: Long? = null) =
         ChannelIndex(ChannelIndex.SCHEMA, sequence, APP_ID, CHANNEL_ID, "android", isPaused, cappedAt, revoked, releases)
 }
 

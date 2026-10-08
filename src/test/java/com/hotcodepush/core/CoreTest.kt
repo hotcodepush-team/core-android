@@ -41,7 +41,7 @@ class CoreTest {
         val status = harness.core.getState()
         assertEquals(v2.release.release, status.nextRelease)
         assertNull(status.currentRelease)
-        assertEquals(1, status.indexSequence)
+        assertEquals(1L, status.indexSequence)
 
         harness.loader.served = "b2"
         harness.restart()
@@ -248,7 +248,21 @@ class CoreTest {
         harness.http.isOffline = false
         harness.publish(emptyList(), 4, etag = "\"e0\"")
         assertEquals(SyncStatus.UPDATED, harness.core.sync(SyncTrigger.MANUAL).status)
-        assertEquals(5, harness.core.getState().indexSequence)
+        assertEquals(5L, harness.core.getState().indexSequence)
+    }
+
+    @Test
+    fun shouldKeepASequenceOfMillisecondsAndIgnoreOneMillisecondOlder() = runBlocking {
+        val harness = Harness()
+        harness.publish(emptyList(), 1_759_900_000_000)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(1_759_900_000_000L, StateStore(harness.store).cachedIndex?.body?.sequence)
+        harness.publish(emptyList(), 1_759_900_000_001, etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.publish(emptyList(), 1_759_900_000_000, etag = "\"e1\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(1_759_900_000_001L, harness.core.getState().indexSequence)
     }
 
     @Test

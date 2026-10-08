@@ -93,7 +93,7 @@ data class StateResult(
     val fallbackRelease: Release?,
     val embeddedBundleId: String?,
     val lastCheck: LastCheck?,
-    val indexSequence: Int?,
+    val indexSequence: Long?,
     val indexFetchedAt: Long?,
     val failedBundleIds: List<String>,
     val lastReportAt: Long?,
