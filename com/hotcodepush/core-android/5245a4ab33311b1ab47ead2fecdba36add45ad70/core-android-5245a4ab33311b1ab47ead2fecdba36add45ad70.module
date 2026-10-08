@@ -1,0 +1,97 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.hotcodepush",
+    "module": "core-android",
+    "version": "5245a4ab33311b1ab47ead2fecdba36add45ad70",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.14.3"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.2.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "core-android-5245a4ab33311b1ab47ead2fecdba36add45ad70.aar",
+          "url": "core-android-5245a4ab33311b1ab47ead2fecdba36add45ad70.aar",
+          "size": 498926,
+          "sha512": "116cb5bd6cca2e4eb9c24cab5c5557e09bb79a782ba6dc9b72c09c1c33d6852ef209d173b8dd32827d12e6231a71d7a5fc10e4da2351dc3e29e985082422f06d",
+          "sha256": "09264ece8d8a77d079035a11d85d2c4433e0c8de5af5a5c6983d9d4717b0bdc5",
+          "sha1": "09959f099bd6269ab2eb1611f1227eab0edd3a67",
+          "md5": "8ef5178a056fc112a778184f1f94ada5"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "com.squareup.okhttp3",
+          "module": "okhttp",
+          "version": {
+            "requires": "4.12.0"
+          }
+        },
+        {
+          "group": "com.squareup.okio",
+          "module": "okio",
+          "version": {
+            "requires": "3.6.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-android",
+          "version": {
+            "requires": "1.10.2"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.2.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "core-android-5245a4ab33311b1ab47ead2fecdba36add45ad70.aar",
+          "url": "core-android-5245a4ab33311b1ab47ead2fecdba36add45ad70.aar",
+          "size": 498926,
+          "sha512": "116cb5bd6cca2e4eb9c24cab5c5557e09bb79a782ba6dc9b72c09c1c33d6852ef209d173b8dd32827d12e6231a71d7a5fc10e4da2351dc3e29e985082422f06d",
+          "sha256": "09264ece8d8a77d079035a11d85d2c4433e0c8de5af5a5c6983d9d4717b0bdc5",
+          "sha1": "09959f099bd6269ab2eb1611f1227eab0edd3a67",
+          "md5": "8ef5178a056fc112a778184f1f94ada5"
+        }
+      ]
+    }
+  ]
+}
