@@ -54,9 +54,10 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - The evaluator is `@hotcodepush/protocol`'s, case for case: the outcome and the verdicts behind it come from the fixtures, never from a reading of the plan.
 - A downloaded release that has left the cached index — revoked, or gone from it — is discarded before it would install, never applied.
 - Safety is on by default and cannot be switched off: the readiness gate, the local blocklist, the automatic rollback.
+- A readiness signal reported before the core's latest load of a bundle, the start's own load after its timeout included, belongs to the replaced bundle and counts for nothing.
 - The start answers the bundle to serve without awaiting the network, `handleAppStart`; a host in synchronous code asks `handleAppStartBlocking` and waits at most two seconds, then serves the embedded bundle and is reloaded into the right one once the start runs; the cleanup runs after the start, never on its path, and anything the start cannot read answers the embedded bundle.
-- A headless start, `isHeadless: true` from a host that will render no screen, still drops a stale store, rolls back a crash and checks, but applies no waiting release and arms no gate.
-- The readiness timer runs in the foreground alone: the background stops it, the resume starts its full window again.
+- A headless start, `isHeadless: true` from a host that will render no screen, still drops a stale store, rolls back a crash and checks, but applies no waiting release, arms no gate and loads nothing: the host serves the start's answer and every persisted marker stays as it was.
+- The readiness timer runs in the foreground alone: the background stops it, the resume starts its full window again, and a process the system started without a foreground activity is in the background from its start.
 - A reload the SDK did not perform is reported with `handleAppReload()`: it applies a held or next-start install, gates an unconfirmed release and makes restarts wait for the app again, and is never a crash.
 - A channel id is a UUID: `setChannel`, `sync`, `checkForUpdate()` and `downloadUpdate()` refuse any other with the plain error before fetching; the index's app, channel and platform and the manifest's app and platforms must be the device's, else `INDEX_INVALID` or `MANIFEST_INVALID`.
 - A call joins a running cycle of its own stage and waits for one of another; a download that adopts the running bundle answers `UP_TO_DATE`; a held restart re-checks the cached index before applying.
