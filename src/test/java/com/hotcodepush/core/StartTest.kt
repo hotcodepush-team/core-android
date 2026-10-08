@@ -84,6 +84,21 @@ class StartTest {
     }
 
     @Test
+    fun shouldHoldARestartUntilTheReloadedBundleRendersWhenAStartThatTookLongerThanTheTimeoutReloadsAfterARender() {
+        val (harness, _) = harnessWithAWaitingRelease()
+        val latch = holdTheNextStart(harness)
+        runBlocking { harness.core.handleRendered() }
+        assertNull(harness.core.handleAppStartBlocking(isHeadless = false, timeout = 0.05))
+        latch.countDown()
+        runBlocking {
+            harness.core.clearUpdates()
+            assertEquals(listOf("b2"), harness.loader.loaded)
+            harness.core.handleRendered()
+            assertEquals(listOf("b2", null), harness.loader.loaded)
+        }
+    }
+
+    @Test
     fun shouldConfirmNothingAtANotifyReadyOfTheEmbeddedBundleWhenTheStartTookLongerThanTheTimeout() {
         val (harness, v2) = harnessWithAWaitingRelease()
         val latch = holdTheNextStart(harness)

@@ -599,10 +599,15 @@ class Core(
         enqueueDeviceEvent(DeviceEvent.applied(next.id))
     }
 
-    /** The host serves the current bundle: at a start that took longer than its bound, the host already runs another and reloads. */
+    /**
+     * Points the host at the current bundle when it serves another, the embedded one a host served past the start's bound among them:
+     * a reload the core performs, so the start settled before it, by a render handled before the start began, is unsettled.
+     */
     private fun loadBundle() {
         val expected = state.currentRelease?.bundleId
-        if (loader.servedBundleId() != expected) loadServedBundle(expected)
+        if (loader.servedBundleId() == expected) return
+        loadServedBundle(expected)
+        unsettleStart()
     }
 
     /** The restart of the web layer: the bundle loads, then the reloaded app goes through the gate. */
@@ -619,15 +624,17 @@ class Core(
 
     private fun hasLoadedBundleSince(bundleLoadCountAtSignal: Int): Boolean = bundleLoadCount != bundleLoadCountAtSignal
 
-    /**
-     * The reloaded app has to come up again: it runs what the state says, so a held restart is moot; a rollback it has not come up
-     * after is announced, then the gate runs.
-     */
+    /** The reloaded app has to come up again: a rollback it has not come up after is announced, then the gate runs. */
     private fun gateReloadedApp() {
-        hasStartSettled = false
-        queuedRestart = null
+        unsettleStart()
         announceRollback()
         if (isCurrentReleaseUnconfirmed()) startReadyTimer()
+    }
+
+    /** The reloaded app has to come up again before a restart runs, and it runs what the state says, so a held restart is moot. */
+    private fun unsettleStart() {
+        hasStartSettled = false
+        queuedRestart = null
     }
 
     /** The install the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does. */
