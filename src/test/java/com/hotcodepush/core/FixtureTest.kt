@@ -140,6 +140,25 @@ class FixtureTest {
         }
     }
 
+    /** The SDK options as the file spells them, and the schema's defaults where it leaves them out. */
+    @Test
+    fun shouldReadTheSdkOptionsOfEveryResourceFileFixtureWithTheDefaultsWhereTheFileLeavesThemOut() {
+        for (case in cases("resource-files.json", "cases")) {
+            val file = case.getJSONObject("resourceFile")
+            val configuration = Configuration.fromJson(file)
+            val name = case.getString("name")
+            assertEquals(name, file.optString("checkStrategy", "auto"), configuration.checkStrategy.wire)
+            assertEquals(name, file.optDouble("checkIntervalSeconds", 900.0), configuration.checkIntervalSeconds, 0.0)
+            assertEquals(name, file.optString("downloadStrategy", "auto"), configuration.downloadStrategy.wire)
+            assertEquals(name, file.optString("applyStrategy", "next-start"), configuration.applyStrategy.wire)
+            assertEquals(name, file.optString("mandatoryApplyStrategy", "immediate"), configuration.mandatoryApplyStrategy.wire)
+            assertEquals(name, file.optDouble("applyOnResumeAfterSeconds", 300.0), configuration.applyOnResumeAfterSeconds, 0.0)
+            assertEquals(name, file.optString("readySignal", "render"), configuration.readySignal.wire)
+            assertEquals(name, file.optDouble("readyTimeoutSeconds", 10.0), configuration.readyTimeoutSeconds, 0.0)
+            assertEquals(name, file.optBoolean("enabledInDebugBuilds", true), configuration.enabledInDebugBuilds)
+        }
+    }
+
     /** A refused file throws as an unreadable one does: a check interval below its floor is a schema violation like any other. */
     @Test
     fun shouldRefuseEveryRefusedResourceFileFixture() {

@@ -127,7 +127,7 @@ class StartTest {
 
     @Test
     fun shouldKeepAHeldInstallPersistedAcrossAHeadlessStartAndApplyItAtTheNextStart() = runBlocking {
-        val configuration = Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE)
+        val configuration = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE)
         val harness = Harness(configuration)
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -148,7 +148,7 @@ class StartTest {
 
     @Test
     fun shouldRollBackACrashAndRunTheAutomaticCheckAtAHeadlessStart() = runBlocking {
-        val configuration = Fixture.configuration(autoCheck = true)
+        val configuration = Fixture.configuration(checkStrategy = CheckStrategy.AUTO)
         val (harness, _) = harnessWithAWaitingRelease(configuration)
         harness.core.handleAppStart()
         harness.restart(configuration)
@@ -233,7 +233,7 @@ class StartTest {
 
     @Test
     fun shouldHoldTheAppsRestartUntilTheReloadedAppRenders() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.MANUAL))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()

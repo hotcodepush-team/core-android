@@ -91,7 +91,7 @@ class DeviceEventsContractTest {
 
     @Test
     fun shouldSendWhatACoreQueuedThroughARollbackToTheEmbeddedBundleAsTheSchemaAcceptsIt() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", "<html>v2</html>".toByteArray())), 1)
         harness.core.handleAppStart()
         harness.core.handleRendered()

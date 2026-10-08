@@ -81,19 +81,45 @@ class WireTypesTest {
 
     @Test
     fun shouldRefuseAResourceFileWhoseHostIsNotAnHttpOrHttpsUrl() {
-        val resourceFile = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").getJSONObject(0).getJSONObject("resourceFile")
         for (url in listOf("ftp://files.test", "file:///files", "files.test")) {
-            assertThrows(url, JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("filesBaseUrl", url)) }
-            assertThrows(url, JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("updatesBaseUrl", url)) }
+            assertThrows(url, JSONException::class.java) { Configuration.fromJson(resourceFile().put("filesBaseUrl", url)) }
+            assertThrows(url, JSONException::class.java) { Configuration.fromJson(resourceFile().put("updatesBaseUrl", url)) }
         }
     }
 
     @Test
     fun shouldRefuseAResourceFileWhoseAppIdIsNotAnIdentifier() {
-        val resourceFile = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").getJSONObject(0).getJSONObject("resourceFile")
         for (appId in listOf("../other-app", "app/channels", "app?query", "")) {
-            assertThrows(appId, JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("appId", appId)) }
+            assertThrows(appId, JSONException::class.java) { Configuration.fromJson(resourceFile().put("appId", appId)) }
         }
+    }
+
+    @Test
+    fun shouldRefuseAResourceFileWhoseReadyTimeoutSecondsIsBelowOneInsteadOfRaisingIt() {
+        for (seconds in listOf(0, 0.5)) {
+            assertThrows(seconds.toString(), JSONException::class.java) { Configuration.fromJson(resourceFile().put("readyTimeoutSeconds", seconds)) }
+        }
+        assertEquals(1.0, Configuration.fromJson(resourceFile().put("readyTimeoutSeconds", 1)).readyTimeoutSeconds, 0.0)
+    }
+
+    @Test
+    fun shouldRefuseAResourceFileWithANegativeDuration() {
+        for (key in listOf("applyOnResumeAfterSeconds", "checkIntervalSeconds", "readyTimeoutSeconds")) {
+            assertThrows(key, JSONException::class.java) { Configuration.fromJson(resourceFile().put(key, -1)) }
+        }
+        assertEquals(0.0, Configuration.fromJson(resourceFile().put("applyOnResumeAfterSeconds", 0)).applyOnResumeAfterSeconds, 0.0)
+    }
+
+    @Test
+    fun shouldRefuseAResourceFileWhoseDurationIsNotANumber() {
+        for (value in listOf<Any>("900", true)) {
+            assertThrows(value.toString(), JSONException::class.java) { Configuration.fromJson(resourceFile().put("checkIntervalSeconds", value)) }
+        }
+    }
+
+    @Test
+    fun shouldReadADurationOfNullAsTheDefault() {
+        assertEquals(900.0, Configuration.fromJson(resourceFile().put("checkIntervalSeconds", JSONObject.NULL)).checkIntervalSeconds, 0.0)
     }
 
     @Test
@@ -120,4 +146,6 @@ class WireTypesTest {
         val release = IndexRelease(id, 1, Fixture.BUILT_AT, false, null, 100, emptyList(), bundleId, "1.0.0", "${Fixture.FILES_BASE_URL}/manifest.json", manifestSha256, 7)
         return IndexRelease.fromJson(release.toJson())
     }
+
+    private fun resourceFile(): JSONObject = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").getJSONObject(0).getJSONObject("resourceFile")
 }

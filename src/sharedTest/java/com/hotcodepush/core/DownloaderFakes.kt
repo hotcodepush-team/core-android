@@ -87,18 +87,18 @@ object Fixture {
 
     fun embeddedManifest() = EmbeddedBundleManifest(appId = APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File("index.html", Hashing.sha256Hex(embeddedIndexHtml), embeddedIndexHtml.size.toLong())), platforms = listOf("android"))
 
-    fun configuration(installStrategy: InstallStrategy = InstallStrategy.NEXT_START, mandatoryInstallStrategy: MandatoryInstallStrategy = MandatoryInstallStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, autoCheck: Boolean = false, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<DevicePublicKey> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, enabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID, hasEmbeddedBundle: Boolean = true): Configuration {
+    fun configuration(applyStrategy: ApplyStrategy = ApplyStrategy.NEXT_START, mandatoryApplyStrategy: MandatoryApplyStrategy = MandatoryApplyStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, checkStrategy: CheckStrategy = CheckStrategy.MANUAL, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<DevicePublicKey> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, enabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID, hasEmbeddedBundle: Boolean = true): Configuration {
         val json = JSONObject()
             .put("appId", APP_ID)
             .put("channelId", channelId ?: JSONObject.NULL)
-            .put("autoCheck", autoCheck)
-            .put("checkInterval", 900)
+            .put("checkStrategy", checkStrategy.wire)
+            .put("checkIntervalSeconds", 900)
             .put("downloadStrategy", downloadStrategy.wire)
-            .put("installStrategy", installStrategy.wire)
-            .put("mandatoryInstallStrategy", mandatoryInstallStrategy.wire)
-            .put("installOnResumeAfter", 300)
+            .put("applyStrategy", applyStrategy.wire)
+            .put("mandatoryApplyStrategy", mandatoryApplyStrategy.wire)
+            .put("applyOnResumeAfterSeconds", 300)
             .put("readySignal", readySignal.wire)
-            .put("readyTimeout", 10)
+            .put("readyTimeoutSeconds", 10)
             .put("enabledInDebugBuilds", enabledInDebugBuilds)
             .put("publicKeys", org.json.JSONArray(publicKeys.map { JSONObject().put("der", it.der).put("keyId", it.keyId) }))
             .put("builtAt", Iso8601.format(builtAt))

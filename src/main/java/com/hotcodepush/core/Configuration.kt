@@ -4,20 +4,20 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /** When a downloaded update is applied. */
-enum class InstallStrategy(val wire: String) {
+enum class ApplyStrategy(val wire: String) {
     IMMEDIATE("immediate"), MANUAL("manual"), NEXT_RESUME("next-resume"), NEXT_START("next-start");
 
     companion object {
-        fun fromWire(value: String?): InstallStrategy? = entries.firstOrNull { it.wire == value }
+        fun fromWire(value: String?): ApplyStrategy? = entries.firstOrNull { it.wire == value }
     }
 }
 
-/** When a mandatory update is applied; `next-start` is excluded, since it would make the flag mean nothing. */
-enum class MandatoryInstallStrategy(val wire: String) {
-    IMMEDIATE("immediate"), MANUAL("manual");
+/** Whether the SDK checks on its own, at start, on resume and at the interval; `manual` leaves every cycle to the app's `sync()`. */
+enum class CheckStrategy(val wire: String) {
+    AUTO("auto"), MANUAL("manual");
 
     companion object {
-        fun fromWire(value: String?): MandatoryInstallStrategy? = entries.firstOrNull { it.wire == value }
+        fun fromWire(value: String?): CheckStrategy? = entries.firstOrNull { it.wire == value }
     }
 }
 
@@ -27,6 +27,15 @@ enum class DownloadStrategy(val wire: String) {
 
     companion object {
         fun fromWire(value: String?): DownloadStrategy? = entries.firstOrNull { it.wire == value }
+    }
+}
+
+/** When a mandatory update is applied; `next-start` is excluded, since it would make the flag mean nothing. */
+enum class MandatoryApplyStrategy(val wire: String) {
+    IMMEDIATE("immediate"), MANUAL("manual");
+
+    companion object {
+        fun fromWire(value: String?): MandatoryApplyStrategy? = entries.firstOrNull { it.wire == value }
     }
 }
 
@@ -44,14 +53,15 @@ data class Configuration(
     val appId: String,
     /** The channel the build follows; `null` in a build whose build step ran without a token or offline and never resolved the channel's name. */
     val channelId: String?,
-    val autoCheck: Boolean,
-    val checkInterval: Double,
+    val checkStrategy: CheckStrategy,
+    val checkIntervalSeconds: Double,
     val downloadStrategy: DownloadStrategy,
-    val installStrategy: InstallStrategy,
-    val mandatoryInstallStrategy: MandatoryInstallStrategy,
-    val installOnResumeAfter: Double,
+    val applyStrategy: ApplyStrategy,
+    val mandatoryApplyStrategy: MandatoryApplyStrategy,
+    /** The least time in the background before a `next-resume` apply. */
+    val applyOnResumeAfterSeconds: Double,
     val readySignal: ReadySignal,
-    val readyTimeout: Double,
+    val readyTimeoutSeconds: Double,
     val enabledInDebugBuilds: Boolean,
     val publicKeys: List<DevicePublicKey>,
     val builtAt: Long,
@@ -77,14 +87,14 @@ data class Configuration(
         fun fromJson(json: JSONObject) = Configuration(
             appId = json.getWireString("appId", WireRule.IDENTIFIER),
             channelId = json.getNullableWireString("channelId", WireRule.NON_EMPTY),
-            autoCheck = json.optBoolean("autoCheck", true),
-            checkInterval = json.getCheckInterval(),
+            checkStrategy = CheckStrategy.fromWire(json.optNullableString("checkStrategy")) ?: CheckStrategy.AUTO,
+            checkIntervalSeconds = json.getSeconds("checkIntervalSeconds", 900.0, minimum = MINIMUM_CHECK_INTERVAL_SECONDS),
             downloadStrategy = DownloadStrategy.fromWire(json.optNullableString("downloadStrategy")) ?: DownloadStrategy.AUTO,
-            installStrategy = InstallStrategy.fromWire(json.optNullableString("installStrategy")) ?: InstallStrategy.NEXT_START,
-            mandatoryInstallStrategy = MandatoryInstallStrategy.fromWire(json.optNullableString("mandatoryInstallStrategy")) ?: MandatoryInstallStrategy.IMMEDIATE,
-            installOnResumeAfter = json.optDouble("installOnResumeAfter", 300.0),
+            applyStrategy = ApplyStrategy.fromWire(json.optNullableString("applyStrategy")) ?: ApplyStrategy.NEXT_START,
+            mandatoryApplyStrategy = MandatoryApplyStrategy.fromWire(json.optNullableString("mandatoryApplyStrategy")) ?: MandatoryApplyStrategy.IMMEDIATE,
+            applyOnResumeAfterSeconds = json.getSeconds("applyOnResumeAfterSeconds", 300.0),
             readySignal = ReadySignal.fromWire(json.optNullableString("readySignal")) ?: ReadySignal.RENDER,
-            readyTimeout = maxOf(1.0, json.optDouble("readyTimeout", 10.0)),
+            readyTimeoutSeconds = json.getSeconds("readyTimeoutSeconds", 10.0, minimum = MINIMUM_READY_TIMEOUT_SECONDS),
             enabledInDebugBuilds = json.optBoolean("enabledInDebugBuilds", true),
             publicKeys = json.optJSONArray("publicKeys").map(DevicePublicKey::fromJson),
             builtAt = Iso8601.parse(json.getString("builtAt")),
@@ -97,18 +107,32 @@ data class Configuration(
     }
 }
 
-/** The seconds between automatic checks, at least the floor: a zero made the core check in a tight loop. */
-private fun JSONObject.getCheckInterval(): Double {
-    val seconds = optDouble("checkInterval", 900.0)
-    if (seconds < MINIMUM_CHECK_INTERVAL) throw JSONException("checkInterval is below its floor of $MINIMUM_CHECK_INTERVAL seconds: $seconds")
+/**
+ * A duration in seconds, the default when the file leaves it out: a number, never a string read as one, and at least its
+ * floor, else the file is refused like any other schema violation, never clamped.
+ */
+private fun JSONObject.getSeconds(key: String, default: Double, minimum: Double = 0.0): Double {
+    if (isNull(key)) return default
+    val seconds = (get(key) as? Number)?.toDouble() ?: throw JSONException("$key is not a number of seconds")
+    if (seconds < minimum) throw JSONException("$key is below its floor of $minimum seconds: $seconds")
     return seconds
 }
 
-private const val MINIMUM_CHECK_INTERVAL = 60.0
+/** The floor of `checkIntervalSeconds`: a zero made the core check in a tight loop. */
+private const val MINIMUM_CHECK_INTERVAL_SECONDS = 60.0
+
+/** The floor of `readyTimeoutSeconds`: the gate has no off switch. */
+private const val MINIMUM_READY_TIMEOUT_SECONDS = 1.0
 
 /** Each stage's strategy for one `sync()` call, overriding the configuration. */
 data class SyncOptions(
+    val applyStrategy: ApplyStrategy? = null,
     val downloadStrategy: DownloadStrategy? = null,
-    val installStrategy: InstallStrategy? = null,
-    val mandatoryInstallStrategy: MandatoryInstallStrategy? = null,
+    val mandatoryApplyStrategy: MandatoryApplyStrategy? = null,
+)
+
+/** The apply strategies for one `downloadUpdate()` call; the download strategy is pinned to `auto`. */
+data class DownloadUpdateOptions(
+    val applyStrategy: ApplyStrategy? = null,
+    val mandatoryApplyStrategy: MandatoryApplyStrategy? = null,
 )

@@ -77,7 +77,7 @@ class MissingEmbeddedBundleTest {
 
     @Test
     fun shouldEmptyTheStoreAndAnnounceNothingAtTheStartOfABuildWithoutAnEmbeddedBundleWhenTheStoreHoldsAnotherBinarysReleases() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
         val v4 = Fixture.release(3, "b4", "<html>v4</html>".toByteArray())
@@ -89,7 +89,7 @@ class MissingEmbeddedBundleTest {
         harness.publish(listOf(v2, v3), 2, etag = "\"e2\"")
         harness.core.sync(SyncTrigger.MANUAL)
         harness.publish(listOf(v2, v3, v4), 3, etag = "\"e3\"")
-        harness.core.sync(SyncTrigger.MANUAL, SyncOptions(installStrategy = InstallStrategy.NEXT_START))
+        harness.core.sync(SyncTrigger.MANUAL, SyncOptions(applyStrategy = ApplyStrategy.NEXT_START))
         val held = harness.core.getState()
         assertEquals(listOf("r2", "r3", "r1"), listOf(held.currentRelease?.id, held.nextRelease?.id, held.fallbackRelease?.id))
         assertEquals("b4", harness.loader.persisted)

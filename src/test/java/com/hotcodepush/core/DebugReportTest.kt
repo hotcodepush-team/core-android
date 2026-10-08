@@ -71,8 +71,8 @@ class DebugReportTest {
               Built at: 2023-11-14T22:13:20.000Z
               Files host: https://files.test
               Updates host: https://updates.test
-              Auto check: off
-              Strategies: download auto, install next-start, mandatory immediate
+              Check strategy: manual
+              Strategies: download auto, apply next-start, mandatory immediate
               Ready signal: render, 10 s
               Debug builds: enabled
               Public keys: 0
@@ -85,7 +85,7 @@ class DebugReportTest {
 
     @Test
     fun shouldLogTheDownloadTheInstallAndTheReportOfASync() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.acknowledgeEvents()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -142,7 +142,7 @@ class DebugReportTest {
 
     @Test
     fun shouldLogARollbackWithItsReason() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.handleRendered()

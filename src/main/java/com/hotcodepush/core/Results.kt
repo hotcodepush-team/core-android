@@ -17,7 +17,7 @@ enum class FailedReason { CHANNEL_UNKNOWN, CONTENT_MISMATCHED, DEVICE_OFFLINE, D
 enum class RollbackReason { APP_CRASHED, APP_REQUESTED, READINESS_TIMED_OUT }
 
 /** When a downloaded update runs, in the strategies' vocabulary. */
-typealias InstallMoment = InstallStrategy
+typealias InstallMoment = ApplyStrategy
 
 enum class PackKind(val wire: String) { FULL("full"), DELTA("delta"), STREAMED("streamed"), FILES("files") }
 

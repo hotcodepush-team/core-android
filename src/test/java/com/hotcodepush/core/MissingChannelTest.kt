@@ -22,7 +22,7 @@ class MissingChannelTest {
     }
 
     /** Automatic checks on, so a failure a test sees is the explicit call's own. */
-    private fun harness() = Harness(Fixture.configuration(channelId = null, autoCheck = true))
+    private fun harness() = Harness(Fixture.configuration(channelId = null, checkStrategy = CheckStrategy.AUTO))
 
     @Test
     fun shouldReadANullChannelFromTheFixtureOfABuildWithoutAChannel() {
@@ -91,7 +91,7 @@ class MissingChannelTest {
         harness.core.setChannel(null)
         val requestCount = harness.http.requests.size
         harness.loader.served = "b2"
-        harness.restart(Fixture.configuration(channelId = null, autoCheck = true))
+        harness.restart(Fixture.configuration(channelId = null, checkStrategy = CheckStrategy.AUTO))
         harness.core.handleAppStart()
         assertEquals(v2.release.release, harness.core.getState().currentRelease)
         harness.core.notifyReady()

@@ -175,7 +175,7 @@ class Core(
         if (isCurrentReleaseUnconfirmed()) {
             startReadyTimer()
             isStartSyncPending = true
-        } else if (configuration.autoCheck) {
+        } else if (isCheckAutomatic) {
             startAutomaticCycle(SyncTrigger.START)
         }
     }
@@ -195,12 +195,12 @@ class Core(
     /** A mandatory release follows its own strategy, so one the app took over waits across starts; any other switches under `next-start`; a bundle the WebView already serves is adopted. */
     private fun shouldSwitchAtStart(next: Release): Boolean = when {
         loader.servedBundleId() == next.bundleId -> true
-        next.isMandatory -> configuration.mandatoryInstallStrategy == MandatoryInstallStrategy.IMMEDIATE
-        else -> configuration.installStrategy == InstallStrategy.NEXT_START
+        next.isMandatory -> configuration.mandatoryApplyStrategy == MandatoryApplyStrategy.IMMEDIATE
+        else -> configuration.applyStrategy == ApplyStrategy.NEXT_START
     }
 
-    /** A `next-resume` release; a mandatory one follows `mandatoryInstallStrategy` instead, so one the app took over with `manual` waits for `applyUpdate()`. */
-    private fun shouldInstallAtResume(next: Release): Boolean = !next.isMandatory && configuration.installStrategy == InstallStrategy.NEXT_RESUME
+    /** A `next-resume` release; a mandatory one follows `mandatoryApplyStrategy` instead, so one the app took over with `manual` waits for `applyUpdate()`. */
+    private fun shouldInstallAtResume(next: Release): Boolean = !next.isMandatory && configuration.applyStrategy == ApplyStrategy.NEXT_RESUME
 
     /**
      * The first render of the run or of a reload: the readiness signal when `readySignal` is `render`, and on every setting what
@@ -254,17 +254,17 @@ class Core(
         resumeReadyTimer()
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
-        if (backgroundDuration != null && next != null && shouldInstallAtResume(next) && backgroundDuration >= configuration.installOnResumeAfter) {
+        if (backgroundDuration != null && next != null && shouldInstallAtResume(next) && backgroundDuration >= configuration.applyOnResumeAfterSeconds) {
             installNextRelease()
             return
         }
-        if (!configuration.autoCheck) return
+        if (!isCheckAutomatic) return
         val elapsedSeconds = state.lastSyncAt?.let { (clock.now() - it) / 1000.0 }
-        if (elapsedSeconds == null || elapsedSeconds >= configuration.checkInterval) {
+        if (elapsedSeconds == null || elapsedSeconds >= configuration.checkIntervalSeconds) {
             startAutomaticCycle(SyncTrigger.RESUME)
             return
         }
-        scheduleIntervalSync(configuration.checkInterval - elapsedSeconds)
+        scheduleIntervalSync(configuration.checkIntervalSeconds - elapsedSeconds)
     }
 
     /** The start's, the resume's and the interval's cycle; a device without a channel starts none, since it could only fail. */
@@ -335,7 +335,7 @@ class Core(
             if (stage != Stage.DOWNLOAD) state.lastCheck = LastCheck(clock.now(), trigger, result)
             if (stage == Stage.SYNC) {
                 state.lastSyncAt = clock.now()
-                scheduleIntervalSync(configuration.checkInterval)
+                scheduleIntervalSync(configuration.checkIntervalSeconds)
             }
         }
         log.record(LogEntry.ofCycle(result, trigger, clock.now()))
@@ -390,7 +390,7 @@ class Core(
                     SyncResult.skipped(null, SkippedReason.RELEASE_REVOKED)
                 }
                 else -> {
-                    val outcome = install(evaluation.release, true, InstallStrategy.IMMEDIATE, trigger, Stage.SYNC)
+                    val outcome = install(evaluation.release, true, ApplyStrategy.IMMEDIATE, trigger, Stage.SYNC)
                     if (outcome.status == SyncStatus.FAILED) outcome else SyncResult.skipped(evaluation.release.release, SkippedReason.RELEASE_REVOKED)
                 }
             }
@@ -408,7 +408,7 @@ class Core(
             lock.withLock { adoptInPlace(release) }
             return if (stage == Stage.DOWNLOAD) SyncResult.upToDate(release) else SyncResult.updated(release, target.notes, InstallMoment.IMMEDIATE)
         }
-        val strategy = resolveInstallStrategy(isMandatory, options)
+        val strategy = resolveApplyStrategy(isMandatory, options)
         if (isDownloaded(target)) {
             if (stage == Stage.CHECK) return SyncResult.available(release, target.notes, target.sizeBytes)
             val outcome = lock.withLock { applyDownloaded(release, target.notes, strategy) }
@@ -429,15 +429,15 @@ class Core(
     /** The release as the app sees it: the index's entry with the mandatory flag the evaluation decided, transitive included. */
     private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(target.id, target.number, target.bundleId, target.bundleVersion, isMandatory)
 
-    /** A mandatory release follows `mandatoryInstallStrategy`; any other the install strategy. */
-    private fun resolveInstallStrategy(isMandatory: Boolean, options: SyncOptions): InstallStrategy {
+    /** A mandatory release follows `mandatoryApplyStrategy`; any other the install strategy. */
+    private fun resolveApplyStrategy(isMandatory: Boolean, options: SyncOptions): ApplyStrategy {
         if (isMandatory) {
-            return when (options.mandatoryInstallStrategy ?: configuration.mandatoryInstallStrategy) {
-                MandatoryInstallStrategy.IMMEDIATE -> InstallStrategy.IMMEDIATE
-                MandatoryInstallStrategy.MANUAL -> InstallStrategy.MANUAL
+            return when (options.mandatoryApplyStrategy ?: configuration.mandatoryApplyStrategy) {
+                MandatoryApplyStrategy.IMMEDIATE -> ApplyStrategy.IMMEDIATE
+                MandatoryApplyStrategy.MANUAL -> ApplyStrategy.MANUAL
             }
         }
-        return options.installStrategy ?: configuration.installStrategy
+        return options.applyStrategy ?: configuration.applyStrategy
     }
 
     private fun isDownloaded(target: IndexRelease): Boolean {
@@ -447,7 +447,7 @@ class Core(
         return files.isComplete(manifest, embedded)
     }
 
-    private suspend fun install(target: IndexRelease, isMandatory: Boolean, strategy: InstallStrategy, trigger: SyncTrigger, stage: Stage): SyncResult {
+    private suspend fun install(target: IndexRelease, isMandatory: Boolean, strategy: ApplyStrategy, trigger: SyncTrigger, stage: Stage): SyncResult {
         val release = resolveRelease(target, isMandatory)
         try {
             val baseBundleId = state.currentRelease?.bundleId ?: configuration.embeddedBundleId
@@ -464,18 +464,18 @@ class Core(
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, FailedReason.DOWNLOAD_FAILED.name)) }
             return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, failure.message ?: failure.toString())
         }
-        if (strategy != InstallStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, strategy, trigger))
+        if (strategy != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, strategy, trigger))
         val outcome = lock.withLock { applyDownloaded(release, target.notes, strategy) }
         return if (stage == Stage.DOWNLOAD) SyncResult.downloaded(release, target.notes) else outcome
     }
 
     /** Choosing and applying are two acts: the strategy is a policy over the four functions. */
-    private fun applyDownloaded(release: Release, notes: String?, strategy: InstallStrategy): SyncResult {
+    private fun applyDownloaded(release: Release, notes: String?, strategy: ApplyStrategy): SyncResult {
         setNextRelease(release)
         when (strategy) {
-            InstallStrategy.IMMEDIATE -> installNextRelease()
-            InstallStrategy.NEXT_START -> loader.persistServedBundle(release.bundleId)
-            InstallStrategy.NEXT_RESUME, InstallStrategy.MANUAL -> Unit
+            ApplyStrategy.IMMEDIATE -> installNextRelease()
+            ApplyStrategy.NEXT_START -> loader.persistServedBundle(release.bundleId)
+            ApplyStrategy.NEXT_RESUME, ApplyStrategy.MANUAL -> Unit
         }
         return SyncResult.updated(release, notes, strategy)
     }
@@ -707,7 +707,7 @@ class Core(
         }
         if (isStartSyncPending) {
             isStartSyncPending = false
-            if (configuration.autoCheck) startAutomaticCycle(SyncTrigger.START)
+            if (isCheckAutomatic) startAutomaticCycle(SyncTrigger.START)
         }
     }
 
@@ -755,7 +755,7 @@ class Core(
             isReadyTimerPaused = true
             return
         }
-        readyTimer = scheduler.schedule(configuration.readyTimeout) { launchTask { handleReadyTimeout() } }
+        readyTimer = scheduler.schedule(configuration.readyTimeoutSeconds) { launchTask { handleReadyTimeout() } }
     }
 
     private fun stopReadyTimer() {
@@ -785,7 +785,7 @@ class Core(
 
     private fun scheduleIntervalSync(afterSeconds: Double) {
         intervalTimer?.cancel()
-        if (!configuration.autoCheck) return
+        if (!isCheckAutomatic) return
         intervalTimer = scheduler.schedule(afterSeconds) { launchTask { lock.withLock { startAutomaticCycle(SyncTrigger.INTERVAL) } } }
     }
 
@@ -857,6 +857,10 @@ class Core(
     private fun verifyChannelId(id: String) {
         if (!WireRule.UUID.accepts(id)) throw PlainException("A channel id is a UUID: $id")
     }
+
+    /** The SDK checks on its own at start, on resume and at the interval; under `manual` every cycle is the app's `sync()`. */
+    private val isCheckAutomatic: Boolean
+        get() = configuration.checkStrategy == CheckStrategy.AUTO
 
     /** A device has a channel when the app set one at runtime or the build carries one. */
     private val hasChannel: Boolean

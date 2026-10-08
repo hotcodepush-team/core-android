@@ -13,7 +13,7 @@ import java.nio.file.Files
 
 class CoreTest {
     private val v2Content = "<html>v2</html>".toByteArray()
-    private val immediateInstall = Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE)
+    private val immediateInstall = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE)
 
     @Test
     fun shouldRunTheEmbeddedBundleAndBeUpToDateOnAnEmptyChannel() = runBlocking {
@@ -93,7 +93,7 @@ class CoreTest {
 
     @Test
     fun shouldStartOnTheEmbeddedBundleWhenTheBinaryChanged() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -131,7 +131,7 @@ class CoreTest {
 
     @Test
     fun shouldKeepTheCurrentReleaseWhenTheBinaryIsTheSame() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -148,7 +148,7 @@ class CoreTest {
 
     @Test
     fun shouldStartOnTheEmbeddedBundleWhenTheCurrentReleaseHasNoFilesOnDisk() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -188,7 +188,7 @@ class CoreTest {
 
     @Test
     fun shouldRollBackAReleaseThatNeverRendersAndBlocklistIt() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -230,7 +230,7 @@ class CoreTest {
 
     @Test
     fun shouldFallBackToTheLastConfirmedReleaseNotTheEmbeddedBundle() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -385,7 +385,7 @@ class CoreTest {
 
     @Test
     fun shouldAdoptAReleaseCarryingTheRunningBundleWithoutAReload() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -402,7 +402,7 @@ class CoreTest {
 
     @Test
     fun shouldAnswerUpToDateWhenADownloadAdoptsAReleaseCarryingTheRunningBundle() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -434,7 +434,7 @@ class CoreTest {
 
     @Test
     fun shouldDiscardAHeldApplyUpdateWhoseReleaseWasRevokedWhileItWaitedAndReloadNothing() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.MANUAL))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -450,7 +450,7 @@ class CoreTest {
 
     @Test
     fun shouldRevertToTheEmbeddedBundleWhenTheRunningReleaseIsRevoked() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -465,7 +465,7 @@ class CoreTest {
 
     @Test
     fun shouldQueueTheSwitchWithTheReloadWhileRestartsAreNotAllowed() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -488,7 +488,7 @@ class CoreTest {
 
     @Test
     fun shouldApplyAnUpdateAtTheFirstRenderAndNotBeforeWhileRestartsAreNotAllowed() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.MANUAL))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -506,7 +506,7 @@ class CoreTest {
 
     @Test
     fun shouldRollBackAtOnceWhileRestartsAreNotAllowed() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -540,8 +540,8 @@ class CoreTest {
     }
 
     @Test
-    fun shouldInstallANextResumeReleaseAfterInstallOnResumeAfter() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.NEXT_RESUME))
+    fun shouldApplyANextResumeReleaseAfterApplyOnResumeAfterSeconds() = runBlocking {
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_RESUME))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -559,7 +559,7 @@ class CoreTest {
 
     @Test
     fun shouldKeepANextResumeReleaseWaitingAfterAShortBackground() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.NEXT_RESUME))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_RESUME))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -576,7 +576,7 @@ class CoreTest {
 
     @Test
     fun shouldKeepAMandatoryReleaseTheAppTookOverWaitingAtAResumeUnderNextResume() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.NEXT_RESUME, mandatoryInstallStrategy = MandatoryInstallStrategy.MANUAL))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_RESUME, mandatoryApplyStrategy = MandatoryApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content, isMandatory = true)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -681,7 +681,7 @@ class CoreTest {
 
     @Test
     fun shouldLogAndNeverThrowOutOfAnAutomaticCycleAndSyncAgainAfterIt() = runBlocking {
-        val harness = Harness(Fixture.configuration(autoCheck = true))
+        val harness = Harness(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         harness.http.isOffline = true
         harness.listener.updateFailedFailure = IllegalStateException("the listener broke")
         harness.core.handleAppStart()
@@ -888,7 +888,7 @@ class CoreTest {
 
     @Test
     fun shouldKeepAnEventEnqueuedWhileARefusedBatchWasInFlight() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.http.stub(Fixture.eventsUrl(), status = 400, body = ByteArray(0))
         harness.http.whilePosting = { harness.core.notifyReady() }
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
@@ -902,7 +902,7 @@ class CoreTest {
 
     @Test
     fun shouldKeepAnEventEnqueuedWhileAnAcknowledgedBatchWasInFlightWhenTheOutboxWasAtItsCap() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.acknowledgeEvents()
         harness.http.whilePosting = { harness.core.notifyReady() }
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
@@ -947,22 +947,22 @@ class CoreTest {
     }
 
     @Test
-    fun shouldSyncOnStartAndResumeWhenAutoCheckIsOn() = runBlocking {
-        val harness = Harness(Fixture.configuration(autoCheck = true))
+    fun shouldSyncOnStartAndResumeWhenTheCheckStrategyIsAuto() = runBlocking {
+        val harness = Harness(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         harness.publish(emptyList(), 1)
         harness.core.handleAppStart()
         assertEquals(SyncTrigger.START, StateStore(harness.store).lastCheck?.trigger)
         harness.core.handleAppResume()
         assertEquals(SyncTrigger.START, StateStore(harness.store).lastCheck?.trigger)
         harness.clock.now += 1_000_000
-        harness.restart(Fixture.configuration(autoCheck = true))
+        harness.restart(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         harness.core.handleAppResume()
         assertEquals(SyncTrigger.RESUME, StateStore(harness.store).lastCheck?.trigger)
     }
 
     @Test
     fun shouldPauseTheIntervalTimerInTheBackgroundAndReArmItOnResume() = runBlocking {
-        val harness = Harness(Fixture.configuration(autoCheck = true))
+        val harness = Harness(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         harness.publish(emptyList(), 1)
         harness.core.handleAppStart()
         assertEquals(listOf(900.0), harness.scheduler.tasks.map { it.seconds })
@@ -976,7 +976,7 @@ class CoreTest {
 
     @Test
     fun shouldDeleteTheServedTreesAndFilesOfBundlesNoKeptReleaseLists() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
         val v4 = Fixture.release(3, "b4", "<html>v4</html>".toByteArray())
@@ -989,10 +989,10 @@ class CoreTest {
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.notifyReady()
         harness.publish(listOf(v2, v3, v4), 3, etag = "\"e3\"")
-        harness.core.sync(SyncTrigger.MANUAL, SyncOptions(installStrategy = InstallStrategy.NEXT_START))
+        harness.core.sync(SyncTrigger.MANUAL, SyncOptions(applyStrategy = ApplyStrategy.NEXT_START))
         for (bundleId in listOf("b2", "b3", "b4")) assertTrue(bundleId, File(harness.loader.projectionDirectory(bundleId), "index.html").isFile)
         harness.loader.served = "b4"
-        harness.restart(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        harness.restart(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.core.handleAppStart()
         val status = harness.core.getState()
         assertEquals("b4", status.currentRelease?.bundleId)
@@ -1028,7 +1028,7 @@ class CoreTest {
 
     @Test
     fun shouldClearUpdatesToTheEmbeddedBundleAndKeepTheIdentity() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.core.setAttributes(mapOf("plan" to "beta"))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1047,7 +1047,7 @@ class CoreTest {
 
     @Test
     fun shouldStopAfterTheCheckUnderTheManualDownloadStrategyAndDownloadOnCall() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.MANUAL, downloadStrategy = DownloadStrategy.MANUAL))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.MANUAL, downloadStrategy = DownloadStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1080,8 +1080,8 @@ class CoreTest {
     }
 
     @Test
-    fun shouldInstallAMandatoryReleaseAtOnceWhateverTheInstallStrategy() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.NEXT_START))
+    fun shouldInstallAMandatoryReleaseAtOnceWhateverTheApplyStrategy() = runBlocking {
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_START))
         val v2 = Fixture.release(1, "b2", v2Content, isMandatory = true)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1095,7 +1095,7 @@ class CoreTest {
 
     @Test
     fun shouldHandAMandatoryReleaseToTheAppUnderTheManualMandatoryStrategy() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.NEXT_START, mandatoryInstallStrategy = MandatoryInstallStrategy.MANUAL))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_START, mandatoryApplyStrategy = MandatoryApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content, isMandatory = true)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1103,7 +1103,7 @@ class CoreTest {
         assertEquals(listOf(true), harness.listener.downloaded.map { it.release.isMandatory })
         assertTrue(harness.loader.loaded.isEmpty())
         harness.loader.served = null
-        harness.restart(Fixture.configuration(installStrategy = InstallStrategy.NEXT_START, mandatoryInstallStrategy = MandatoryInstallStrategy.MANUAL))
+        harness.restart(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_START, mandatoryApplyStrategy = MandatoryApplyStrategy.MANUAL))
         harness.core.handleAppStart()
         val state = harness.core.getState()
         assertNull(state.currentRelease)
@@ -1112,7 +1112,7 @@ class CoreTest {
 
     @Test
     fun shouldTreatTheNewestReleaseAsMandatoryWhenAMandatoryOneWasMissed() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.NEXT_START, mandatoryInstallStrategy = MandatoryInstallStrategy.MANUAL))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_START, mandatoryApplyStrategy = MandatoryApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content, isMandatory = true)
         val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
         harness.publish(listOf(v2, v3), 1)
@@ -1136,7 +1136,7 @@ class CoreTest {
 
     @Test
     fun shouldRefuseARollbackDetailWithAC1ControlCharacterAndRollNothingBack() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.handleRendered()
@@ -1149,7 +1149,7 @@ class CoreTest {
 
     @Test
     fun shouldCarryTheAppsRollbackReasonOnTheFailureEvent() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1166,14 +1166,14 @@ class CoreTest {
 
     @Test
     fun shouldSyncAndCleanUpAtAStartThatRollsBackACrash() = runBlocking {
-        val harness = Harness(Fixture.configuration(autoCheck = true))
+        val harness = Harness(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         harness.loader.served = "b2"
-        harness.restart(Fixture.configuration(autoCheck = true))
+        harness.restart(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         harness.core.handleAppStart()
-        harness.restart(Fixture.configuration(autoCheck = true))
+        harness.restart(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         harness.core.handleAppStart()
         assertEquals(RollbackReason.APP_CRASHED, harness.listener.rolledBack.last().reason)
         assertEquals(SyncTrigger.START, StateStore(harness.store).lastCheck?.trigger)
@@ -1182,7 +1182,7 @@ class CoreTest {
 
     @Test
     fun shouldAnnounceTheRollbackWhenTheReloadRunsAndNotBefore() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1327,7 +1327,7 @@ class CoreTest {
 
     @Test
     fun shouldTakeTheStreamedDeltaWhenTheDeviceIsTwoReleasesBehind() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1368,7 +1368,7 @@ class CoreTest {
 
     @Test
     fun shouldDiscardADownloadedReleaseThatLeftTheIndexInsteadOfApplyingIt() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.MANUAL))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1382,12 +1382,12 @@ class CoreTest {
 
     @Test
     fun shouldBeginTheStartSyncAtOnceWhenTheRunningReleaseIsConfirmed() = runBlocking {
-        val harness = startOnConfirmedRelease(Fixture.configuration(autoCheck = true))
+        val harness = startOnConfirmedRelease(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         assertEquals(SyncTrigger.START, StateStore(harness.store).lastCheck?.trigger)
     }
 
     @Test
-    fun shouldBeginNoStartSyncWhenAutoCheckIsOff() = runBlocking {
+    fun shouldBeginNoStartSyncWhenTheCheckStrategyIsManual() = runBlocking {
         val harness = startOnConfirmedRelease(Fixture.configuration())
         harness.core.handleRendered()
         harness.core.notifyReady()
@@ -1401,7 +1401,7 @@ class CoreTest {
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
         harness.loader.served = "b2"
-        harness.restart(Fixture.configuration(autoCheck = true, readySignal = ReadySignal.MANUAL))
+        harness.restart(Fixture.configuration(checkStrategy = CheckStrategy.AUTO, readySignal = ReadySignal.MANUAL))
         harness.core.handleAppStart()
         harness.core.handleRendered()
         assertEquals(SyncTrigger.MANUAL, StateStore(harness.store).lastCheck?.trigger)
@@ -1411,7 +1411,7 @@ class CoreTest {
 
     @Test
     fun shouldReloadAnImmediateInstallAtTheFirstRenderAndNotBefore() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1426,7 +1426,7 @@ class CoreTest {
 
     @Test
     fun shouldReloadAMandatoryReleaseAtTheFirstRenderAndNotBefore() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.NEXT_START))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_START))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content, isMandatory = true)), 1)
         harness.core.handleAppStart()
         assertEquals(InstallMoment.IMMEDIATE, harness.core.sync(SyncTrigger.MANUAL).installAt)
@@ -1437,7 +1437,7 @@ class CoreTest {
 
     @Test
     fun shouldRunARestartHeldByTheAppAndTheStartOnceWhenTheAppAllowsRestartsLast() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.setRestartAllowed(false)
@@ -1453,7 +1453,7 @@ class CoreTest {
 
     @Test
     fun shouldRunARestartHeldByTheAppAndTheStartOnceWhenTheStartSettlesLast() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.setRestartAllowed(false)
@@ -1492,7 +1492,7 @@ class CoreTest {
 
     @Test
     fun shouldHoldTheNextRestartUntilTheReloadedAppRenders() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1509,7 +1509,7 @@ class CoreTest {
 
     @Test
     fun shouldReloadOnceWhenTheAppAppliesAnUpdateWhileTheAppHoldsARestart() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.handleRendered()
@@ -1525,7 +1525,7 @@ class CoreTest {
 
     @Test
     fun shouldReloadOnceWhenTheAppRollsBackWhileTheStartHoldsARestart() = runBlocking {
-        val harness = startOnConfirmedRelease(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE))
+        val harness = startOnConfirmedRelease(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content), Fixture.release(2, "b3", "<html>v3</html>".toByteArray())), 2, etag = "\"e2\"")
         harness.core.sync(SyncTrigger.MANUAL)
         assertTrue(harness.loader.loaded.isEmpty())
@@ -1538,7 +1538,7 @@ class CoreTest {
 
     @Test
     fun shouldReloadAnImmediateInstallAtNotifyReadyAndNotBefore() = runBlocking {
-        val harness = Harness(Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE, readySignal = ReadySignal.MANUAL))
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE, readySignal = ReadySignal.MANUAL))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
@@ -1560,7 +1560,7 @@ class CoreTest {
 
     @Test
     fun shouldSwitchToAHeldImmediateInstallAtTheNextStartWhenItNeverRan() = runBlocking {
-        val configuration = Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE)
+        val configuration = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE)
         val harness = Harness(configuration)
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1596,7 +1596,7 @@ class CoreTest {
 
     @Test
     fun shouldRunTheOlderReleaseAtTheNextStartWhenAHeldMoveFromARevokedReleaseNeverRan() = runBlocking {
-        val configuration = Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE, mandatoryInstallStrategy = MandatoryInstallStrategy.MANUAL)
+        val configuration = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE, mandatoryApplyStrategy = MandatoryApplyStrategy.MANUAL)
         val harness = startOnConfirmedRelease(configuration)
         val releases = listOf(Fixture.release(1, "b2", v2Content), Fixture.release(2, "b3", "<html>v3</html>".toByteArray()))
         harness.core.handleRendered()
