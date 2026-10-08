@@ -73,6 +73,10 @@ class Core(
 
     /** The app is up in this run: it rendered, called `notifyReady()` or ran out of time since the start or the last reload. */
     private var hasStartSettled = false
+
+    /** The times the core pointed the host at a bundle in this process: a readiness signal reported before one is the replaced bundle's. */
+    @Volatile private var bundleLoadCount = 0
+
     private var isStartSyncPending = false
     private var isSendingDeviceEvents = false
 
@@ -191,25 +195,38 @@ class Core(
     /** A `next-resume` release; a mandatory one follows `mandatoryInstallStrategy` instead, so one the app took over with `manual` waits for `applyUpdate()`. */
     private fun shouldInstallAtResume(next: Release): Boolean = !next.isMandatory && configuration.installStrategy == InstallStrategy.NEXT_RESUME
 
-    /** The first render of the run or of a reload: the readiness signal when `readySignal` is `render`, and on every setting what settles the start. */
-    suspend fun handleRendered() = lock.withLock {
-        if (configuration.readySignal == ReadySignal.RENDER) confirmCurrentRelease()
-        settleStart()
+    /**
+     * The first render of the run or of a reload: the readiness signal when `readySignal` is `render`, and on every setting what
+     * settles the start. A render reported before the core last pointed the host at a bundle is the replaced bundle's, the embedded
+     * one a host ran while the start took longer than its bound among them, and confirms and settles nothing.
+     */
+    suspend fun handleRendered() {
+        val bundleLoadCountAtSignal = bundleLoadCount
+        lock.withLock {
+            if (hasLoadedBundleSince(bundleLoadCountAtSignal)) return
+            if (configuration.readySignal == ReadySignal.RENDER) confirmCurrentRelease()
+            settleStart()
+        }
     }
 
     /**
      * Ends the gate when `readySignal` is `manual`, settles the start, and tells the app whether this start follows a rollback;
-     * `previousRelease` is the release before this start when it changed, by a switch or a rollback, once.
+     * `previousRelease` is the release before this start when it changed, by a switch or a rollback, once. A call reported before
+     * the core last pointed the host at a bundle is the replaced bundle's: it confirms, settles and tells nothing.
      */
-    suspend fun notifyReady(): NotifyReadyResult = lock.withLock {
-        confirmCurrentRelease()
-        val rollback = state.lastRollback
-        state.lastRollback = null
-        val previousRelease = rollback?.from ?: switchedFromRelease
-        switchedFromRelease = null
-        val result = NotifyReadyResult(state.currentRelease, previousRelease, rollback != null, rollback?.reason)
-        settleStart()
-        result
+    suspend fun notifyReady(): NotifyReadyResult {
+        val bundleLoadCountAtSignal = bundleLoadCount
+        return lock.withLock {
+            if (hasLoadedBundleSince(bundleLoadCountAtSignal)) return NotifyReadyResult(state.currentRelease, null, false, null)
+            confirmCurrentRelease()
+            val rollback = state.lastRollback
+            state.lastRollback = null
+            val previousRelease = rollback?.from ?: switchedFromRelease
+            switchedFromRelease = null
+            val result = NotifyReadyResult(state.currentRelease, previousRelease, rollback != null, rollback?.reason)
+            settleStart()
+            result
+        }
     }
 
     /**
@@ -575,16 +592,25 @@ class Core(
         enqueueDeviceEvent(DeviceEvent.applied(next.id))
     }
 
+    /** The host serves the current bundle: at a start that took longer than its bound, the host already runs another and reloads. */
     private fun loadBundle() {
         val expected = state.currentRelease?.bundleId
-        if (loader.servedBundleId() != expected) loader.loadServedBundle(expected)
+        if (loader.servedBundleId() != expected) loadServedBundle(expected)
     }
 
     /** The restart of the web layer: the bundle loads, then the reloaded app goes through the gate. */
     private fun reloadApp() {
-        loader.loadServedBundle(state.currentRelease?.bundleId)
+        loadServedBundle(state.currentRelease?.bundleId)
         gateReloadedApp()
     }
+
+    /** Every load the core asks of the host: a readiness signal reported before it is the replaced bundle's and counts for nothing. */
+    private fun loadServedBundle(bundleId: String?) {
+        loader.loadServedBundle(bundleId)
+        bundleLoadCount += 1
+    }
+
+    private fun hasLoadedBundleSince(bundleLoadCountAtSignal: Int): Boolean = bundleLoadCount != bundleLoadCountAtSignal
 
     /**
      * The reloaded app has to come up again: it runs what the state says, so a held restart is moot; a rollback it has not come up

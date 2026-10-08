@@ -1,8 +1,11 @@
 package com.hotcodepush.core
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -14,6 +17,7 @@ import java.util.concurrent.CountDownLatch
 /** The start as a host sees it: the bundle it serves, a start that fails open or never answers in time, and a reload the core did not perform. */
 class StartTest {
     private val v2Content = "<html>v2</html>".toByteArray()
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** A core whose store holds `v2` downloaded and waiting for the next start, and that start's core. */
     private fun harnessWithAWaitingRelease(configuration: Configuration = Fixture.configuration()): Pair<Harness, Fixture.Published> {
@@ -39,6 +43,14 @@ class StartTest {
         assertEquals(1, harness.scheduler.tasks.size)
     }
 
+    /** The next start on threads of its own, held at its first write until the latch it answers opens, as a slow store holds it. */
+    private fun holdTheNextStart(harness: Harness): CountDownLatch {
+        val latch = CountDownLatch(1)
+        harness.loader.persistLatch = latch
+        harness.restart(scope = backgroundScope)
+        return latch
+    }
+
     @Test
     fun shouldAnswerTheStartsBundleToAHostWaitingInSynchronousCode() {
         val (harness, _) = harnessWithAWaitingRelease()
@@ -48,13 +60,40 @@ class StartTest {
     @Test
     fun shouldAnswerTheEmbeddedBundleWhenTheStartTakesLongerThanTheTimeoutAndReloadTheHostOnceItRan() {
         val (harness, v2) = harnessWithAWaitingRelease()
-        val latch = CountDownLatch(1)
-        harness.loader.persistLatch = latch
-        harness.restart(scope = CoroutineScope(SupervisorJob() + Dispatchers.Default))
+        val latch = holdTheNextStart(harness)
         assertNull(harness.core.handleAppStartBlocking(isHeadless = false, timeout = 0.05))
         latch.countDown()
         runBlocking { assertEquals(NotifyReadyResult(v2.release.release, null, false, null), harness.core.notifyReady()) }
         assertEquals(listOf("b2"), harness.loader.loaded)
+    }
+
+    @Test
+    fun shouldConfirmTheReleaseAtTheRenderOfTheReloadedBundleNotOfTheEmbeddedOneWhenTheStartTookLongerThanTheTimeout() {
+        val (harness, v2) = harnessWithAWaitingRelease()
+        val latch = holdTheNextStart(harness)
+        assertNull(harness.core.handleAppStartBlocking(isHeadless = false, timeout = 0.05))
+        val embeddedRender = backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) { harness.core.handleRendered() }
+        latch.countDown()
+        runBlocking {
+            embeddedRender.join()
+            assertEquals(listOf("b2"), harness.loader.loaded)
+            assertNull(harness.core.getState().fallbackRelease)
+            harness.core.handleRendered()
+            assertEquals(v2.release.release, harness.core.getState().fallbackRelease)
+        }
+    }
+
+    @Test
+    fun shouldConfirmNothingAtANotifyReadyOfTheEmbeddedBundleWhenTheStartTookLongerThanTheTimeout() {
+        val (harness, v2) = harnessWithAWaitingRelease()
+        val latch = holdTheNextStart(harness)
+        assertNull(harness.core.handleAppStartBlocking(isHeadless = false, timeout = 0.05))
+        val embeddedReady = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) { harness.core.notifyReady() }
+        latch.countDown()
+        runBlocking {
+            assertEquals(NotifyReadyResult(v2.release.release, null, false, null), embeddedReady.await())
+            assertNull(harness.core.getState().fallbackRelease)
+        }
     }
 
     @Test
