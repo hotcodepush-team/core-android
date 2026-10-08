@@ -101,7 +101,8 @@ class Core(
      * logged, never thrown at the host.
      *
      * `isHeadless` says no screen will render in this run, an Android process started without an activity or an Expo background
-     * task: such a start applies no waiting release, which keeps waiting for a start that renders, so it arms no gate either.
+     * task: such a start applies no waiting release, which keeps waiting for a start that renders, so it arms no gate either, and
+     * points the host at no bundle: the host serves the answer, and the bundle persisted for the next start stays as it was.
      */
     suspend fun handleAppStart(isHeadless: Boolean = false): String? {
         val bundleId = lock.withLock {
@@ -110,7 +111,7 @@ class Core(
             } catch (failure: Throwable) {
                 runEmbeddedBundleAfter(failure)
             }
-            runLogged("the start", ::beginRun)
+            runLogged("the start") { beginRun(isHeadless) }
             resolveRunningBundleId()
         }
         launchTask(::deleteUnusedFiles)
@@ -162,8 +163,8 @@ class Core(
         runLogged("forgetting the stored releases", ::dropStoredReleases)
     }
 
-    private fun beginRun() {
-        loadBundle()
+    private fun beginRun(isHeadless: Boolean) {
+        if (!isHeadless) loadBundle()
         if (!hasAnnouncedRollback) announceRollback()
         if (isCurrentReleaseUnconfirmed()) {
             startReadyTimer()

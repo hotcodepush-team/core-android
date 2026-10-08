@@ -103,11 +103,32 @@ class StartTest {
         assertNull(harness.core.handleAppStart(isHeadless = true))
         assertNull(harness.core.getState().currentRelease)
         assertEquals(v2.release.release, harness.core.getState().nextRelease)
-        assertEquals(listOf<String?>(null), harness.loader.loaded)
+        assertTrue(harness.loader.loaded.isEmpty())
         assertTrue(harness.scheduler.tasks.isEmpty())
         harness.restart()
         assertEquals("b2", harness.core.handleAppStart())
         assertEquals(1, harness.scheduler.tasks.size)
+    }
+
+    @Test
+    fun shouldKeepAHeldInstallPersistedAcrossAHeadlessStartAndApplyItAtTheNextStart() = runBlocking {
+        val configuration = Fixture.configuration(installStrategy = InstallStrategy.IMMEDIATE)
+        val harness = Harness(configuration)
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals("b2", harness.loader.persisted)
+        assertTrue(harness.loader.loaded.isEmpty())
+        harness.loader.served = harness.loader.persisted
+        harness.restart(configuration)
+        assertNull(harness.core.handleAppStart(isHeadless = true))
+        assertEquals("b2", harness.loader.persisted)
+        assertTrue(harness.loader.loaded.isEmpty())
+        harness.loader.served = harness.loader.persisted
+        harness.restart(configuration)
+        assertEquals("b2", harness.core.handleAppStart())
+        assertEquals(v2.release.release, harness.core.getState().currentRelease)
     }
 
     @Test
