@@ -126,9 +126,13 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     /** What escaped the core's own tasks to the scope: on a device, the process's crash. */
     val uncaught = mutableListOf<Throwable>()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, failure -> uncaught += failure })
+
+    /** What the process's importance says at the next start: `false` for one the system started without a foreground activity. */
+    var isProcessInForeground = true
     var core: Core = build(configuration)
 
-    private fun build(configuration: Configuration, scope: CoroutineScope = this.scope) = Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"))
+    private fun build(configuration: Configuration, scope: CoroutineScope = this.scope) =
+        Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp")) { isProcessInForeground }
 
     /** A second core over the same store and files: the next start of the app, its tasks on the scope given. */
     fun restart(configuration: Configuration = Fixture.configuration(), scope: CoroutineScope = this.scope) {

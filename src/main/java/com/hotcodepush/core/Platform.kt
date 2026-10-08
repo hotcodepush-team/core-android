@@ -1,5 +1,6 @@
 package com.hotcodepush.core
 
+import android.app.ActivityManager
 import java.io.File
 
 /** What the platform knows about the binary and the OS. */
@@ -52,6 +53,20 @@ fun interface Scheduler {
 
 fun interface Clock {
     fun now(): Long
+}
+
+/** Whether the process runs in the foreground: the system starts one in the background for a push, a job or a headless task. */
+fun interface ProcessState {
+    fun isInForeground(): Boolean
+}
+
+/** The importance the activity manager gives this process, read as React Native's host reads it. */
+object ActivityManagerProcessState : ProcessState {
+    override fun isInForeground(): Boolean {
+        val process = ActivityManager.RunningAppProcessInfo()
+        ActivityManager.getMyMemoryState(process)
+        return process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+    }
 }
 
 /** The two programming mistakes the SDK reports with a plain error: nothing an app handles. */

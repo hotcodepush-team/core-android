@@ -29,6 +29,7 @@ class Core(
     private val clock: Clock,
     private val scope: CoroutineScope,
     temporaryDirectory: File,
+    private val processState: ProcessState = ActivityManagerProcessState,
 ) {
     /** How far a cycle goes: the check alone, the download whatever the strategy says, or the whole sync. */
     private enum class Stage { CHECK, DOWNLOAD, SYNC }
@@ -82,6 +83,8 @@ class Core(
 
     /** The events enqueued while a batch is on its way: never part of it, so they stay in the outbox whatever the answer. */
     private var eventCountEnqueuedInFlight = 0
+
+    /** When the app went to the background, by a pause or, in a process the system started without a foreground activity, at the start; `null` in the foreground. */
     private var backgroundedAt: Long? = null
     private var resolvedChannelName: Pair<String, String>? = null
 
@@ -103,6 +106,8 @@ class Core(
      * `isHeadless` says no screen will render in this run, an Android process started without an activity or an Expo background
      * task: such a start applies no waiting release, which keeps waiting for a start that renders, so it arms no gate either, and
      * points the host at no bundle: the host serves the answer, and the bundle persisted for the next start stays as it was.
+     * A process the system started in the background, for a push, a job or a task the host did not mark headless, is in the
+     * background from its start: the gate's timer waits for the first resume.
      */
     suspend fun handleAppStart(isHeadless: Boolean = false): String? {
         val bundleId = lock.withLock {
@@ -164,6 +169,7 @@ class Core(
     }
 
     private fun beginRun(isHeadless: Boolean) {
+        if (!processState.isInForeground()) backgroundedAt = clock.now()
         if (!isHeadless) loadBundle()
         if (!hasAnnouncedRollback) announceRollback()
         if (isCurrentReleaseUnconfirmed()) {

@@ -260,6 +260,20 @@ class StartTest {
     }
 
     @Test
+    fun shouldStartTheGatePausedWhenTheProcessStartsInTheBackgroundAndStartItsFullWindowAtTheFirstResume() = runBlocking {
+        val (harness, v2) = harnessWithAWaitingRelease()
+        harness.isProcessInForeground = false
+        harness.core.handleAppStart()
+        assertEquals(v2.release.release, harness.core.getState().currentRelease)
+        assertTrue(harness.scheduler.tasks.isEmpty())
+        harness.clock.now += 600_000
+        harness.core.handleAppResume()
+        assertEquals(10.0, harness.scheduler.tasks.single().seconds, 0.0)
+        harness.scheduler.fire()
+        assertEquals(RollbackReason.READINESS_TIMED_OUT, harness.listener.rolledBack.single().reason)
+    }
+
+    @Test
     fun shouldIgnoreATimeoutThatFiresAsTheTimerPauses() = runBlocking {
         val (harness, v2) = harnessWithAWaitingRelease()
         harness.core.handleAppStart()
