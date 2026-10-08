@@ -1,5 +1,6 @@
 package com.hotcodepush.core
 
+import org.json.JSONException
 import org.json.JSONObject
 
 /** When a downloaded update is applied. */
@@ -77,7 +78,7 @@ data class Configuration(
             appId = json.getWireString("appId", WireRule.IDENTIFIER),
             channelId = json.getNullableWireString("channelId", WireRule.NON_EMPTY),
             autoCheck = json.optBoolean("autoCheck", true),
-            checkInterval = json.optDouble("checkInterval", 900.0),
+            checkInterval = json.getCheckInterval(),
             downloadStrategy = DownloadStrategy.fromWire(json.optNullableString("downloadStrategy")) ?: DownloadStrategy.AUTO,
             installStrategy = InstallStrategy.fromWire(json.optNullableString("installStrategy")) ?: InstallStrategy.NEXT_START,
             mandatoryInstallStrategy = MandatoryInstallStrategy.fromWire(json.optNullableString("mandatoryInstallStrategy")) ?: MandatoryInstallStrategy.IMMEDIATE,
@@ -95,6 +96,15 @@ data class Configuration(
         )
     }
 }
+
+/** The seconds between automatic checks, at least the floor: a zero made the core check in a tight loop. */
+private fun JSONObject.getCheckInterval(): Double {
+    val seconds = optDouble("checkInterval", 900.0)
+    if (seconds < MINIMUM_CHECK_INTERVAL) throw JSONException("checkInterval is below its floor of $MINIMUM_CHECK_INTERVAL seconds: $seconds")
+    return seconds
+}
+
+private const val MINIMUM_CHECK_INTERVAL = 60.0
 
 /** Each stage's strategy for one `sync()` call, overriding the configuration. */
 data class SyncOptions(

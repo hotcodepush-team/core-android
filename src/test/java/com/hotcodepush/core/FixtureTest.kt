@@ -140,6 +140,12 @@ class FixtureTest {
         }
     }
 
+    /** A refused file throws as an unreadable one does: a check interval below its floor is a schema violation like any other. */
+    @Test
+    fun shouldRefuseEveryRefusedResourceFileFixture() {
+        assertRefused("resource-files.json", "refusedResourceFiles", "resourceFile", Configuration::fromJson)
+    }
+
     @Test
     fun shouldMatchEveryManifestIdentityFixture() {
         for (case in cases("manifest-identity.json", "cases")) {
