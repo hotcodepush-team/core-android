@@ -106,6 +106,9 @@ class Core(
      * Whatever the start throws, the stored releases of a store it cannot read among it, answers the embedded bundle and is
      * logged, never thrown at the host.
      *
+     * A reload the core did not perform serves the running bundle and is not interpreted; a `next-start` release applies at the next
+     * start or through the core's own apply.
+     *
      * `isHeadless` says no screen will render in this run, an Android process started without an activity or an Expo background
      * task: such a start applies no waiting release, which keeps waiting for a start that renders, so it arms no gate either, and
      * points the host at no bundle: the host serves the answer, and the bundle persisted for the next start stays as it was.
@@ -136,23 +139,6 @@ class Core(
     internal fun handleAppStartBlocking(isHeadless: Boolean, timeout: Double): String? {
         val start = scope.async { handleAppStart(isHeadless) }
         return runBlocking { withTimeoutOrNull((timeout * 1000).toLong()) { start.await() } }
-    }
-
-    /**
-     * A reload the core did not perform — a JavaScript restart, a development reload — runs through the gate like any start: an
-     * apply held or waiting for the next start takes effect, the reloaded app has to come up again before a restart runs, and a
-     * release not yet confirmed is gated, its full window again. Unlike a start it takes no unconfirmed release for a crash.
-     * Answers the bundle the host serves, `null` for the embedded one; nothing it throws reaches the host.
-     */
-    suspend fun handleAppReload(): String? = lock.withLock {
-        runLogged("the reload") {
-            discardNextReleaseThatLeftTheIndex()
-            val next = state.nextRelease
-            if (next != null && shouldSwitchAtStart(next)) switchToNextRelease()
-            loadBundle()
-            gateReloadedApp()
-        }
-        resolveRunningBundleId()
     }
 
     /** After it the current release is confirmed unless it switched, so a headless start, which never switches, arms no gate. */

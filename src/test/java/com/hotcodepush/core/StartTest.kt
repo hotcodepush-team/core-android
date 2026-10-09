@@ -14,7 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 
-/** The start as a host sees it: the bundle it serves, a start that fails open or never answers in time, and a reload the core did not perform. */
+/** The start as a host sees it: the bundle it serves and a start that fails open or never answers in time. */
 class StartTest {
     private val v2Content = "<html>v2</html>".toByteArray()
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -201,75 +201,6 @@ class StartTest {
         harness.loader.loadFailure = IllegalStateException("the loader broke")
         assertEquals("b2", harness.core.handleAppStart())
         assertTrue(harness.core.debugSnapshot().log.any { it.message.contains("the loader broke") })
-    }
-
-    @Test
-    fun shouldGateAReleaseNotYetConfirmedAgainAtAReloadAndNeverTakeItForACrash() = runBlocking {
-        val (harness, v2) = harnessWithAWaitingRelease()
-        harness.core.handleAppStart()
-        val firstTimer = harness.scheduler.tasks.single()
-        assertEquals("b2", harness.core.handleAppReload())
-        assertTrue(firstTimer.isCancelled)
-        assertEquals(2, harness.scheduler.tasks.size)
-        assertEquals(listOf("b2"), harness.loader.loaded)
-        assertTrue(StateStore(harness.store).failedBundleIds.isEmpty())
-        harness.core.handleRendered()
-        assertEquals(v2.release.release, harness.core.getState().fallbackRelease)
-    }
-
-    @Test
-    fun shouldApplyAReleaseWaitingForTheNextStartAtAReload() = runBlocking {
-        val harness = Harness()
-        val v2 = Fixture.release(1, "b2", v2Content)
-        harness.publish(listOf(v2), 1)
-        harness.core.handleAppStart()
-        harness.core.handleRendered()
-        harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals("b2", harness.core.handleAppReload())
-        assertEquals(v2.release.release, harness.core.getState().currentRelease)
-        assertEquals(listOf("b2"), harness.loader.loaded)
-        assertEquals(1, harness.scheduler.tasks.size)
-    }
-
-    @Test
-    fun shouldApplyAnImmediateApplyStillHeldAtAReload() = runBlocking {
-        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
-        val v2 = Fixture.release(1, "b2", v2Content)
-        harness.publish(listOf(v2), 1)
-        harness.core.handleAppStart()
-        assertEquals(SyncStatus.APPLIED, harness.core.sync(SyncTrigger.MANUAL).status)
-        assertTrue(harness.loader.loaded.isEmpty())
-        assertEquals("b2", harness.core.handleAppReload())
-        assertEquals(v2.release.release, harness.core.getState().currentRelease)
-        assertEquals(listOf("b2"), harness.loader.loaded)
-    }
-
-    @Test
-    fun shouldHoldTheAppsRestartUntilTheReloadedAppRenders() = runBlocking {
-        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.MANUAL))
-        val v2 = Fixture.release(1, "b2", v2Content)
-        harness.publish(listOf(v2), 1)
-        harness.core.handleAppStart()
-        harness.core.handleRendered()
-        harness.core.sync(SyncTrigger.MANUAL)
-        assertNull(harness.core.handleAppReload())
-        harness.core.applyUpdate()
-        assertTrue(harness.loader.loaded.isEmpty())
-        harness.core.handleRendered()
-        assertEquals(listOf("b2"), harness.loader.loaded)
-    }
-
-    @Test
-    fun shouldAnnounceARollbackNoticeAgainToAReloadBeforeTheAppCameUp() = runBlocking {
-        val (harness, _) = harnessWithAWaitingRelease()
-        harness.core.handleAppStart()
-        harness.restart()
-        harness.core.handleAppStart()
-        harness.core.handleAppReload()
-        assertEquals(2, harness.listener.rollbacks.size)
-        harness.core.handleRendered()
-        harness.core.handleAppReload()
-        assertEquals(2, harness.listener.rollbacks.size)
     }
 
     @Test
