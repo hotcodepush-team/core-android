@@ -910,7 +910,7 @@ class CoreTest {
         assertTrue(state.unsentEvents.isEmpty())
         assertEquals(Iso8601.parse("2023-11-14T23:00:00.000Z"), state.reportedAt)
         assertEquals(Fixture.CHANNEL_ID, state.acknowledgedReport?.channelId)
-        assertEquals(state.reportedAt, harness.core.getState().lastReportAt)
+        assertEquals(state.reportedAt, harness.core.getState().reportedAt)
     }
 
     @Test
@@ -1019,6 +1019,47 @@ class CoreTest {
         harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(3, harness.http.posts.size)
         assertTrue(!JSONObject(String(harness.http.posts[2].third)).isNull("report"))
+    }
+
+    @Test
+    fun shouldKeepTheReportedAtWhenABatchOfEventsAloneIsAcknowledgedLaterInTheMonth() = runBlocking {
+        val harness = Harness()
+        harness.acknowledgeEvents("2023-11-14T23:00:00.000Z")
+        harness.publish(emptyList(), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.acknowledgeEvents("2023-11-20T12:00:00.000Z")
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 2, etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertTrue(JSONObject(String(harness.http.posts[1].third)).isNull("report"))
+        assertEquals(Iso8601.parse("2023-11-14T23:00:00.000Z"), harness.core.getState().reportedAt)
+    }
+
+    @Test
+    fun shouldKeepTheReportedAtWhenAReportWithAChangedFactIsAcknowledgedLaterInTheMonth() = runBlocking {
+        val harness = Harness()
+        harness.acknowledgeEvents("2023-11-14T23:00:00.000Z")
+        harness.publish(emptyList(), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.acknowledgeEvents("2023-11-20T12:00:00.000Z")
+        harness.core.setAttributes(mapOf("plan" to "beta"))
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(mapOf("plan" to "beta"), StateStore(harness.store).acknowledgedReport?.attributes)
+        assertEquals(Iso8601.parse("2023-11-14T23:00:00.000Z"), harness.core.getState().reportedAt)
+    }
+
+    @Test
+    fun shouldTakeTheReportedAtOfTheFirstReportAcknowledgedInALaterMonth() = runBlocking {
+        val harness = Harness()
+        harness.acknowledgeEvents("2023-11-14T23:00:00.000Z")
+        harness.publish(emptyList(), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.clock.now += 40L * 86_400_000
+        harness.acknowledgeEvents("2023-12-24T23:00:00.000Z")
+        harness.core.sync(SyncTrigger.MANUAL)
+        assertEquals(Iso8601.parse("2023-12-24T23:00:00.000Z"), harness.core.getState().reportedAt)
     }
 
     @Test

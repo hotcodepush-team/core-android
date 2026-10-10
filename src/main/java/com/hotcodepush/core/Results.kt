@@ -97,7 +97,8 @@ data class StateResult(
     val indexSequence: Long?,
     val indexFetchedAt: Long?,
     val failedBundleIds: List<String>,
-    val lastReportAt: Long?,
+    /** The server time of the month's first acknowledged device report, the stamp the spending cap is compared with. */
+    val reportedAt: Long?,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("currentRelease", currentRelease?.toJson() ?: JSONObject.NULL)
@@ -107,7 +108,7 @@ data class StateResult(
         .put("lastCheck", lastCheck?.toJson() ?: JSONObject.NULL)
         .put("index", if (indexSequence != null && indexFetchedAt != null) JSONObject().put("sequence", indexSequence).put("fetchedAt", Iso8601.format(indexFetchedAt)) else JSONObject.NULL)
         .put("failedBundleIds", JSONArray(failedBundleIds))
-        .put("lastReportAt", lastReportAt?.let(Iso8601::format) ?: JSONObject.NULL)
+        .put("reportedAt", reportedAt?.let(Iso8601::format) ?: JSONObject.NULL)
 }
 
 enum class ChannelSource(val wire: String) { RUNTIME("runtime"), CONFIG("config") }

@@ -518,7 +518,7 @@ class Core(
             indexSequence = cached?.body?.sequence,
             indexFetchedAt = cached?.fetchedAt,
             failedBundleIds = state.failedBundleIds,
-            lastReportAt = state.reportedAt,
+            reportedAt = state.reportedAt,
         )
     }
 
@@ -953,7 +953,7 @@ class Core(
             when (answer) {
                 is BatchAnswer.Acknowledged -> {
                     dropBatchEvents()
-                    state.reportedAt = answer.reportedAt
+                    state.reportedAt = resolveKeptReportedAt(state.reportedAt, DeviceEventsAcknowledgement(request.report != null, answer.reportedAt))
                     request.report?.let { state.acknowledgedReport = it }
                 }
                 is BatchAnswer.Refused -> dropBatchEvents()
@@ -979,11 +979,9 @@ class Core(
         val channelId = channel.id ?: return null
         val report = DeviceReport(state.attributes, device.binaryBuild, device.binaryVersion, channelId, channel.source, configuration.embeddedBundleId, configuration.fingerprint, device.osVersion, state.currentRelease?.id)
         val reportedAt = state.reportedAt
-        val isAcknowledged = report == state.acknowledgedReport && reportedAt != null && resolveMonth(reportedAt) == resolveMonth(clock.now())
+        val isAcknowledged = report == state.acknowledgedReport && reportedAt != null && resolveUtcMonthNumber(reportedAt) == resolveUtcMonthNumber(clock.now())
         return if (isAcknowledged) null else report
     }
-
-    private fun resolveMonth(epochMillis: Long) = Iso8601.format(epochMillis).substring(0, 7)
 
     companion object {
         /** The longest `handleAppStartBlocking()` waits for the start's answer, in seconds, before it answers the embedded bundle. */

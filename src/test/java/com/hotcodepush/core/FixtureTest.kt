@@ -53,6 +53,10 @@ class FixtureTest {
         reportedAt = json.optNullableString("reportedAt")?.let(Iso8601::parse),
     )
 
+    /** A `202` as the device reads it, its stamp through the response's own reader. */
+    private fun acknowledgement(json: JSONObject) =
+        DeviceEventsAcknowledgement(json.getBoolean("hasReport"), DeviceEventsResponse.fromJson(JSONObject().put("reportedAt", json.getString("reportedAt"))).reportedAt)
+
     private fun load(path: String): JSONObject = JSONObject(File(fixturesDirectory, path).readText())
 
     private fun cases(path: String, key: String): List<JSONObject> {
@@ -83,12 +87,14 @@ class FixtureTest {
         assertTrue("no evaluation fixtures at $fixturesDirectory", files.isNotEmpty())
         var count = 0
         var verdictCount = 0
+        var acknowledgedCount = 0
         for (file in files) {
             val cases = JSONObject(file.readText()).getJSONArray("cases")
             for (index in 0 until cases.length()) {
                 val case = cases.getJSONObject(index)
                 val name = "${file.name}: ${case.getString("name")}"
-                val evaluation = Evaluator.evaluation(ChannelIndex.fromJson(case.getJSONObject("index")), deviceInfo(case.getJSONObject("device")))
+                val device = deviceInfo(case.getJSONObject("device"))
+                val evaluation = Evaluator.evaluation(ChannelIndex.fromJson(case.getJSONObject("index")), device)
                 assertEquals(name, Expected.fromJson(case.getJSONObject("expected")), Expected.of(evaluation.outcome))
                 count++
                 if (case.has("verdicts")) {
@@ -96,10 +102,16 @@ class FixtureTest {
                     assertEquals(name, verdicts, evaluation.verdicts.map(ExpectedVerdict::of))
                     verdictCount++
                 }
+                if (case.has("acknowledgements")) {
+                    val acknowledgements = case.getJSONArray("acknowledgements").map(::acknowledgement)
+                    assertEquals(name, device.reportedAt, acknowledgements.fold(null, ::resolveKeptReportedAt))
+                    acknowledgedCount++
+                }
             }
         }
         assertTrue(count > 50)
         assertTrue(verdictCount >= 15)
+        assertTrue(acknowledgedCount >= 5)
     }
 
     @Test
@@ -188,6 +200,15 @@ class FixtureTest {
             val json = JSONObject(resourceFile.toString())
             for (key in listOf("filesBaseUrl", "updatesBaseUrl")) if (case.isNull(key)) json.remove(key) else json.put(key, case.getString(key))
             assertEquals(case.getString("name"), case.getBoolean("isOnConfiguredHost"), Configuration.fromJson(json).isUrlOnConfiguredHost(case.getString("url")))
+        }
+    }
+
+    @Test
+    fun shouldKeepTheReportedAtOfEveryAcknowledgementFixture() {
+        for (case in cases("device-events.json", "acknowledgements")) {
+            val reportedAt = case.optNullableString("reportedAt")?.let(Iso8601::parse)
+            val keptReportedAt = case.optNullableString("keptReportedAt")?.let(Iso8601::parse)
+            assertEquals(case.getString("name"), keptReportedAt, resolveKeptReportedAt(reportedAt, acknowledgement(case.getJSONObject("acknowledgement"))))
         }
     }
 

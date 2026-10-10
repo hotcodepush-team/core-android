@@ -2,6 +2,8 @@ package com.hotcodepush.core
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Calendar
+import java.util.TimeZone
 
 /** An outcome event or check event, queued in the outbox until the events endpoint acknowledges it. */
 data class DeviceEvent(
@@ -138,11 +140,31 @@ data class DeviceEventsRequest(val deviceId: String, val events: List<DeviceEven
     }
 }
 
-/** The `202`: the server time the device stores as `reportedAt`. */
+/** The `202`: the server time the device keeps as `reportedAt` by `resolveKeptReportedAt`. */
 data class DeviceEventsResponse(val reportedAt: Long) {
     companion object {
         fun fromJson(json: JSONObject) = DeviceEventsResponse(Iso8601.parse(json.getString("reportedAt")))
     }
+}
+
+/** A `202` as the device reads it: the server time, and whether the acknowledged batch carried the device report. */
+internal data class DeviceEventsAcknowledgement(val hasReport: Boolean, val reportedAt: Long)
+
+/**
+ * The `reportedAt` a device keeps after a `202`: the stamp of the first acknowledged batch of a UTC month that carried the
+ * device report, the month read from the stamp itself. A later acknowledgement replaces it only when it falls in a later UTC
+ * month, and a batch of events alone never moves it, so the device compares with `cappedAt` the stamp the server counted it by.
+ */
+internal fun resolveKeptReportedAt(reportedAt: Long?, acknowledgement: DeviceEventsAcknowledgement): Long? {
+    if (!acknowledgement.hasReport) return reportedAt
+    if (reportedAt == null || resolveUtcMonthNumber(acknowledgement.reportedAt) > resolveUtcMonthNumber(reportedAt)) return acknowledgement.reportedAt
+    return reportedAt
+}
+
+/** The months since year zero in UTC, so a later month compares greater across a year's turn. */
+internal fun resolveUtcMonthNumber(epochMillis: Long): Int = Calendar.getInstance(TimeZone.getTimeZone("UTC")).run {
+    timeInMillis = epochMillis
+    get(Calendar.YEAR) * 12 + get(Calendar.MONTH)
 }
 
 /** What the events endpoint's answer means for a batch: taken, refused for good, or kept for the next sync. */

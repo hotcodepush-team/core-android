@@ -13,10 +13,10 @@ class ContractTest {
     @Test
     fun shouldCarryEveryStateKeyOnAFreshInstall() {
         val json = Harness().core.getState().toJson()
-        assertEquals(setOf("currentRelease", "nextRelease", "fallbackRelease", "embeddedBundleId", "lastCheck", "index", "failedBundleIds", "lastReportAt"), keys(json))
+        assertEquals(setOf("currentRelease", "nextRelease", "fallbackRelease", "embeddedBundleId", "lastCheck", "index", "failedBundleIds", "reportedAt"), keys(json))
         assertTrue(json.isNull("currentRelease"))
         assertTrue(json.isNull("lastCheck"))
-        assertTrue(json.isNull("lastReportAt"))
+        assertTrue(json.isNull("reportedAt"))
         assertEquals("embedded", json.getString("embeddedBundleId"))
     }
 

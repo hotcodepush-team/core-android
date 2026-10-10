@@ -161,7 +161,7 @@ class MissingChannelTest {
         assertTrue(harness.http.posts.isEmpty())
         assertTrue(state.unsentEvents.isEmpty())
         assertNull(state.acknowledgedReport)
-        assertNull(harness.core.getState().lastReportAt)
+        assertNull(harness.core.getState().reportedAt)
         assertEquals(ChannelResult(null, null, ChannelSource.CONFIG), harness.core.channel())
     }
 

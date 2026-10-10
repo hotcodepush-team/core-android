@@ -102,7 +102,7 @@ object DebugReport {
             listOf(
                 DebugRow("Sequence", state.indexSequence?.toString() ?: "none"),
                 DebugRow("Fetched at", state.indexFetchedAt?.let(Iso8601::format) ?: "never"),
-                DebugRow("Last report at", state.lastReportAt?.let(Iso8601::format) ?: "never"),
+                DebugRow("Last report at", state.reportedAt?.let(Iso8601::format) ?: "never"),
             ),
         )
     }
