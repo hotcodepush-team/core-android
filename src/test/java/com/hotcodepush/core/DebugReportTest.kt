@@ -63,7 +63,7 @@ class DebugReportTest {
             Index
               Sequence: none
               Fetched at: never
-              Last report at: never
+              Reported at: never
 
             Configuration
               App id: a0000000-0000-4000-8000-000000000001
