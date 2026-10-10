@@ -34,7 +34,7 @@ data class DownloadOutcome(val manifest: BundleManifest, val bytes: Long, val pa
 /** Where a pack comes from: its URL, its size where the envelope states one, the most bytes it may hold and how the bytes arrive. */
 internal data class PackSource(val url: String, val sizeBytes: Long?, val maximumBytes: Long, val kind: PackKind)
 
-/** The bytes a pack cost and the kind that finally arrived, since a streamed delta may give way to the full pack. */
+/** The bytes a pack cost and the kind that finally arrived, since a delta pack may give way to the streamed delta and that to the full pack. */
 internal data class PackOutcome(val bytes: Long, val kind: PackKind)
 
 /** Manifest, signature, missing files, pack, verification, files to disk — each step one function. */
@@ -46,15 +46,15 @@ class Downloader(
     private val http: HttpClient,
     private val temporaryDirectory: File,
 ) {
-    suspend fun downloadRelease(target: IndexRelease, currentBundleId: String?, progress: (Long, Long) -> Unit): DownloadOutcome {
+    suspend fun downloadRelease(target: IndexRelease, baseBundleId: String?, progress: (Long, Long) -> Unit): DownloadOutcome {
         val (envelope, manifest) = fetchBundleManifest(target)
         val missing = resolveMissingFiles(manifest)
-        val pack = if (missing.isEmpty()) null else resolvePack(envelope, currentBundleId, missing)
+        val pack = resolvePackSource(envelope, baseBundleId, missing.size)
         verifyFreeSpace(missing.sumOf { it.sizeBytes } + (pack?.maximumBytes ?: 0))
         var bytes = 0L
         var packKind = PackKind.FILES
         if (pack != null) {
-            val outcome = downloadPack(pack, envelope, missing.associate { it.sha256 to it.sizeBytes }, progress)
+            val outcome = downloadPack(pack, envelope, baseBundleId, missing.associate { it.sha256 to it.sizeBytes }, progress)
             bytes += outcome.bytes
             packKind = outcome.kind
         }
@@ -99,22 +99,38 @@ class Downloader(
     internal fun resolveMissingFiles(manifest: BundleManifest): List<BundleManifest.File> = manifest.files.filter { !files.hasFile(it.sha256) && !embedded.has(it.sha256) }
 
     /**
-     * The delta pack the bucket holds against the running bundle; for any other base the device runs, the delta the updates
-     * host streams, never larger than the full pack whose entries it shares; without a base the full pack; nothing when one
-     * file is cheaper than a pack.
+     * The pack a download requests first, `null` when no file is missing. A device with a base takes a delta pack for one
+     * missing file as for ten, so the one file a patch exists for, the main bundle, arrives as a patch: the delta the envelope
+     * lists for its base, else the delta pack at its URL on the files host, never larger than the full pack whose entries it
+     * shares. A device without a base takes the full pack.
      */
-    internal fun resolvePack(envelope: ManifestEnvelope, currentBundleId: String?, missing: List<BundleManifest.File>): PackSource? {
-        envelope.deltas.firstOrNull { it.baseBundleId == currentBundleId }?.let { return PackSource(it.url, it.sizeBytes, it.sizeBytes, PackKind.DELTA) }
-        if (missing.size <= 1) return null
-        if (currentBundleId != null) return PackSource(resolveStreamedDeltaUrl(envelope.bundleId, currentBundleId), null, envelope.pack.sizeBytes, PackKind.STREAMED)
-        return resolveFullPack(envelope)
+    internal fun resolvePackSource(envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int): PackSource? {
+        if (missingFileCount == 0) return null
+        if (baseBundleId == null) return resolveFullPackSource(envelope)
+        envelope.deltas.firstOrNull { it.baseBundleId == baseBundleId }?.let { return PackSource(it.url, it.sizeBytes, it.sizeBytes, PackKind.DELTA) }
+        return PackSource("${configuration.filesBaseUrl}/${resolveDeltaPackPath(envelope.bundleId, baseBundleId)}", null, envelope.pack.sizeBytes, PackKind.DELTA)
     }
 
-    private fun resolveFullPack(envelope: ManifestEnvelope) = PackSource(envelope.pack.url, envelope.pack.sizeBytes, envelope.pack.sizeBytes, PackKind.FULL)
+    /**
+     * The pack a download requests after `source` answered `status` instead of a 200 or a 206, `null` when the download fails
+     * and waits for the next cycle. A delta pack answering 404 is not built yet, and the updates host assembles it; whatever
+     * else the updates host answers, its redirect to the full pack above twenty objects included, reads as the full pack,
+     * since a download follows no redirect.
+     */
+    internal fun resolveFallbackPackSource(envelope: ManifestEnvelope, baseBundleId: String?, source: PackSource, status: Int): PackSource? = when (source.kind) {
+        PackKind.DELTA -> if (status == NOT_FOUND_STATUS && baseBundleId != null) resolveStreamedPackSource(envelope, baseBundleId) else null
+        PackKind.STREAMED -> resolveFullPackSource(envelope)
+        PackKind.FULL, PackKind.FILES -> null
+    }
 
-    /** The updates host's delta, assembled on demand for a base the bucket has no delta for. */
-    internal fun resolveStreamedDeltaUrl(bundleId: String, baseBundleId: String): String =
-        "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/bundles/$bundleId/deltas/$baseBundleId"
+    /** The delta pack's path below a host, the bucket's key and the updates route alike. */
+    private fun resolveDeltaPackPath(bundleId: String, baseBundleId: String) = "apps/${configuration.appId}/bundles/$bundleId/deltas/$baseBundleId"
+
+    private fun resolveFullPackSource(envelope: ManifestEnvelope) = PackSource(envelope.pack.url, envelope.pack.sizeBytes, envelope.pack.sizeBytes, PackKind.FULL)
+
+    /** The delta pack the updates host assembles on request, of a length known only as it arrives. */
+    private fun resolveStreamedPackSource(envelope: ManifestEnvelope, baseBundleId: String) =
+        PackSource("${configuration.updatesBaseUrl}/v1/${resolveDeltaPackPath(envelope.bundleId, baseBundleId)}", null, envelope.pack.sizeBytes, PackKind.STREAMED)
 
     /** The download needs its bytes on disk at its peak: every missing file and the pack they arrive in. */
     internal fun verifyFreeSpace(requiredBytes: Long) {
@@ -123,15 +139,15 @@ class Downloader(
     }
 
     /**
-     * The pack's wanted entries in the store and how they arrived. A streamed delta the updates host does not serve — its
-     * redirect to the full pack above twenty objects or for a base the bucket no longer knows, a limit, an error — gives
-     * way to the full pack: slower, never failed.
+     * The pack's wanted entries in the store and how they arrived. A delta pack not built yet gives way to the streamed delta,
+     * and a streamed delta the updates host does not serve — its redirect to the full pack above twenty objects or for a base
+     * the bucket no longer knows, a limit, an error — to the full pack: slower, never failed. Any other refusal fails the download.
      */
-    internal suspend fun downloadPack(source: PackSource, envelope: ManifestEnvelope, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): PackOutcome = try {
+    internal suspend fun downloadPack(source: PackSource, envelope: ManifestEnvelope, baseBundleId: String?, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): PackOutcome = try {
         PackOutcome(downloadPackEntries(source, envelope.bundleId, wanted, progress), source.kind)
     } catch (refusal: HttpStatusException) {
-        if (source.kind != PackKind.STREAMED) throw DownloadFailure.DownloadFailed("HTTP ${refusal.status} for the pack")
-        downloadPack(resolveFullPack(envelope), envelope, wanted, progress)
+        val fallback = resolveFallbackPackSource(envelope, baseBundleId, source, refusal.status) ?: throw DownloadFailure.DownloadFailed("HTTP ${refusal.status} for the pack")
+        downloadPack(fallback, envelope, baseBundleId, wanted, progress)
     }
 
     /**
@@ -244,5 +260,10 @@ class Downloader(
         } finally {
             temporary.delete()
         }
+    }
+
+    companion object {
+        /** A delta pack's answer while it is not built yet. */
+        private const val NOT_FOUND_STATUS = 404
     }
 }

@@ -130,14 +130,14 @@ object Fixture {
 }
 
 /** A downloader over fakes, in a fresh temporary directory. */
-class DownloaderHarness {
+class DownloaderHarness(configuration: Configuration = Fixture.configuration()) {
     data class Bundle(val manifest: BundleManifest, val pack: ByteArray)
 
     val root: File = File.createTempFile("hotcodepush-tests", "").apply { delete(); mkdirs() }
     val http = FakeHttpClient()
     val files = FileStore(File(root, "store"))
     val embedded = InMemoryEmbeddedBundle()
-    val downloader = Downloader(Fixture.configuration(), "android", files, embedded, http, File(root, "tmp"))
+    val downloader = Downloader(configuration, "android", files, embedded, http, File(root, "tmp"))
 
     /** Serves the envelope, its pack when given and its delta packs by base, where the index entry says they are and returns that entry. */
     fun publish(manifest: BundleManifest, pack: ByteArray? = null, packUrl: String = PACK_URL, packSizeBytes: Long? = null, bundleId: String = BUNDLE_ID, manifestUrl: String = MANIFEST_URL, deltas: Map<String, ByteArray> = emptyMap()): IndexRelease {
@@ -150,11 +150,11 @@ class DownloaderHarness {
         return IndexRelease("r2", 2, Fixture.BUILT_AT, false, null, 100, emptyList(), BUNDLE_ID, manifest.bundleVersion, manifestUrl, Hashing.sha256Hex(json), 0)
     }
 
-    fun download(release: IndexRelease, currentBundleId: String?): DownloadOutcome = runBlocking { downloader.downloadRelease(release, currentBundleId) { _, _ -> } }
+    fun download(release: IndexRelease, baseBundleId: String?): DownloadOutcome = runBlocking { downloader.downloadRelease(release, baseBundleId) { _, _ -> } }
 
-    fun downloadFailure(release: IndexRelease, currentBundleId: String? = null): DownloadFailure? = runBlocking {
+    fun downloadFailure(release: IndexRelease, baseBundleId: String? = null): DownloadFailure? = runBlocking {
         try {
-            downloader.downloadRelease(release, currentBundleId) { _, _ -> }
+            downloader.downloadRelease(release, baseBundleId) { _, _ -> }
             null
         } catch (failure: DownloadFailure) {
             failure

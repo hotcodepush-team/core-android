@@ -805,7 +805,8 @@ class CoreTest {
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), sync.await())
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), secondDownload.await())
         assertEquals(SyncResult.available(v2.release.release, "notes 1", v2.release.sizeBytes), check.await())
-        assertEquals(1, harness.http.requests.count { it.first.contains("/deltas/") })
+        val deltaUrls = listOf("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/bundles/b2/deltas/embedded", "${Fixture.UPDATES_BASE_URL}/v1/apps/${Fixture.APP_ID}/bundles/b2/deltas/embedded")
+        assertEquals(deltaUrls, harness.http.requests.map { it.first }.filter { it.contains("/deltas/") })
         assertEquals(1, harness.http.requests.count { it.first == v2.envelope.pack.url })
     }
 

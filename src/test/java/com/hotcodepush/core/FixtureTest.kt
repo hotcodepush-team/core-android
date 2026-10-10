@@ -57,6 +57,14 @@ class FixtureTest {
     private fun acknowledgement(json: JSONObject) =
         DeviceEventsAcknowledgement(json.getBoolean("hasReport"), DeviceEventsResponse.fromJson(JSONObject().put("reportedAt", json.getString("reportedAt"))).reportedAt)
 
+    /** A resource file with the case's app id and hosts, a base of `null` left out as a production build leaves it. */
+    private fun configuration(case: JSONObject, appId: String? = null): Configuration {
+        val json = JSONObject(cases("resource-files.json", "cases").first().getJSONObject("resourceFile").toString())
+        appId?.let { json.put("appId", it) }
+        for (key in listOf("filesBaseUrl", "updatesBaseUrl")) if (case.isNull(key)) json.remove(key) else json.put(key, case.getString(key))
+        return Configuration.fromJson(json)
+    }
+
     private fun load(path: String): JSONObject = JSONObject(File(fixturesDirectory, path).readText())
 
     private fun cases(path: String, key: String): List<JSONObject> {
@@ -195,11 +203,8 @@ class FixtureTest {
     /** A base of `null` is a production build, whose resource file names no host: the reader's defaults are the production hosts. */
     @Test
     fun shouldMatchEveryConfiguredHostFixture() {
-        val resourceFile = cases("resource-files.json", "cases").first().getJSONObject("resourceFile")
         for (case in cases("configured-hosts.json", "cases")) {
-            val json = JSONObject(resourceFile.toString())
-            for (key in listOf("filesBaseUrl", "updatesBaseUrl")) if (case.isNull(key)) json.remove(key) else json.put(key, case.getString(key))
-            assertEquals(case.getString("name"), case.getBoolean("isOnConfiguredHost"), Configuration.fromJson(json).isUrlOnConfiguredHost(case.getString("url")))
+            assertEquals(case.getString("name"), case.getBoolean("isOnConfiguredHost"), configuration(case).isUrlOnConfiguredHost(case.getString("url")))
         }
     }
 
@@ -209,6 +214,45 @@ class FixtureTest {
             val reportedAt = case.optNullableString("reportedAt")?.let(Iso8601::parse)
             val keptReportedAt = case.optNullableString("keptReportedAt")?.let(Iso8601::parse)
             assertEquals(case.getString("name"), keptReportedAt, resolveKeptReportedAt(reportedAt, acknowledgement(case.getJSONObject("acknowledgement"))))
+        }
+    }
+
+    private data class PackDownloadOutcome(val packKind: String?, val requests: List<PackSource>)
+
+    /** The requests a download makes against the answers in order, and the kind of the pack that served it: `files` when it requested none, `null` when it failed. */
+    private fun resolvePackDownloadOutcome(downloader: Downloader, envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int, statuses: List<Int>): PackDownloadOutcome {
+        val requests = mutableListOf<PackSource>()
+        var source = downloader.resolvePackSource(envelope, baseBundleId, missingFileCount) ?: return PackDownloadOutcome(PackKind.FILES.wire, requests)
+        for (status in statuses) {
+            requests += source
+            if (status == 200 || status == 206) return PackDownloadOutcome(source.kind.wire, requests)
+            source = downloader.resolveFallbackPackSource(envelope, baseBundleId, source, status) ?: return PackDownloadOutcome(null, requests)
+        }
+        throw AssertionError("The case answers fewer requests than the download makes")
+    }
+
+    private fun packSource(json: JSONObject) = PackSource(
+        json.getString("url"),
+        if (json.isNull("sizeBytes")) null else json.getLong("sizeBytes"),
+        json.getLong("maximumBytes"),
+        PackKind.entries.first { it.wire == json.getString("kind") },
+    )
+
+    @Test
+    fun shouldRequestThePacksOfEveryPackSourceFixture() {
+        for (case in cases("pack-sources.json", "cases")) {
+            val name = case.getString("name")
+            val configuration = configuration(case, case.getString("appId"))
+            val statuses = case.getJSONArray("statuses").let { array -> List(array.length()) { array.getInt(it) } }
+            val outcome = resolvePackDownloadOutcome(
+                DownloaderHarness(configuration).downloader,
+                ManifestEnvelope.fromJson(case.getJSONObject("envelope")),
+                case.optNullableString("baseBundleId"),
+                case.getInt("missingFileCount"),
+                statuses,
+            )
+            assertEquals(name, PackDownloadOutcome(case.optNullableString("packKind"), case.getJSONArray("requests").map(::packSource)), outcome)
+            for (request in outcome.requests) assertTrue(name, configuration.isUrlOnConfiguredHost(request.url))
         }
     }
 
