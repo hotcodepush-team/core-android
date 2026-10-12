@@ -226,7 +226,7 @@ class FixtureTest {
         for (status in statuses) {
             requests += source
             if (status == 200 || status == 206) return PackDownloadOutcome(source.kind.wire, requests)
-            source = downloader.resolveFallbackPackSource(envelope, baseBundleId, source, status) ?: return PackDownloadOutcome(null, requests)
+            source = downloader.resolveFallbackPackSource(envelope, source) ?: return PackDownloadOutcome(null, requests)
         }
         throw AssertionError("The case answers fewer requests than the download makes")
     }

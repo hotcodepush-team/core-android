@@ -34,7 +34,7 @@ data class DownloadOutcome(val manifest: BundleManifest, val bytes: Long, val pa
 /** Where a pack comes from: its URL, its size where the envelope states one, the most bytes it may hold and how the bytes arrive. */
 internal data class PackSource(val url: String, val sizeBytes: Long?, val maximumBytes: Long, val kind: PackKind)
 
-/** The bytes a pack cost and the kind that finally arrived, since a delta pack may give way to the streamed delta and that to the full pack. */
+/** The bytes a pack cost and the kind that finally arrived, since the streamed pack may give way to the full pack. */
 internal data class PackOutcome(val bytes: Long, val kind: PackKind)
 
 /** Manifest, signature, missing files, pack, verification, files to disk — each step one function. */
@@ -54,7 +54,7 @@ class Downloader(
         var bytes = 0L
         var packKind = PackKind.FILES
         if (pack != null) {
-            val outcome = downloadPack(pack, envelope, baseBundleId, missing.associate { it.sha256 to it.sizeBytes }, progress)
+            val outcome = downloadPack(pack, envelope, missing.associate { it.sha256 to it.sizeBytes }, progress)
             bytes += outcome.bytes
             packKind = outcome.kind
         }
@@ -100,37 +100,33 @@ class Downloader(
 
     /**
      * The pack a download requests first, `null` when no file is missing. A device with a base takes a delta pack for one
-     * missing file as for ten, so the one file a patch exists for, the main bundle, arrives as a patch: the delta the envelope
-     * lists for its base, else the delta pack at its URL on the files host, never larger than the full pack whose entries it
-     * shares. A device without a base takes the full pack.
+     * missing file as for ten, so the one file a patch exists for, the main bundle, arrives as a patch. The envelope's
+     * deltas are the delta packs that exist: the one it lists for the device's base, else the streamed pack the updates host
+     * assembles, never a URL guessed on the files host. A device without a base takes the full pack.
      */
     internal fun resolvePackSource(envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int): PackSource? {
         if (missingFileCount == 0) return null
         if (baseBundleId == null) return resolveFullPackSource(envelope)
-        envelope.deltas.firstOrNull { it.baseBundleId == baseBundleId }?.let { return PackSource(it.url, it.sizeBytes, it.sizeBytes, PackKind.DELTA) }
-        return PackSource("${configuration.filesBaseUrl}/${resolveDeltaPackPath(envelope.bundleId, baseBundleId)}", null, envelope.pack.sizeBytes, PackKind.DELTA)
+        val listedDelta = envelope.deltas.firstOrNull { it.baseBundleId == baseBundleId } ?: return resolveStreamedPackSource(envelope, baseBundleId)
+        return PackSource(listedDelta.url, listedDelta.sizeBytes, listedDelta.sizeBytes, PackKind.DELTA)
     }
 
     /**
-     * The pack a download requests after `source` answered `status` instead of a 200 or a 206, `null` when the download fails
-     * and waits for the next cycle. A delta pack answering 404 is not built yet, and the updates host assembles it; whatever
-     * else the updates host answers, its redirect to the full pack above twenty objects included, reads as the full pack,
-     * since a download follows no redirect.
+     * The pack a download requests after `source` answered anything but a 200 or a 206, `null` when the download fails and
+     * waits for the next cycle. Only the streamed pack gives way: whatever the updates host answers, its redirect to the full
+     * pack above twenty objects included, reads as the full pack, since a download follows no redirect. A listed delta that
+     * does not answer fails like the full pack, its 404 included.
      */
-    internal fun resolveFallbackPackSource(envelope: ManifestEnvelope, baseBundleId: String?, source: PackSource, status: Int): PackSource? = when (source.kind) {
-        PackKind.DELTA -> if (status == NOT_FOUND_STATUS && baseBundleId != null) resolveStreamedPackSource(envelope, baseBundleId) else null
+    internal fun resolveFallbackPackSource(envelope: ManifestEnvelope, source: PackSource): PackSource? = when (source.kind) {
+        PackKind.DELTA, PackKind.FILES, PackKind.FULL -> null
         PackKind.STREAMED -> resolveFullPackSource(envelope)
-        PackKind.FULL, PackKind.FILES -> null
     }
-
-    /** The delta pack's path below a host, the bucket's key and the updates route alike. */
-    private fun resolveDeltaPackPath(bundleId: String, baseBundleId: String) = "apps/${configuration.appId}/bundles/$bundleId/deltas/$baseBundleId"
 
     private fun resolveFullPackSource(envelope: ManifestEnvelope) = PackSource(envelope.pack.url, envelope.pack.sizeBytes, envelope.pack.sizeBytes, PackKind.FULL)
 
-    /** The delta pack the updates host assembles on request, of a length known only as it arrives. */
+    /** The delta pack the updates host assembles on request, of a length known only as it arrives, never larger than the full pack whose entries it shares. */
     private fun resolveStreamedPackSource(envelope: ManifestEnvelope, baseBundleId: String) =
-        PackSource("${configuration.updatesBaseUrl}/v1/${resolveDeltaPackPath(envelope.bundleId, baseBundleId)}", null, envelope.pack.sizeBytes, PackKind.STREAMED)
+        PackSource("${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/bundles/${envelope.bundleId}/deltas/$baseBundleId", null, envelope.pack.sizeBytes, PackKind.STREAMED)
 
     /** The download needs its bytes on disk at its peak: every missing file and the pack they arrive in. */
     internal fun verifyFreeSpace(requiredBytes: Long) {
@@ -139,15 +135,15 @@ class Downloader(
     }
 
     /**
-     * The pack's wanted entries in the store and how they arrived. A delta pack not built yet gives way to the streamed delta,
-     * and a streamed delta the updates host does not serve — its redirect to the full pack above twenty objects or for a base
-     * the bucket no longer knows, a limit, an error — to the full pack: slower, never failed. Any other refusal fails the download.
+     * The pack's wanted entries in the store and how they arrived. A streamed pack the updates host does not serve — its
+     * redirect to the full pack above twenty objects or for a base the bucket no longer knows, a limit, an error — gives way
+     * to the full pack: slower, never failed. Any other refusal, a listed delta's 404 included, fails the download.
      */
-    internal suspend fun downloadPack(source: PackSource, envelope: ManifestEnvelope, baseBundleId: String?, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): PackOutcome = try {
+    internal suspend fun downloadPack(source: PackSource, envelope: ManifestEnvelope, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): PackOutcome = try {
         PackOutcome(downloadPackEntries(source, envelope.bundleId, wanted, progress), source.kind)
     } catch (refusal: HttpStatusException) {
-        val fallback = resolveFallbackPackSource(envelope, baseBundleId, source, refusal.status) ?: throw DownloadFailure.DownloadFailed("HTTP ${refusal.status} for the pack")
-        downloadPack(fallback, envelope, baseBundleId, wanted, progress)
+        val fallback = resolveFallbackPackSource(envelope, source) ?: throw DownloadFailure.DownloadFailed("HTTP ${refusal.status} for the pack")
+        downloadPack(fallback, envelope, wanted, progress)
     }
 
     /**
@@ -260,10 +256,5 @@ class Downloader(
         } finally {
             temporary.delete()
         }
-    }
-
-    companion object {
-        /** A delta pack's answer while it is not built yet. */
-        private const val NOT_FOUND_STATUS = 404
     }
 }
