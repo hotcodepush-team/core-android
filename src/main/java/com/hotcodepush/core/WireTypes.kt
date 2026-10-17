@@ -60,7 +60,7 @@ data class IndexRelease(
     val createdAt: Long,
     val isMandatory: Boolean,
     val notes: String?,
-    val rollout: Int,
+    val rolloutPercentage: Int,
     val conditions: List<Condition>,
     val bundleId: String,
     val bundleVersion: String,
@@ -76,7 +76,7 @@ data class IndexRelease(
         .put("createdAt", Iso8601.format(createdAt))
         .put("isMandatory", isMandatory)
         .put("notes", notes ?: JSONObject.NULL)
-        .put("rollout", rollout)
+        .put("rolloutPercentage", rolloutPercentage)
         .put("conditions", JSONArray(conditions.map { it.toJson() }))
         .put("bundleId", bundleId)
         .put("bundleVersion", bundleVersion)
@@ -91,7 +91,7 @@ data class IndexRelease(
             createdAt = json.getTimestamp("createdAt"),
             isMandatory = json.getWireBoolean("isMandatory"),
             notes = json.getNullableWireString("notes"),
-            rollout = json.getWireInt("rollout", minimum = 0, maximum = 100),
+            rolloutPercentage = json.getWireInt("rolloutPercentage", minimum = 0, maximum = 100),
             conditions = json.getJSONArray("conditions").map { Condition.fromJson(it) },
             bundleId = json.getWireString("bundleId", WireRule.IDENTIFIER),
             bundleVersion = json.getWireString("bundleVersion"),
@@ -109,7 +109,7 @@ enum class ConditionType(val wire: String) {
 /** A condition of an index entry; a type this SDK does not know is kept and fails closed. */
 sealed class Condition {
     data class Binary(val range: String) : Condition()
-    data class Fingerprint(val hash: String) : Condition()
+    data class Fingerprint(val fingerprint: String) : Condition()
     data class Os(val range: String) : Condition()
     data class Device(val hashedIds: List<String>) : Condition()
     data class Attribute(val key: String, val valueSha256: String) : Condition()
@@ -127,7 +127,7 @@ sealed class Condition {
 
     fun toJson(): JSONObject = when (this) {
         is Binary -> JSONObject().put("type", "binary").put("range", range)
-        is Fingerprint -> JSONObject().put("type", "fingerprint").put("hash", hash)
+        is Fingerprint -> JSONObject().put("type", "fingerprint").put("fingerprint", fingerprint)
         is Os -> JSONObject().put("type", "os").put("range", range)
         is Device -> JSONObject().put("type", "device").put("hashedIds", JSONArray(hashedIds))
         is Attribute -> JSONObject().put("type", "attribute").put("key", key).put("valueSha256", valueSha256)
@@ -137,7 +137,7 @@ sealed class Condition {
     companion object {
         fun fromJson(json: JSONObject): Condition = when (val type = json.getWireString("type")) {
             "binary" -> Binary(json.getWireString("range", WireRule.NON_EMPTY))
-            "fingerprint" -> Fingerprint(json.getWireString("hash", WireRule.NON_EMPTY))
+            "fingerprint" -> Fingerprint(json.getWireString("fingerprint", WireRule.NON_EMPTY))
             "os" -> Os(json.getWireString("range", WireRule.NON_EMPTY))
             "device" -> Device(json.getJSONArray("hashedIds").toWireStringList())
             "attribute" -> Attribute(json.getWireString("key", WireRule.NON_EMPTY), json.getWireString("valueSha256", WireRule.SHA256))

@@ -31,22 +31,22 @@ data class CachedIndex(val etag: String?, val fetchedAt: Long, val body: Channel
  * The downloaded release waiting for its apply and the moment decided for it at the download, from the strategy in force for
  * that cycle, a per-call override included: the start and the resume read it here, never the configuration.
  */
-data class NextRelease(val release: Release, val applyAt: ApplyStrategy) {
-    fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("applyAt", applyAt.wire)
+data class NextRelease(val release: Release, val applyStrategy: ApplyStrategy) {
+    fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("applyStrategy", applyStrategy.wire)
 
     companion object {
         fun fromJson(json: JSONObject): NextRelease {
-            val applyAt = json.getWireString("applyAt")
-            return NextRelease(Release.fromJson(json.getJSONObject("release")), ApplyStrategy.fromWire(applyAt) ?: throw JSONException("Not an apply strategy: $applyAt"))
+            val applyStrategy = json.getWireString("applyStrategy")
+            return NextRelease(Release.fromJson(json.getJSONObject("release")), ApplyStrategy.fromWire(applyStrategy) ?: throw JSONException("Not an apply strategy: $applyStrategy"))
         }
     }
 }
 
-data class LastRollback(val from: Release, val to: Release?, val reason: RollbackReason) {
-    fun toJson(): JSONObject = JSONObject().put("from", from.toJson()).put("to", to?.toJson() ?: JSONObject.NULL).put("reason", reason.name)
+data class LastRollback(val fromRelease: Release, val toRelease: Release?, val reason: RollbackReason) {
+    fun toJson(): JSONObject = JSONObject().put("fromRelease", fromRelease.toJson()).put("toRelease", toRelease?.toJson() ?: JSONObject.NULL).put("reason", reason.name)
 
     companion object {
-        fun fromJson(json: JSONObject) = LastRollback(Release.fromJson(json.getJSONObject("from")), json.optJSONObject("to")?.let(Release::fromJson), RollbackReason.valueOf(json.getString("reason")))
+        fun fromJson(json: JSONObject) = LastRollback(Release.fromJson(json.getJSONObject("fromRelease")), json.optJSONObject("toRelease")?.let(Release::fromJson), RollbackReason.valueOf(json.getString("reason")))
     }
 }
 

@@ -16,7 +16,7 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
 
         /** An outcome event as it enters the outbox; a check event is the cycle's line already. */
         fun ofDeviceEvent(event: DeviceEvent, at: Long): LogEntry? = when (event.type) {
-            "downloaded" -> LogEntry(at, "DOWNLOADED", "release ${event.releaseId ?: ""}: ${event.bytes ?: 0} bytes as ${event.packKind ?: ""} pack")
+            "downloaded" -> LogEntry(at, "DOWNLOADED", "release ${event.releaseId ?: ""}: ${event.downloadSizeBytes ?: 0} bytes as ${event.packKind ?: ""} pack")
             "applied" -> LogEntry(at, "APPLIED", "release ${event.releaseId ?: ""} is the running release")
             "confirmed" -> LogEntry(at, "CONFIRMED", "release ${event.releaseId ?: ""} passed the readiness gate")
             "failed" -> LogEntry(at, "FAILED ${event.reason ?: ""}", "release ${event.releaseId ?: ""}" + (event.detail?.let { ": $it" } ?: ""))
@@ -39,16 +39,16 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
             return when (result.status) {
                 SyncStatus.UP_TO_DATE -> "${release ?: "the embedded bundle"} is current"
                 SyncStatus.AVAILABLE -> "${release ?: "a release"} is available"
-                SyncStatus.DOWNLOADED -> "${release ?: "a release"} is downloaded and ${resolveApplySentence(result.applyAt)}"
+                SyncStatus.DOWNLOADED -> "${release ?: "a release"} is downloaded and ${resolveApplySentence(result.applyStrategy)}"
                 SyncStatus.APPLIED -> "${release ?: "a release"} is applied and the app reloads"
                 SyncStatus.SKIPPED -> "${release ?: "the newest release"} is not taken"
                 SyncStatus.FAILED -> result.message ?: ""
             }
         }
 
-        private fun resolveApplySentence(applyAt: ApplyStrategy?): String = when (applyAt) {
+        private fun resolveApplySentence(applyStrategy: ApplyStrategy?): String = when (applyStrategy) {
             ApplyStrategy.MANUAL, null -> "waits for applyUpdate()"
-            else -> "applies at ${applyAt.wire}"
+            else -> "applies at ${applyStrategy.wire}"
         }
     }
 }

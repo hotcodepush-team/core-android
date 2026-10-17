@@ -13,7 +13,7 @@ data class DeviceEvent(
     val status: String? = null,
     val reason: String? = null,
     val condition: ConditionType? = null,
-    val bytes: Long? = null,
+    val downloadSizeBytes: Long? = null,
     val packKind: String? = null,
     val fromReleaseId: String? = null,
     val toReleaseId: String? = null,
@@ -32,7 +32,7 @@ data class DeviceEvent(
             .putIfNotNull("status", status)
             .putIfNotNull("reason", reason)
             .putIfNotNull("condition", condition?.wire)
-            .putIfNotNull("bytes", bytes)
+            .putIfNotNull("downloadSizeBytes", downloadSizeBytes)
             .putIfNotNull("packKind", packKind)
             .putIfNotNull("fromReleaseId", fromReleaseId)
             .putIfNotNull("detail", detail)
@@ -46,8 +46,8 @@ data class DeviceEvent(
         fun checked(releaseId: String, status: SyncStatus, reason: SkippedReason? = null, condition: ConditionType? = null) =
             DeviceEvent("checked", releaseId = releaseId, status = status.wire, reason = reason?.name, condition = condition)
 
-        fun downloaded(releaseId: String, bundleId: String, bytes: Long, packKind: PackKind) =
-            DeviceEvent("downloaded", releaseId = releaseId, bundleId = bundleId, bytes = bytes, packKind = packKind.wire)
+        fun downloaded(releaseId: String, bundleId: String, downloadSizeBytes: Long, packKind: PackKind) =
+            DeviceEvent("downloaded", releaseId = releaseId, bundleId = bundleId, downloadSizeBytes = downloadSizeBytes, packKind = packKind.wire)
 
         fun applied(releaseId: String) = DeviceEvent("applied", releaseId = releaseId)
 
@@ -64,7 +64,7 @@ data class DeviceEvent(
             status = json.optNullableString("status"),
             reason = json.optNullableString("reason"),
             condition = json.optNullableString("condition")?.let { wire -> ConditionType.entries.firstOrNull { it.wire == wire } },
-            bytes = if (json.isNull("bytes")) null else json.optLong("bytes"),
+            downloadSizeBytes = if (json.isNull("downloadSizeBytes")) null else json.optLong("downloadSizeBytes"),
             packKind = json.optNullableString("packKind"),
             fromReleaseId = json.optNullableString("fromReleaseId"),
             toReleaseId = json.optNullableString("toReleaseId"),

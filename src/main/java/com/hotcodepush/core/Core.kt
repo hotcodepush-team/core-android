@@ -186,10 +186,10 @@ class Core(
      * and an `immediate` apply still held; one the app took over waits across starts; a bundle the WebView already serves is adopted.
      */
     private fun shouldSwitchAtStart(next: NextRelease): Boolean =
-        loader.servedBundleId() == next.release.bundleId || next.applyAt == ApplyStrategy.NEXT_START || next.applyAt == ApplyStrategy.IMMEDIATE
+        loader.servedBundleId() == next.release.bundleId || next.applyStrategy == ApplyStrategy.NEXT_START || next.applyStrategy == ApplyStrategy.IMMEDIATE
 
     /** A release whose stored moment is `next-resume`; a mandatory one never is, so one the app took over with `manual` waits for `applyUpdate()`. */
-    private fun shouldApplyAtResume(next: NextRelease): Boolean = next.applyAt == ApplyStrategy.NEXT_RESUME
+    private fun shouldApplyAtResume(next: NextRelease): Boolean = next.applyStrategy == ApplyStrategy.NEXT_RESUME
 
     /**
      * The first render of the run or of a reload: the readiness signal when `readySignal` is `render`, and on every setting what
@@ -217,7 +217,7 @@ class Core(
             confirmCurrentRelease()
             val rollback = state.lastRollback
             state.lastRollback = null
-            val previousRelease = rollback?.from ?: switchedFromRelease
+            val previousRelease = rollback?.fromRelease ?: switchedFromRelease
             switchedFromRelease = null
             val result = NotifyReadyResult(state.currentRelease, previousRelease, rollback != null, rollback?.reason)
             settleStart()
@@ -243,7 +243,7 @@ class Core(
         resumeReadyTimer()
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
-        if (backgroundDuration != null && next != null && shouldApplyAtResume(next) && backgroundDuration >= configuration.applyOnResumeAfterSeconds) {
+        if (backgroundDuration != null && next != null && shouldApplyAtResume(next) && backgroundDuration >= configuration.nextResumeMinimumBackgroundSeconds) {
             restartIntoNextRelease()
             return
         }
@@ -403,18 +403,18 @@ class Core(
             lock.withLock { adoptInPlace(release) }
             return SyncResult.upToDate(release)
         }
-        val requestedApplyAt = resolveRequestedApplyStrategy(isMandatory, options)
+        val requestedApplyStrategy = resolveRequestedApplyStrategy(isMandatory, options)
         val downloaded = readDownloadedRelease(target)
         if (downloaded != null) {
             if (stage == Stage.CHECK) return SyncResult.available(release, target.notes, target.sizeBytes)
-            return lock.withLock { applyDownloaded(NextRelease(release, requestedApplyAt ?: downloaded.applyAt), target.notes) }
+            return lock.withLock { applyDownloaded(NextRelease(release, requestedApplyStrategy ?: downloaded.applyStrategy), target.notes) }
         }
-        val applyAt = requestedApplyAt ?: resolveConfiguredApplyStrategy(isMandatory)
+        val applyStrategy = requestedApplyStrategy ?: resolveConfiguredApplyStrategy(isMandatory)
         listener.updateAvailable(UpdateAvailableEvent(release, target.notes, target.sizeBytes, trigger))
         return when (options.downloadStrategy ?: configuration.downloadStrategy) {
             DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, target.sizeBytes)
-            DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, applyAt, trigger)
-            DownloadStrategy.AUTO -> downloadAndApply(target, isMandatory, applyAt, trigger)
+            DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, applyStrategy, trigger)
+            DownloadStrategy.AUTO -> downloadAndApply(target, isMandatory, applyStrategy, trigger)
         }
     }
 
@@ -437,11 +437,11 @@ class Core(
         return if (files.isComplete(manifest, embedded)) next else null
     }
 
-    private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, applyAt: ApplyStrategy, trigger: SyncTrigger): SyncResult {
+    private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, applyStrategy: ApplyStrategy, trigger: SyncTrigger): SyncResult {
         val release = resolveRelease(target, isMandatory)
         try {
             val baseBundleId = state.currentRelease?.bundleId ?: configuration.embeddedBundleId
-            val outcome = downloader.downloadRelease(target, baseBundleId) { downloaded, total -> listener.downloadProgress(target.id, downloaded, total) }
+            val outcome = downloader.downloadRelease(target, baseBundleId) { progressBytes, downloadSizeBytes -> listener.downloadProgress(target.id, progressBytes, downloadSizeBytes) }
             BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
             lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, target.bundleId, outcome.bytes, outcome.packKind)) }
         } catch (failure: DownloadFailure) {
@@ -454,8 +454,8 @@ class Core(
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, FailedReason.DOWNLOAD_FAILED.name)) }
             return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, failure.message ?: failure.toString())
         }
-        if (applyAt != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, applyAt, trigger))
-        return lock.withLock { applyDownloaded(NextRelease(release, applyAt), target.notes) }
+        if (applyStrategy != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, applyStrategy, trigger))
+        return lock.withLock { applyDownloaded(NextRelease(release, applyStrategy), target.notes) }
     }
 
     /**
@@ -464,12 +464,12 @@ class Core(
      */
     private fun applyDownloaded(next: NextRelease, notes: String?): SyncResult {
         setNextRelease(next)
-        when (next.applyAt) {
+        when (next.applyStrategy) {
             ApplyStrategy.IMMEDIATE -> restartIntoNextRelease()
             ApplyStrategy.NEXT_START -> loader.persistServedBundle(next.release.bundleId)
             ApplyStrategy.NEXT_RESUME, ApplyStrategy.MANUAL -> Unit
         }
-        return if (next.applyAt == ApplyStrategy.IMMEDIATE) SyncResult.applied(next.release, notes) else SyncResult.downloaded(next.release, notes, next.applyAt)
+        return if (next.applyStrategy == ApplyStrategy.IMMEDIATE) SyncResult.applied(next.release, notes) else SyncResult.downloaded(next.release, notes, next.applyStrategy)
     }
 
     /** Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event. */
@@ -497,8 +497,8 @@ class Core(
         }
     }
 
-    suspend fun setRestartAllowed(allowed: Boolean) = lock.withLock {
-        isRestartAllowed = allowed
+    suspend fun setRestartAllowed(isAllowed: Boolean) = lock.withLock {
+        isRestartAllowed = isAllowed
         runQueuedRestart()
     }
 
@@ -899,7 +899,7 @@ class Core(
 
     /** Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`. */
     private val isDisabledInThisBuild: Boolean
-        get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.enabledInDebugBuilds)
+        get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
 
     private fun deviceInfo() = DeviceInfo(state.attributes, device.binaryBuild, device.binaryVersion, configuration.builtAt, state.currentRelease, state.deviceId, state.failedBundleIds, configuration.fingerprint, device.osVersion, state.reportedAt)
 

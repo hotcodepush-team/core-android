@@ -87,7 +87,7 @@ object Fixture {
 
     fun embeddedManifest() = EmbeddedBundleManifest(appId = APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File("index.html", Hashing.sha256Hex(embeddedIndexHtml), embeddedIndexHtml.size.toLong())), platforms = listOf("android"))
 
-    fun configuration(applyStrategy: ApplyStrategy = ApplyStrategy.NEXT_START, mandatoryApplyStrategy: MandatoryApplyStrategy = MandatoryApplyStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, checkStrategy: CheckStrategy = CheckStrategy.MANUAL, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<DevicePublicKey> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, enabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID, hasEmbeddedBundle: Boolean = true): Configuration {
+    fun configuration(applyStrategy: ApplyStrategy = ApplyStrategy.NEXT_START, mandatoryApplyStrategy: MandatoryApplyStrategy = MandatoryApplyStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, checkStrategy: CheckStrategy = CheckStrategy.MANUAL, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<DevicePublicKey> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, isEnabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID, hasEmbeddedBundle: Boolean = true): Configuration {
         val json = JSONObject()
             .put("appId", APP_ID)
             .put("channelId", channelId ?: JSONObject.NULL)
@@ -96,10 +96,10 @@ object Fixture {
             .put("downloadStrategy", downloadStrategy.wire)
             .put("applyStrategy", applyStrategy.wire)
             .put("mandatoryApplyStrategy", mandatoryApplyStrategy.wire)
-            .put("applyOnResumeAfterSeconds", 300)
+            .put("nextResumeMinimumBackgroundSeconds", 300)
             .put("readySignal", readySignal.wire)
             .put("readyTimeoutSeconds", 10)
-            .put("enabledInDebugBuilds", enabledInDebugBuilds)
+            .put("isEnabledInDebugBuilds", isEnabledInDebugBuilds)
             .put("publicKeys", org.json.JSONArray(publicKeys.map { JSONObject().put("der", it.der).put("keyId", it.keyId) }))
             .put("builtAt", Iso8601.format(builtAt))
             .put("fingerprint", fingerprint ?: JSONObject.NULL)
@@ -114,14 +114,14 @@ object Fixture {
 
     fun eventsUrl() = "$UPDATES_BASE_URL/v1/apps/$APP_ID/events"
 
-    fun release(number: Int, bundleId: String, content: ByteArray, createdAt: Long = BUILT_AT + 60_000, rollout: Int = 100, conditions: List<Condition> = emptyList(), isMandatory: Boolean = false): Published {
+    fun release(number: Int, bundleId: String, content: ByteArray, createdAt: Long = BUILT_AT + 60_000, rolloutPercentage: Int = 100, conditions: List<Condition> = emptyList(), isMandatory: Boolean = false): Published {
         val sha256 = Hashing.sha256Hex(content)
         val js = "js-$bundleId".toByteArray()
         val pack = PackWriter.pack(listOf(PackedEntry.file(sha256, Gzip.compress(content)), PackedEntry.file(Hashing.sha256Hex(js), Gzip.compress(js))))
         val manifest = BundleManifest(appId = APP_ID, bundleVersion = "1.$number.0", files = listOf(BundleManifest.File("index.html", sha256, content.size.toLong()), BundleManifest.File("assets/app.js", Hashing.sha256Hex(js), js.size.toLong())), platforms = listOf("android"))
         val manifestJson = manifest.toJson().toString()
         val envelope = ManifestEnvelope(bundleId, createdAt, manifestJson, null, ManifestEnvelope.Pack("$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/pack", pack.size.toLong()), emptyList())
-        val release = IndexRelease("r$number", number, createdAt, isMandatory, "notes $number", rollout, conditions, bundleId, manifest.bundleVersion, "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json", Hashing.sha256Hex(manifestJson), content.size.toLong())
+        val release = IndexRelease("r$number", number, createdAt, isMandatory, "notes $number", rolloutPercentage, conditions, bundleId, manifest.bundleVersion, "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json", Hashing.sha256Hex(manifestJson), content.size.toLong())
         return Published(release, manifest, envelope, pack)
     }
 

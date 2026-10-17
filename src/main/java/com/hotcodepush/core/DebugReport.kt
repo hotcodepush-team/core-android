@@ -82,11 +82,11 @@ object DebugReport {
 
     private fun lastCheckSection(snapshot: DebugSnapshot): DebugSection {
         val check = snapshot.state.lastCheck ?: return DebugSection("Last check", listOf(DebugRow("When", "never")))
-        val entry = LogEntry.ofCycle(check.result, check.trigger, check.at)
+        val entry = LogEntry.ofCycle(check.result, check.trigger, check.checkedAt)
         return DebugSection(
             "Last check",
             listOf(
-                DebugRow("When", Iso8601.format(check.at)),
+                DebugRow("When", Iso8601.format(check.checkedAt)),
                 DebugRow("Trigger", check.trigger.wire),
                 DebugRow("Result", entry.code),
                 DebugRow("Release", describe(check.result.release) ?: "none"),
@@ -120,7 +120,7 @@ object DebugReport {
                 DebugRow("Check strategy", if (configuration.checkStrategy == CheckStrategy.AUTO) "auto, every ${configuration.checkIntervalSeconds.toInt()} s" else "manual"),
                 DebugRow("Strategies", "download ${configuration.downloadStrategy.wire}, apply ${configuration.applyStrategy.wire}, mandatory ${configuration.mandatoryApplyStrategy.wire}"),
                 DebugRow("Ready signal", "${configuration.readySignal.wire}, ${configuration.readyTimeoutSeconds.toInt()} s"),
-                DebugRow("Debug builds", if (configuration.enabledInDebugBuilds) "enabled" else "disabled"),
+                DebugRow("Debug builds", if (configuration.isEnabledInDebugBuilds) "enabled" else "disabled"),
                 DebugRow("Public keys", configuration.publicKeys.size.toString()),
             ),
         )

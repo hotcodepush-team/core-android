@@ -39,7 +39,7 @@ class DeviceEventsContractTest {
                 setOf("type", "releaseId", "status"),
                 setOf("type", "releaseId", "status", "reason", "condition"),
                 setOf("type", "releaseId", "status", "reason"),
-                setOf("type", "releaseId", "bundleId", "bytes", "packKind"),
+                setOf("type", "releaseId", "bundleId", "downloadSizeBytes", "packKind"),
                 setOf("type", "releaseId"),
                 setOf("type", "releaseId"),
                 setOf("type", "releaseId", "reason"),
@@ -180,7 +180,7 @@ class DeviceEventsContractTest {
 
     private companion object {
         val BATCH_KEYS = setOf("deviceId", "events", "platform", "report", "sdkVersion")
-        val EVENT_KEYS = setOf("type", "releaseId", "bundleId", "status", "reason", "condition", "bytes", "packKind", "fromReleaseId", "toReleaseId", "detail")
+        val EVENT_KEYS = setOf("type", "releaseId", "bundleId", "status", "reason", "condition", "downloadSizeBytes", "packKind", "fromReleaseId", "toReleaseId", "detail")
         val REPORT_KEYS = setOf("attributes", "binaryBuild", "binaryVersion", "channelId", "channelSource", "embeddedBundleId", "fingerprint", "osVersion", "releaseId")
     }
 }

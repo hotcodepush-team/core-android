@@ -54,7 +54,7 @@ class WireTypesTest {
     @Test
     fun shouldRefuseAnIndexReleaseMissingAField() {
         val json = decodeIndexRelease("r1", "b1").toJson()
-        for (key in listOf("isMandatory", "rollout", "conditions", "sizeBytes", "notes")) {
+        for (key in listOf("isMandatory", "rolloutPercentage", "conditions", "sizeBytes", "notes")) {
             val incomplete = JSONObject(json.toString()).also { it.remove(key) }
             assertThrows(key, JSONException::class.java) { IndexRelease.fromJson(incomplete) }
         }
@@ -65,7 +65,7 @@ class WireTypesTest {
         val json = decodeIndexRelease("r1", "b1").toJson()
         assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("id", 2)) }
         assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("isMandatory", "true")) }
-        assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("rollout", 50.5)) }
+        assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("rolloutPercentage", 50.5)) }
         assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("sizeBytes", "7")) }
     }
 
@@ -104,10 +104,10 @@ class WireTypesTest {
 
     @Test
     fun shouldRefuseAResourceFileWithANegativeDuration() {
-        for (key in listOf("applyOnResumeAfterSeconds", "checkIntervalSeconds", "readyTimeoutSeconds")) {
+        for (key in listOf("checkIntervalSeconds", "nextResumeMinimumBackgroundSeconds", "readyTimeoutSeconds")) {
             assertThrows(key, JSONException::class.java) { Configuration.fromJson(resourceFile().put(key, -1)) }
         }
-        assertEquals(0.0, Configuration.fromJson(resourceFile().put("applyOnResumeAfterSeconds", 0)).applyOnResumeAfterSeconds, 0.0)
+        assertEquals(0.0, Configuration.fromJson(resourceFile().put("nextResumeMinimumBackgroundSeconds", 0)).nextResumeMinimumBackgroundSeconds, 0.0)
     }
 
     @Test

@@ -78,7 +78,7 @@ object Evaluator {
             val reason = if (type == ConditionType.ATTRIBUTE || type == ConditionType.DEVICE) SkippedReason.DEVICE_NOT_TARGETED else SkippedReason.DEVICE_INCOMPATIBLE
             return ReleaseVerdict(release, false, reason, type)
         }
-        if (Hashing.rolloutBucket(device.deviceId, release.id) >= release.rollout) return ReleaseVerdict(release, false, SkippedReason.DEVICE_NOT_IN_ROLLOUT)
+        if (Hashing.rolloutBucket(device.deviceId, release.id) >= release.rolloutPercentage) return ReleaseVerdict(release, false, SkippedReason.DEVICE_NOT_IN_ROLLOUT)
         return ReleaseVerdict(release, true)
     }
 
@@ -87,7 +87,7 @@ object Evaluator {
         is Condition.Attribute -> device.attributes[condition.key]?.let { Hashing.attributeHash(condition.key, it) == condition.valueSha256 } ?: false
         is Condition.Binary -> resolveBinaryVersion(device)?.let { VersionRange.isVersionInRange(it, condition.range) == true } ?: false
         is Condition.Device -> Hashing.deviceIdHash(device.deviceId) in condition.hashedIds
-        is Condition.Fingerprint -> device.fingerprint != null && device.fingerprint == condition.hash
+        is Condition.Fingerprint -> device.fingerprint != null && device.fingerprint == condition.fingerprint
         is Condition.Os -> VersionRange.parseVersion(device.osVersion)?.let { VersionRange.isVersionInRange(it, condition.range) == true } ?: false
         is Condition.Unknown -> false
     }

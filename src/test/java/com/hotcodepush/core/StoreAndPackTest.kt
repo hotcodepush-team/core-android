@@ -157,8 +157,8 @@ class StateStoreTest {
 
     @Test
     fun shouldDropTheCacheWhenAStoredValueHoldsWhatThisSdkDoesNotKnow() {
-        val notice = JSONObject().put("from", Release("r1", 1, "b1", "1", false).toJson()).put("to", JSONObject.NULL).put("reason", "REASON_OF_A_LATER_SDK")
-        for ((key, value) in listOf("pendingRollbackEvent" to notice.toString(), "lastCheck" to JSONObject().put("at", "yesterday").toString(), "lastBuiltAt" to "yesterday")) {
+        val notice = JSONObject().put("fromRelease", Release("r1", 1, "b1", "1", false).toJson()).put("toRelease", JSONObject.NULL).put("reason", "REASON_OF_A_LATER_SDK")
+        for ((key, value) in listOf("pendingRollbackEvent" to notice.toString(), "lastCheck" to JSONObject().put("checkedAt", "yesterday").toString(), "lastBuiltAt" to "yesterday")) {
             val store = InMemoryStore()
             val state = StateStore(store)
             state.nextRelease = NextRelease(Release("r1", 1, "b1", "1", false), ApplyStrategy.NEXT_START)
@@ -171,7 +171,7 @@ class StateStoreTest {
     @Test
     fun shouldDropTheCacheWhenTheNextReleaseCarriesNoApplyMomentOrOneThisSdkDoesNotKnow() {
         val release = Release("r1", 1, "b1", "1", false)
-        for (stored in listOf(release.toJson(), JSONObject().put("release", release.toJson()).put("applyAt", "on-resume"))) {
+        for (stored in listOf(release.toJson(), JSONObject().put("release", release.toJson()).put("applyStrategy", "on-resume"))) {
             val store = InMemoryStore()
             val state = StateStore(store)
             state.currentRelease = release

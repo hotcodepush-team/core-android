@@ -20,7 +20,7 @@ enum class PackKind(val wire: String) { FULL("full"), DELTA("delta"), STREAMED("
 
 /**
  * One shape for `SyncResult`, `CheckForUpdateResult` and `DownloadUpdateResult`: the status says which fields are set.
- * `DOWNLOADED` carries `applyAt`, the moment the apply runs or `manual` for the app's `applyUpdate()`; `APPLIED` says the
+ * `DOWNLOADED` carries `applyStrategy`, the moment the apply runs or `manual` for the app's `applyUpdate()`; `APPLIED` says the
  * apply happened and the reload follows the result.
  */
 data class SyncResult(
@@ -29,7 +29,7 @@ data class SyncResult(
     val reason: String? = null,
     val condition: ConditionType? = null,
     val notes: String? = null,
-    val applyAt: ApplyStrategy? = null,
+    val applyStrategy: ApplyStrategy? = null,
     val downloadSizeBytes: Long? = null,
     val message: String? = null,
 ) {
@@ -39,14 +39,14 @@ data class SyncResult(
         .putIfNotNull("reason", reason)
         .putIfNotNull("condition", condition?.wire)
         .putIfNotNull("notes", notes, nullWhenStatus = status == SyncStatus.APPLIED || status == SyncStatus.AVAILABLE || status == SyncStatus.DOWNLOADED)
-        .putIfNotNull("applyAt", applyAt?.wire)
+        .putIfNotNull("applyStrategy", applyStrategy?.wire)
         .putIfNotNull("downloadSizeBytes", downloadSizeBytes, nullWhenStatus = status == SyncStatus.AVAILABLE)
         .putIfNotNull("message", message)
 
     companion object {
         fun upToDate(release: Release?) = SyncResult(SyncStatus.UP_TO_DATE, release)
         fun available(release: Release, notes: String?, downloadSizeBytes: Long?) = SyncResult(SyncStatus.AVAILABLE, release, notes = notes, downloadSizeBytes = downloadSizeBytes)
-        fun downloaded(release: Release, notes: String?, applyAt: ApplyStrategy) = SyncResult(SyncStatus.DOWNLOADED, release, notes = notes, applyAt = applyAt)
+        fun downloaded(release: Release, notes: String?, applyStrategy: ApplyStrategy) = SyncResult(SyncStatus.DOWNLOADED, release, notes = notes, applyStrategy = applyStrategy)
         fun applied(release: Release, notes: String?) = SyncResult(SyncStatus.APPLIED, release, notes = notes)
         fun skipped(release: Release?, reason: SkippedReason, condition: ConditionType? = null) = SyncResult(SyncStatus.SKIPPED, release, reason = reason.name, condition = condition)
         fun failed(release: Release?, reason: FailedReason, message: String) = SyncResult(SyncStatus.FAILED, release, reason = reason.name, message = message)
@@ -57,7 +57,7 @@ data class SyncResult(
             reason = json.optNullableString("reason"),
             condition = json.optNullableString("condition")?.let { wire -> ConditionType.entries.firstOrNull { it.wire == wire } },
             notes = json.optNullableString("notes"),
-            applyAt = json.optNullableString("applyAt")?.let(ApplyStrategy::fromWire),
+            applyStrategy = json.optNullableString("applyStrategy")?.let(ApplyStrategy::fromWire),
             downloadSizeBytes = if (json.isNull("downloadSizeBytes")) null else json.optLong("downloadSizeBytes"),
             message = json.optNullableString("message"),
         )
@@ -79,11 +79,11 @@ data class NotifyReadyResult(val currentRelease: Release?, val previousRelease: 
         .putIfNotNull("rollbackReason", rollbackReason?.name)
 }
 
-data class LastCheck(val at: Long, val trigger: SyncTrigger, val result: SyncResult) {
-    fun toJson(): JSONObject = JSONObject().put("at", Iso8601.format(at)).put("trigger", trigger.wire).put("result", result.toJson())
+data class LastCheck(val checkedAt: Long, val trigger: SyncTrigger, val result: SyncResult) {
+    fun toJson(): JSONObject = JSONObject().put("checkedAt", Iso8601.format(checkedAt)).put("trigger", trigger.wire).put("result", result.toJson())
 
     companion object {
-        fun fromJson(json: JSONObject) = LastCheck(Iso8601.parse(json.getString("at")), SyncTrigger.entries.first { it.wire == json.getString("trigger") }, SyncResult.fromJson(json.getJSONObject("result")))
+        fun fromJson(json: JSONObject) = LastCheck(Iso8601.parse(json.getString("checkedAt")), SyncTrigger.entries.first { it.wire == json.getString("trigger") }, SyncResult.fromJson(json.getJSONObject("result")))
     }
 }
 
@@ -152,9 +152,9 @@ data class UpdateAvailableEvent(val release: Release, val notes: String?, val do
         .put("trigger", trigger.wire)
 }
 
-/** The download completed and the update waits for its apply: `applyAt` names the moment, or `manual` for the app's `applyUpdate()`. */
-data class UpdateDownloadedEvent(val release: Release, val applyAt: ApplyStrategy, val trigger: SyncTrigger) {
-    fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("applyAt", applyAt.wire).put("trigger", trigger.wire)
+/** The download completed and the update waits for its apply: `applyStrategy` names the moment, or `manual` for the app's `applyUpdate()`. */
+data class UpdateDownloadedEvent(val release: Release, val applyStrategy: ApplyStrategy, val trigger: SyncTrigger) {
+    fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("applyStrategy", applyStrategy.wire).put("trigger", trigger.wire)
 }
 
 /** A check or a download failed. */
@@ -166,12 +166,12 @@ data class UpdateFailedEvent(val release: Release?, val reason: FailedReason, va
         .put("trigger", trigger.wire)
 }
 
-/** At each start that follows a rollback until the app is up after one, before the readiness gate; `to` is `null` for the embedded bundle. */
-data class UpdateRolledBackEvent(val from: Release, val to: Release?, val reason: RollbackReason) {
-    fun toJson(): JSONObject = JSONObject().put("from", from.toJson()).put("to", to?.toJson() ?: JSONObject.NULL).put("reason", reason.name)
+/** At each start that follows a rollback until the app is up after one, before the readiness gate; `toRelease` is `null` for the embedded bundle. */
+data class UpdateRolledBackEvent(val fromRelease: Release, val toRelease: Release?, val reason: RollbackReason) {
+    fun toJson(): JSONObject = JSONObject().put("fromRelease", fromRelease.toJson()).put("toRelease", toRelease?.toJson() ?: JSONObject.NULL).put("reason", reason.name)
 
     companion object {
-        fun fromJson(json: JSONObject) = UpdateRolledBackEvent(Release.fromJson(json.getJSONObject("from")), json.optJSONObject("to")?.let(Release::fromJson), RollbackReason.valueOf(json.getString("reason")))
+        fun fromJson(json: JSONObject) = UpdateRolledBackEvent(Release.fromJson(json.getJSONObject("fromRelease")), json.optJSONObject("toRelease")?.let(Release::fromJson), RollbackReason.valueOf(json.getString("reason")))
     }
 }
 

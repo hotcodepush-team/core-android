@@ -492,7 +492,7 @@ class CoreTest {
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(ApplyStrategy.MANUAL, harness.core.sync(SyncTrigger.MANUAL).applyAt)
+        assertEquals(ApplyStrategy.MANUAL, harness.core.sync(SyncTrigger.MANUAL).applyStrategy)
         assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
         assertTrue(harness.loader.loaded.isEmpty())
         assertNull(harness.core.getState().currentRelease)
@@ -540,13 +540,13 @@ class CoreTest {
     }
 
     @Test
-    fun shouldApplyANextResumeReleaseAfterApplyOnResumeAfterSeconds() = runBlocking {
+    fun shouldApplyANextResumeReleaseAfterNextResumeMinimumBackgroundSeconds() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_RESUME))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         harness.core.handleRendered()
-        assertEquals(ApplyStrategy.NEXT_RESUME, harness.core.sync(SyncTrigger.MANUAL).applyAt)
+        assertEquals(ApplyStrategy.NEXT_RESUME, harness.core.sync(SyncTrigger.MANUAL).applyStrategy)
         harness.core.handleAppPause()
         harness.clock.now += 300_000
         harness.core.handleAppResume()
@@ -632,7 +632,7 @@ class CoreTest {
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.sync(SyncTrigger.INTERVAL))
         startAgain(harness, Fixture.configuration())
         assertNull(harness.core.getState().currentRelease)
-        assertEquals(listOf(ApplyStrategy.MANUAL), harness.listener.downloaded.map { it.applyAt })
+        assertEquals(listOf(ApplyStrategy.MANUAL), harness.listener.downloaded.map { it.applyStrategy })
     }
 
     @Test
@@ -1065,7 +1065,7 @@ class CoreTest {
 
     @Test
     fun shouldSendNothingWhenLiveUpdatesAreOffInADebugBuild() = runBlocking {
-        val harness = Harness(Fixture.configuration(enabledInDebugBuilds = false), isDebugBuild = true)
+        val harness = Harness(Fixture.configuration(isEnabledInDebugBuilds = false), isDebugBuild = true)
         harness.acknowledgeEvents()
         harness.publish(emptyList(), 1)
         harness.core.handleAppStart()
@@ -1184,7 +1184,7 @@ class CoreTest {
         assertEquals(1, harness.listener.available.size)
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.downloadUpdate())
         assertTrue(harness.files.hasFile(Hashing.sha256Hex(v2Content)))
-        assertEquals(listOf(ApplyStrategy.MANUAL), harness.listener.downloaded.map { it.applyAt })
+        assertEquals(listOf(ApplyStrategy.MANUAL), harness.listener.downloaded.map { it.applyStrategy })
         assertTrue(harness.loader.loaded.isEmpty())
         val state = harness.core.getState()
         assertEquals(v2.release.release, state.nextRelease)
@@ -1203,7 +1203,7 @@ class CoreTest {
         harness.core.handleAppStart()
         assertEquals(SyncResult.skipped(v2.release.release, SkippedReason.CONNECTION_METERED), harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), harness.core.downloadUpdate())
-        assertEquals(listOf(ApplyStrategy.NEXT_START), harness.listener.downloaded.map { it.applyAt })
+        assertEquals(listOf(ApplyStrategy.NEXT_START), harness.listener.downloaded.map { it.applyStrategy })
     }
 
     @Test
@@ -1260,7 +1260,7 @@ class CoreTest {
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals("r2", result.release?.id)
         assertEquals(true, result.release?.isMandatory)
-        assertEquals(ApplyStrategy.MANUAL, result.applyAt)
+        assertEquals(ApplyStrategy.MANUAL, result.applyStrategy)
     }
 
     @Test

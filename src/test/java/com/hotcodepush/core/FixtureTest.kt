@@ -172,10 +172,10 @@ class FixtureTest {
             assertEquals(name, file.optString("downloadStrategy", "auto"), configuration.downloadStrategy.wire)
             assertEquals(name, file.optString("applyStrategy", "next-start"), configuration.applyStrategy.wire)
             assertEquals(name, file.optString("mandatoryApplyStrategy", "immediate"), configuration.mandatoryApplyStrategy.wire)
-            assertEquals(name, file.optDouble("applyOnResumeAfterSeconds", 300.0), configuration.applyOnResumeAfterSeconds, 0.0)
+            assertEquals(name, file.optDouble("nextResumeMinimumBackgroundSeconds", 300.0), configuration.nextResumeMinimumBackgroundSeconds, 0.0)
             assertEquals(name, file.optString("readySignal", "render"), configuration.readySignal.wire)
             assertEquals(name, file.optDouble("readyTimeoutSeconds", 10.0), configuration.readyTimeoutSeconds, 0.0)
-            assertEquals(name, file.optBoolean("enabledInDebugBuilds", true), configuration.enabledInDebugBuilds)
+            assertEquals(name, file.optBoolean("isEnabledInDebugBuilds", true), configuration.isEnabledInDebugBuilds)
         }
     }
 
@@ -234,7 +234,7 @@ class FixtureTest {
     private fun packSource(json: JSONObject) = PackSource(
         json.getString("url"),
         if (json.isNull("sizeBytes")) null else json.getLong("sizeBytes"),
-        json.getLong("maximumBytes"),
+        json.getLong("packBytesLimit"),
         PackKind.entries.first { it.wire == json.getString("kind") },
     )
 
@@ -272,8 +272,8 @@ class FixtureTest {
     @Test
     fun shouldReadPastTheWriterBoundsFixture() {
         val bounds = load("bounds.json")
-        val hashedIds = (0..bounds.getInt("deviceConditionMaxHashedIds")).map { Hashing.sha256Hex("device-$it") }
-        val conditions = (0..bounds.getInt("releaseMaxConditions")).map { Condition.Device(hashedIds) }
+        val hashedIds = (0..bounds.getInt("deviceConditionHashedIdCountLimit")).map { Hashing.sha256Hex("device-$it") }
+        val conditions = (0..bounds.getInt("releaseConditionCountLimit")).map { Condition.Device(hashedIds) }
         val release = IndexRelease("r1", 1, Fixture.BUILT_AT, false, null, 100, conditions, "b1", "1.0.0", "${Fixture.FILES_BASE_URL}/manifest.json", Hashing.sha256Hex("manifest"), 1)
         val index = Fixture.index(1, listOf(release))
         assertEquals(index, ChannelIndex.fromJson(index.toJson()))

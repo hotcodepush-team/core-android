@@ -86,7 +86,7 @@ class FakeListener : CoreListener {
         failed += event
     }
 
-    override fun downloadProgress(releaseId: String, downloadedBytes: Long, totalBytes: Long) {}
+    override fun downloadProgress(releaseId: String, progressBytes: Long, downloadSizeBytes: Long) {}
     override fun updateRolledBack(event: UpdateRolledBackEvent) { rollbacks += event }
 }
 

@@ -67,7 +67,7 @@ class MissingChannelTest {
 
     @Test
     fun shouldSkipAnExplicitSyncWithDebugBuildWhenTheBuildIsDisabledAndTheDeviceHasNoChannel() = runBlocking {
-        val harness = Harness(Fixture.configuration(enabledInDebugBuilds = false, channelId = null), isDebugBuild = true)
+        val harness = Harness(Fixture.configuration(isEnabledInDebugBuilds = false, channelId = null), isDebugBuild = true)
         harness.core.handleAppStart()
         assertEquals(SyncResult.skipped(null, SkippedReason.BUILD_DEBUG), harness.core.sync(SyncTrigger.MANUAL))
         assertTrue(harness.listener.failed.isEmpty())

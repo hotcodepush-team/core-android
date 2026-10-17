@@ -39,7 +39,7 @@ interface CoreListener {
     fun updateAvailable(event: UpdateAvailableEvent)
     fun updateDownloaded(event: UpdateDownloadedEvent)
     fun updateFailed(event: UpdateFailedEvent)
-    fun downloadProgress(releaseId: String, downloadedBytes: Long, totalBytes: Long)
+    fun downloadProgress(releaseId: String, progressBytes: Long, downloadSizeBytes: Long)
     fun updateRolledBack(event: UpdateRolledBackEvent)
 }
 

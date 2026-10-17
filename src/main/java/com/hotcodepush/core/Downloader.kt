@@ -32,7 +32,7 @@ sealed class DownloadFailure(message: String) : Exception(message) {
 data class DownloadOutcome(val manifest: BundleManifest, val bytes: Long, val packKind: PackKind)
 
 /** Where a pack comes from: its URL, its size where the envelope states one, the most bytes it may hold and how the bytes arrive. */
-internal data class PackSource(val url: String, val sizeBytes: Long?, val maximumBytes: Long, val kind: PackKind)
+internal data class PackSource(val url: String, val sizeBytes: Long?, val packBytesLimit: Long, val kind: PackKind)
 
 /** The bytes a pack cost and the kind that finally arrived, since the streamed pack may give way to the full pack. */
 internal data class PackOutcome(val bytes: Long, val kind: PackKind)
@@ -50,7 +50,7 @@ class Downloader(
         val (envelope, manifest) = fetchBundleManifest(target)
         val missing = resolveMissingFiles(manifest)
         val pack = resolvePackSource(envelope, baseBundleId, missing.size)
-        verifyFreeSpace(missing.sumOf { it.sizeBytes } + (pack?.maximumBytes ?: 0))
+        verifyFreeSpace(missing.sumOf { it.sizeBytes } + (pack?.packBytesLimit ?: 0))
         var bytes = 0L
         var packKind = PackKind.FILES
         if (pack != null) {
@@ -156,7 +156,7 @@ class Downloader(
         val pinnedUrl = resolvePinnedUrl(source.url)
         val file = File(temporaryDirectory, "$bundleId-${Hashing.sha256Hex(source.url).take(16)}.pack")
         try {
-            http.download(pinnedUrl, file, source.maximumBytes, progress)
+            http.download(pinnedUrl, file, source.packBytesLimit, progress)
         } catch (failure: DownloadFailure) {
             throw failure
         } catch (refusal: HttpStatusException) {
