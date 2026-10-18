@@ -21,6 +21,7 @@ import java.nio.file.Files
 
 class CoreTest {
     private val v2Content = "<html>v2</html>".toByteArray()
+    private val embeddedRelease = Fixture.release(1, "embedded", Fixture.embeddedIndexHtml)
     private val immediateApply = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE)
 
     @Test
@@ -422,6 +423,138 @@ class CoreTest {
         assertEquals(SyncResult.upToDate(rollback.release.release), harness.core.downloadUpdate())
         assertEquals(listOf("b2"), harness.loader.loaded)
         assertEquals("r2", harness.core.getState().currentRelease?.id)
+    }
+
+    @Test
+    fun shouldAnswerUpToDateWhenACheckAdoptsAReleaseCarryingTheRunningBundle() = runBlocking {
+        val harness = Harness()
+        harness.publish(listOf(embeddedRelease), 1)
+        harness.core.handleAppStart()
+        assertEquals(SyncResult.upToDate(embeddedRelease.release.release), harness.core.checkForUpdate())
+        assertTrue(harness.listener.available.isEmpty())
+        assertEquals(embeddedRelease.release.release, harness.core.getState().currentRelease)
+    }
+
+    @Test
+    fun shouldDropAWaitingReleaseAndSwitchNothingAtTheNextStartWhenAReleaseCarryingTheRunningBundleIsAdopted() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        val adopted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
+        harness.publish(listOf(v2, adopted), 2, etag = "\"e2\"")
+        assertEquals(SyncResult.upToDate(adopted.release.release), harness.core.sync(SyncTrigger.MANUAL))
+        startAgain(harness, Fixture.configuration())
+        val state = harness.core.getState()
+        assertEquals(adopted.release.release, state.currentRelease)
+        assertNull(state.nextRelease)
+        assertNull(harness.loader.persisted)
+        assertTrue(harness.loader.loaded.isEmpty())
+    }
+
+    @Test
+    fun shouldAdoptAReleaseOfTheEmbeddedBundleInPlaceWhenTheDeviceIsFresh() = runBlocking {
+        val harness = Harness(immediateApply)
+        assertEquals(SyncResult.upToDate(embeddedRelease.release.release), syncToEmbeddedReleaseOnFreshDevice(harness))
+        assertTrue(harness.http.requests.none { it.first == embeddedRelease.release.manifestUrl })
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertNull(harness.loader.persisted)
+        assertTrue(harness.scheduler.tasks.isEmpty())
+        val state = harness.core.getState()
+        assertEquals(embeddedRelease.release.release, state.currentRelease)
+        assertEquals(embeddedRelease.release.release, state.fallbackRelease)
+        assertEquals(listOf("checked"), StateStore(harness.store).unsentEvents.map { it.type })
+    }
+
+    @Test
+    fun shouldAdoptAReleaseOfTheEmbeddedBundleInPlaceWhenTheDeviceRevertedToIt() = runBlocking {
+        val harness = Harness(immediateApply)
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.notifyReady()
+        harness.publish(listOf(v2), 2, revoked = listOf("r1"), etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.handleRendered()
+        val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
+        harness.publish(listOf(v2, reverted), 3, revoked = listOf("r1"), etag = "\"e3\"")
+        val eventCountBefore = StateStore(harness.store).unsentEvents.size
+        assertEquals(SyncResult.upToDate(reverted.release.release), harness.core.sync(SyncTrigger.MANUAL))
+        assertTrue(harness.http.requests.none { it.first == reverted.release.manifestUrl })
+        assertEquals(listOf("b2", null), harness.loader.loaded)
+        assertNull(harness.loader.persisted)
+        assertTrue(harness.scheduler.tasks.all { it.isCancelled })
+        val state = harness.core.getState()
+        assertEquals(reverted.release.release, state.currentRelease)
+        assertEquals(reverted.release.release, state.fallbackRelease)
+        assertEquals(listOf("checked"), StateStore(harness.store).unsentEvents.drop(eventCountBefore).map { it.type })
+    }
+
+    @Test
+    fun shouldStartOnTheEmbeddedBundleWithoutTheGateWhenTheCurrentReleaseCarriesIt() = runBlocking {
+        val harness = Harness()
+        syncToEmbeddedReleaseOnFreshDevice(harness)
+        harness.restart()
+        assertNull(harness.core.handleAppStart())
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertTrue(harness.scheduler.tasks.isEmpty())
+        assertEquals(embeddedRelease.release.release, harness.core.getState().currentRelease)
+    }
+
+    @Test
+    fun shouldDownloadAReleaseOfAnotherBundleWhenTheCurrentReleaseCarriesTheEmbeddedBundle() = runBlocking {
+        val harness = Harness(immediateApply)
+        syncToEmbeddedReleaseOnFreshDevice(harness)
+        val v2 = Fixture.release(2, "b2", v2Content)
+        harness.publish(listOf(embeddedRelease, v2), 2, etag = "\"e2\"")
+        assertEquals(SyncResult.applied(v2.release.release, "notes 2"), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(listOf("b2"), harness.loader.loaded)
+        assertEquals("<html>v2</html>", File(harness.loader.projectionDirectory("b2"), "index.html").readText())
+        assertEquals(1, harness.scheduler.tasks.size)
+    }
+
+    @Test
+    fun shouldFallBackToTheAdoptedReleaseOfTheEmbeddedBundleOnTheBinaryWhenTheNextReleaseIsRolledBack() = runBlocking {
+        val harness = Harness(immediateApply)
+        syncToEmbeddedReleaseOnFreshDevice(harness)
+        harness.publish(listOf(embeddedRelease, Fixture.release(2, "b2", v2Content)), 2, etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.rollbackUpdate(null)
+        assertEquals(embeddedRelease.release.release, harness.core.getState().currentRelease)
+        assertEquals(listOf("b2", null), harness.loader.loaded)
+        assertNull(harness.loader.persisted)
+    }
+
+    @Test
+    fun shouldServeAReleaseOfTheEmbeddedBundleFromTheBinaryWhenTheDeviceSwitchesToItFromAnotherRelease() = runBlocking {
+        val harness = Harness(immediateApply)
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.notifyReady()
+        val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
+        harness.publish(listOf(v2, reverted), 2, etag = "\"e2\"")
+        assertEquals(SyncResult.applied(reverted.release.release, "notes 2"), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(listOf("b2", null), harness.loader.loaded)
+        assertNull(harness.loader.persisted)
+        assertTrue(!harness.loader.projectionDirectory("embedded").exists())
+    }
+
+    @Test
+    fun shouldRollNothingBackWhenTheCurrentReleaseCarriesTheEmbeddedBundle() = runBlocking {
+        val harness = Harness()
+        syncToEmbeddedReleaseOnFreshDevice(harness)
+        harness.core.rollbackUpdate("fatal")
+        val state = harness.core.getState()
+        assertEquals(embeddedRelease.release.release, state.currentRelease)
+        assertTrue(state.failedBundleIds.isEmpty())
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertEquals(listOf("checked"), StateStore(harness.store).unsentEvents.map { it.type })
     }
 
     @Test
@@ -1828,6 +1961,14 @@ class CoreTest {
         val next = JSONObject(String(harness.http.posts[1].third))
         assertEquals(0, next.getJSONArray("events").length())
         assertTrue(!next.isNull("report"))
+    }
+
+    /** The first run of a fresh device, up, whose first sync finds a release of the embedded bundle the device runs. */
+    private suspend fun syncToEmbeddedReleaseOnFreshDevice(harness: Harness): SyncResult {
+        harness.publish(listOf(embeddedRelease), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        return harness.core.sync(SyncTrigger.MANUAL)
     }
 
     /** A run that applies v2 at once after the first render and has not confirmed it: its readiness timer is the one scheduled. */

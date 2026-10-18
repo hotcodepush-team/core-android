@@ -123,7 +123,7 @@ class Core(
                 runEmbeddedBundleAfter(failure)
             }
             runLogged("the start") { beginRun(isHeadless) }
-            resolveRunningBundleId()
+            resolveStartBundleId()
         }
         launchTask(::deleteUnusedFiles)
         return bundleId
@@ -169,8 +169,8 @@ class Core(
         }
     }
 
-    /** The bundle that runs, `null` for the embedded one, and for a store that cannot be read. */
-    private fun resolveRunningBundleId(): String? = runCatching { state.currentRelease?.bundleId }.getOrNull()
+    /** The bundle the start answers the host, `null` for the embedded one, and for a store that cannot be read. */
+    private fun resolveStartBundleId(): String? = runCatching { resolveServedBundleId(state.currentRelease) }.getOrNull()
 
     /** Runs the block and logs what it throws, for the work whose failure must not reach the host or the app's process. */
     private fun runLogged(task: String, block: () -> Unit) {
@@ -186,7 +186,7 @@ class Core(
      * and an `immediate` apply still held; one the app took over waits across starts; a bundle the WebView already serves is adopted.
      */
     private fun shouldSwitchAtStart(next: NextRelease): Boolean =
-        loader.servedBundleId() == next.release.bundleId || next.applyStrategy == ApplyStrategy.NEXT_START || next.applyStrategy == ApplyStrategy.IMMEDIATE
+        loader.servedBundleId() == resolveServedBundleId(next.release) || next.applyStrategy == ApplyStrategy.NEXT_START || next.applyStrategy == ApplyStrategy.IMMEDIATE
 
     /** A release whose stored moment is `next-resume`; a mandatory one never is, so one the app took over with `manual` waits for `applyUpdate()`. */
     private fun shouldApplyAtResume(next: NextRelease): Boolean = next.applyStrategy == ApplyStrategy.NEXT_RESUME
@@ -278,7 +278,7 @@ class Core(
         return runCycle(trigger, Stage.SYNC, options)
     }
 
-    /** `sync()` with the download gate closed: fetch and evaluate, download nothing and apply nothing. */
+    /** `sync()` with the download gate closed: fetch and evaluate, download nothing and apply nothing; a release that carries the running bundle is adopted, as from every stage. */
     suspend fun checkForUpdate(): SyncResult {
         verifyChannelId()
         return runCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions(downloadStrategy = DownloadStrategy.MANUAL))
@@ -391,15 +391,15 @@ class Core(
     }
 
     /**
-     * A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far
-     * as the download gate lets it. An adopted release runs already without a reload, so the cycle answers `UP_TO_DATE` with it.
+     * A release the device qualifies for: adopted in place when it carries the running bundle, the embedded one included, else
+     * announced and taken as far as the download gate lets it. An adopted release runs already without a reload, so the cycle
+     * answers `UP_TO_DATE` with it.
      * The apply moment is the call's own strategy, else the one a release downloaded already carries, else the configuration's,
      * so an automatic cycle never overrides the app's choice.
      */
     private suspend fun update(target: IndexRelease, isMandatory: Boolean, trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
         val release = resolveRelease(target, isMandatory)
-        val current = state.currentRelease
-        if (stage != Stage.CHECK && current != null && current.bundleId == target.bundleId) {
+        if (target.bundleId == resolveRunningBundleId()) {
             lock.withLock { adoptInPlace(release) }
             return SyncResult.upToDate(release)
         }
@@ -433,16 +433,16 @@ class Core(
     private fun readDownloadedRelease(target: IndexRelease): NextRelease? {
         val next = state.nextRelease ?: return null
         if (next.release.bundleId != target.bundleId) return null
-        val manifest = files.readManifest(next.release.bundleId) ?: return null
+        val manifest = readBundleManifest(next.release.bundleId) ?: return null
         return if (files.isComplete(manifest, embedded)) next else null
     }
 
     private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, applyStrategy: ApplyStrategy, trigger: SyncTrigger): SyncResult {
         val release = resolveRelease(target, isMandatory)
         try {
-            val baseBundleId = state.currentRelease?.bundleId ?: configuration.embeddedBundleId
-            val outcome = downloader.downloadRelease(target, baseBundleId) { progressBytes, downloadSizeBytes -> listener.downloadProgress(target.id, progressBytes, downloadSizeBytes) }
-            BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
+            val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(target.id, progressBytes, downloadSizeBytes) }
+            // The binary serves the embedded bundle's files itself.
+            if (target.bundleId != configuration.embeddedBundleId) BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
             lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, target.bundleId, outcome.bytes, outcome.packKind)) }
         } catch (failure: DownloadFailure) {
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, failure.reason.name)) }
@@ -466,16 +466,19 @@ class Core(
         setNextRelease(next)
         when (next.applyStrategy) {
             ApplyStrategy.IMMEDIATE -> restartIntoNextRelease()
-            ApplyStrategy.NEXT_START -> loader.persistServedBundle(next.release.bundleId)
+            ApplyStrategy.NEXT_START -> persistServedBundle(next.release)
             ApplyStrategy.NEXT_RESUME, ApplyStrategy.MANUAL -> Unit
         }
         return if (next.applyStrategy == ApplyStrategy.IMMEDIATE) SyncResult.applied(next.release, notes) else SyncResult.downloaded(next.release, notes, next.applyStrategy)
     }
 
-    /** Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event. */
+    /**
+     * Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event.
+     * The embedded bundle, a release that carries it included, has nothing to roll back to, and the call does nothing.
+     */
     suspend fun rollbackUpdate(detail: String?) = lock.withLock {
         if (detail != null) AttributeRules.validate(detail)
-        if (state.currentRelease == null) return
+        if (resolveServedBundleId(state.currentRelease) == null) return
         rollbackCurrentRelease(RollbackReason.APP_REQUESTED, detail)
         reloadApp()
     }
@@ -492,7 +495,7 @@ class Core(
             state.pendingRollbackEvent = null
             files.bundleIds().forEach(loader::deleteProjection)
             files.deleteEverything()
-            loader.persistServedBundle(null)
+            persistServedBundle(null)
             reloadApp()
         }
     }
@@ -552,8 +555,12 @@ class Core(
 
     // The four functions and the gate
 
-    /** A restored phone brings the store's keys back without its files: a current or next release with no manifest on disk names a tree that is not there. */
-    private fun hasReleaseWithoutManifest(): Boolean = listOfNotNull(state.currentRelease, state.nextRelease?.release).any { files.readManifest(it.bundleId) == null }
+    /** A restored phone brings the store's keys back without its files: a current or next release with no manifest names a tree that is not there. */
+    private fun hasReleaseWithoutManifest(): Boolean = listOfNotNull(state.currentRelease, state.nextRelease?.release).any { readBundleManifest(it.bundleId) == null }
+
+    /** A bundle's manifest: the binary's for the embedded bundle, else the one its download stored. */
+    private fun readBundleManifest(bundleId: String): BundleManifest? =
+        if (bundleId == configuration.embeddedBundleId) configuration.embeddedBundleManifest else files.readManifest(bundleId)
 
     /**
      * A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded
@@ -569,7 +576,7 @@ class Core(
         state.lastRollback = null
         state.pendingRollbackEvent = null
         state.lastBuiltAt = configuration.builtAt
-        loader.persistServedBundle(null)
+        persistServedBundle(null)
     }
 
     private fun setNextRelease(next: NextRelease) {
@@ -582,7 +589,7 @@ class Core(
         val index = state.cachedIndex?.body ?: return
         if (!hasLeftIndex(next.release, index)) return
         state.nextRelease = null
-        loader.persistServedBundle(state.currentRelease?.bundleId)
+        persistServedBundle(state.currentRelease)
     }
 
     private fun hasLeftIndex(release: Release, index: ChannelIndex): Boolean = release.id in index.revokedReleaseIds || index.releases.none { it.id == release.id }
@@ -592,7 +599,7 @@ class Core(
         switchedFromRelease = state.currentRelease
         state.currentRelease = next
         state.nextRelease = null
-        loader.persistServedBundle(next.bundleId)
+        persistServedBundle(next)
         enqueueDeviceEvent(DeviceEvent.applied(next.id))
     }
 
@@ -601,23 +608,32 @@ class Core(
      * a reload the core performs, so the start settled before it, by a render handled before the start began, is unsettled.
      */
     private fun loadBundle() {
-        val expected = state.currentRelease?.bundleId
-        if (loader.servedBundleId() == expected) return
-        loadServedBundle(expected)
+        if (loader.servedBundleId() == resolveServedBundleId(state.currentRelease)) return
+        loadServedBundle(state.currentRelease)
         unsettleStart()
     }
 
     /** The restart of the web layer: the bundle loads, then the reloaded app goes through the gate. */
     private fun reloadApp() {
-        loadServedBundle(state.currentRelease?.bundleId)
+        loadServedBundle(state.currentRelease)
         gateReloadedApp()
     }
 
     /** Every load the core asks of the host: a readiness signal reported before it is the replaced bundle's and counts for nothing. */
-    private fun loadServedBundle(bundleId: String?) {
-        loader.loadServedBundle(bundleId)
+    private fun loadServedBundle(release: Release?) {
+        loader.loadServedBundle(resolveServedBundleId(release))
         bundleLoadCount += 1
     }
+
+    private fun persistServedBundle(release: Release?) {
+        loader.persistServedBundle(resolveServedBundleId(release))
+    }
+
+    /** The bundle the host serves for a release, `null` for the embedded one: the binary serves a release of the embedded bundle, which has no tree of its own. */
+    private fun resolveServedBundleId(release: Release?): String? = release?.bundleId?.takeIf { it != configuration.embeddedBundleId }
+
+    /** The bundle that runs: the current release's, else the embedded one, `null` only in a build that names no embedded bundle. */
+    private fun resolveRunningBundleId(): String? = state.currentRelease?.bundleId ?: configuration.embeddedBundleId
 
     private fun hasLoadedBundleSince(bundleLoadCountAtSignal: Int): Boolean = bundleLoadCount != bundleLoadCountAtSignal
 
@@ -636,7 +652,7 @@ class Core(
 
     /** The apply the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does. */
     private fun restartIntoNextRelease() {
-        state.nextRelease?.let { loader.persistServedBundle(it.release.bundleId) }
+        state.nextRelease?.let { persistServedBundle(it.release) }
         restartThroughGate(isAskedByApp = false, ::applyNextRelease)
     }
 
@@ -678,11 +694,13 @@ class Core(
         listener.updateRolledBack(event)
     }
 
+    /** The adopted release runs already: a release waiting to apply is older and is dropped, so no start switches to it. */
     private fun adoptInPlace(release: Release) {
         val wasConfirmed = !isCurrentReleaseUnconfirmed()
         state.currentRelease = release
+        state.nextRelease = null
         if (wasConfirmed) state.fallbackRelease = release
-        loader.persistServedBundle(release.bundleId)
+        persistServedBundle(release)
     }
 
     private fun isCurrentReleaseUnconfirmed(): Boolean {
@@ -720,7 +738,7 @@ class Core(
         hasAnnouncedRollback = false
         enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.name, detail))
         enqueueDeviceEvent(DeviceEvent.rolledBack(current.id, fallback?.id))
-        loader.persistServedBundle(fallback?.bundleId)
+        persistServedBundle(fallback)
     }
 
     /** The release to fall back to right now: the last confirmed one while it can still run, else the embedded bundle. */
@@ -728,7 +746,7 @@ class Core(
         val fallback = state.fallbackRelease ?: return null
         if (fallback.bundleId in state.failedBundleIds) return null
         if (state.cachedIndex?.body?.revokedReleaseIds?.contains(fallback.id) == true) return null
-        val manifest = files.readManifest(fallback.bundleId) ?: return null
+        val manifest = readBundleManifest(fallback.bundleId) ?: return null
         return if (files.isComplete(manifest, embedded)) fallback else null
     }
 
@@ -736,7 +754,7 @@ class Core(
         stopReadyTimer()
         state.currentRelease = null
         state.nextRelease = null
-        loader.persistServedBundle(null)
+        persistServedBundle(null)
         restartThroughGate(isAskedByApp = false) { reloadApp() }
     }
 
