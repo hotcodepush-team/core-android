@@ -529,7 +529,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldServeAReleaseOfTheEmbeddedBundleFromTheBinaryWhenTheDeviceSwitchesToItFromAnotherRelease() = runBlocking {
+    fun shouldSwitchToAReleaseOfTheEmbeddedBundleOnTheBinaryWithoutTheGateWhenAnotherBundleRuns() = runBlocking {
         val harness = Harness(immediateApply)
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -539,10 +539,59 @@ class CoreTest {
         harness.core.notifyReady()
         val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
         harness.publish(listOf(v2, reverted), 2, etag = "\"e2\"")
+        val eventCountBefore = StateStore(harness.store).unsentEvents.size
         assertEquals(SyncResult.applied(reverted.release.release, "notes 2"), harness.core.sync(SyncTrigger.MANUAL))
+        assertTrue(harness.http.requests.none { it.first == reverted.release.manifestUrl })
+        assertTrue(!harness.files.manifestFile("embedded").exists())
         assertEquals(listOf("b2", null), harness.loader.loaded)
         assertNull(harness.loader.persisted)
         assertTrue(!harness.loader.projectionDirectory("embedded").exists())
+        assertEquals(listOf("checked", "applied", "confirmed"), StateStore(harness.store).unsentEvents.drop(eventCountBefore).map { it.type })
+        assertTrue(harness.scheduler.tasks.all { it.isCancelled })
+        startAgain(harness, immediateApply)
+        val state = harness.core.getState()
+        assertEquals(reverted.release.release, state.currentRelease)
+        assertEquals(reverted.release.release, state.fallbackRelease)
+        assertTrue(state.failedBundleIds.isEmpty())
+        assertTrue(harness.listener.rollbacks.isEmpty())
+    }
+
+    @Test
+    fun shouldSwitchToAReleaseOfTheEmbeddedBundleWithoutTheGateAtTheNextStartWhenAnotherBundleRuns() = runBlocking {
+        val harness = startOnConfirmedRelease(Fixture.configuration())
+        val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content), reverted), 2, etag = "\"e2\"")
+        val eventCountBefore = StateStore(harness.store).unsentEvents.size
+        val downloaded = SyncResult.downloaded(reverted.release.release, "notes 2", ApplyStrategy.NEXT_START)
+        assertEquals(downloaded, harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(downloaded, harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(listOf("r1", "r2"), harness.listener.available.map { it.release.id })
+        assertEquals(listOf("r1", "r2"), harness.listener.downloaded.map { it.release.id })
+        assertTrue(harness.http.requests.none { it.first == reverted.release.manifestUrl })
+        assertNull(harness.loader.persisted)
+        assertNull(startAgain(harness, Fixture.configuration()))
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertEquals(listOf("checked", "applied", "confirmed"), StateStore(harness.store).unsentEvents.drop(eventCountBefore).map { it.type })
+        assertTrue(harness.scheduler.tasks.all { it.isCancelled })
+        val state = harness.core.getState()
+        assertEquals(reverted.release.release, state.currentRelease)
+        assertEquals(reverted.release.release, state.fallbackRelease)
+        assertTrue(state.failedBundleIds.isEmpty())
+    }
+
+    @Test
+    fun shouldGateAReleaseOfAThirdBundleWhenAnotherBundleRuns() = runBlocking {
+        val harness = startOnConfirmedRelease(immediateApply)
+        harness.core.handleRendered()
+        val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content), v3), 2, etag = "\"e2\"")
+        assertEquals(SyncResult.applied(v3.release.release, "notes 2"), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(listOf("b3"), harness.loader.loaded)
+        harness.scheduler.fire()
+        val state = harness.core.getState()
+        assertEquals("r1", state.currentRelease?.id)
+        assertEquals(listOf("b3"), state.failedBundleIds)
+        assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rollbacks.map { it.reason })
     }
 
     @Test
@@ -1998,10 +2047,10 @@ class CoreTest {
         return harness
     }
 
-    /** The next start of the process, after a run that may never have come up: the host serves the bundle the loader persisted. */
-    private suspend fun startAgain(harness: Harness, configuration: Configuration) {
+    /** The next start of the process, after a run that may never have come up: the host serves the bundle the loader persisted. Answers the start's bundle. */
+    private suspend fun startAgain(harness: Harness, configuration: Configuration): String? {
         harness.loader.served = harness.loader.persisted
         harness.restart(configuration)
-        harness.core.handleAppStart()
+        return harness.core.handleAppStart()
     }
 }

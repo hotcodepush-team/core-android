@@ -437,12 +437,22 @@ class Core(
         return if (files.isComplete(manifest, embedded)) next else null
     }
 
+    /** The binary carries the embedded bundle, its manifest and its files: a release of it downloads nothing and goes straight to its apply moment. */
     private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, applyStrategy: ApplyStrategy, trigger: SyncTrigger): SyncResult {
         val release = resolveRelease(target, isMandatory)
+        if (target.bundleId != configuration.embeddedBundleId) {
+            val failure = downloadBundle(target, release)
+            if (failure != null) return failure
+        }
+        if (applyStrategy != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, applyStrategy, trigger))
+        return lock.withLock { applyDownloaded(NextRelease(release, applyStrategy), target.notes) }
+    }
+
+    /** Fetches, verifies and lays out the release's bundle and queues its `downloaded` event; answers the failed cycle, else `null`. */
+    private suspend fun downloadBundle(target: IndexRelease, release: Release): SyncResult? {
         try {
             val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(target.id, progressBytes, downloadSizeBytes) }
-            // The binary serves the embedded bundle's files itself.
-            if (target.bundleId != configuration.embeddedBundleId) BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
+            BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
             lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, target.bundleId, outcome.bytes, outcome.packKind)) }
         } catch (failure: DownloadFailure) {
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, failure.reason.name)) }
@@ -454,8 +464,7 @@ class Core(
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, FailedReason.DOWNLOAD_FAILED.name)) }
             return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, failure.message ?: failure.toString())
         }
-        if (applyStrategy != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, applyStrategy, trigger))
-        return lock.withLock { applyDownloaded(NextRelease(release, applyStrategy), target.notes) }
+        return null
     }
 
     /**
@@ -594,6 +603,10 @@ class Core(
 
     private fun hasLeftIndex(release: Release, index: ChannelIndex): Boolean = release.id in index.revokedReleaseIds || index.releases.none { it.id == release.id }
 
+    /**
+     * Next becomes the current release, unconfirmed, and nothing reloads. A release of the embedded bundle is confirmed as it
+     * becomes current: the embedded bundle is never gated, so no readiness timer arms for it and no rollback blocklists it.
+     */
     private fun switchToNextRelease() {
         val next = state.nextRelease?.release ?: return
         switchedFromRelease = state.currentRelease
@@ -601,6 +614,7 @@ class Core(
         state.nextRelease = null
         persistServedBundle(next)
         enqueueDeviceEvent(DeviceEvent.applied(next.id))
+        if (next.bundleId == configuration.embeddedBundleId) confirmCurrentRelease()
     }
 
     /**
