@@ -1,9 +1,15 @@
 package com.hotcodepush.core
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.IOException
 import java.io.InputStream
 import java.util.UUID
+
+/** The pauses before a failed fetch's second and third attempt inside one check. */
+private val RETRY_PAUSES_MILLIS = listOf(1_000L, 3_000L)
 
 sealed class DownloadFailure(message: String) : Exception(message) {
     /** A downloaded file or pack off what the manifest promised: a hash, the pack's length, an entry's size, the archive's form. */
@@ -66,18 +72,28 @@ class Downloader(
     /** The envelope with its manifest decoded, once the manifest's bytes match the index, the envelope names the release's bundle and the manifest the device's app and platform. */
     internal suspend fun fetchBundleManifest(target: IndexRelease): Pair<ManifestEnvelope, BundleManifest> {
         val url = resolvePinnedUrl(target.manifestUrl)
-        val response = try {
-            http.get(url, emptyMap())
+        val body = try {
+            retryTransientFailures { fetchManifestEnvelope(url) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (refusal: HttpStatusException) {
+            throw DownloadFailure.DownloadFailed("HTTP ${refusal.status} for the manifest")
         } catch (exception: Exception) {
             throw DownloadFailure.DownloadFailed("The manifest could not be fetched: ${exception.message}")
         }
-        if (response.status != 200) throw DownloadFailure.DownloadFailed("HTTP ${response.status} for the manifest")
-        val envelope = runCatching { ManifestEnvelope.fromJson(org.json.JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()
+        val envelope = runCatching { ManifestEnvelope.fromJson(org.json.JSONObject(String(body, Charsets.UTF_8))) }.getOrNull()
         val manifest = envelope?.let { runCatching { it.decodeManifest() }.getOrNull() } ?: throw DownloadFailure.ManifestInvalid("The manifest could not be parsed")
         verifyManifestSignature(envelope, target.manifestSha256)
         if (envelope.bundleId != target.bundleId) throw DownloadFailure.ManifestInvalid("The manifest names another bundle")
         if (!manifest.isForDevice(configuration.appId, platform)) throw DownloadFailure.ManifestInvalid("The manifest is for another app or does not list $platform")
         return envelope to manifest
+    }
+
+    /** The envelope's bytes, a status other than 200 thrown as the refusal it is. */
+    private suspend fun fetchManifestEnvelope(url: String): ByteArray {
+        val response = http.get(url, emptyMap())
+        if (response.status != 200) throw HttpStatusException(response.status)
+        return response.body
     }
 
     /** The manifest's bytes against the index, and, once the app holds signing keys, its signature under the key it names. */
@@ -156,7 +172,9 @@ class Downloader(
         val pinnedUrl = resolvePinnedUrl(source.url)
         val file = File(temporaryDirectory, "$bundleId-${Hashing.sha256Hex(source.url).take(16)}.pack")
         try {
-            http.download(pinnedUrl, file, source.packBytesLimit, progress)
+            retryTransientFailures { http.download(pinnedUrl, file, source.packBytesLimit, progress) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (failure: DownloadFailure) {
             throw failure
         } catch (refusal: HttpStatusException) {
@@ -241,7 +259,13 @@ class Downloader(
         val temporary = File(temporaryDirectory, "${UUID.randomUUID()}.file")
         try {
             try {
-                http.download(url, temporary, file.sizeBytes) { _, _ -> }
+                retryTransientFailures {
+                    // The bucket serves a file gzip-encoded, so what arrived is decoded bytes no `Range` offset names: each attempt starts again.
+                    temporary.delete()
+                    http.download(url, temporary, file.sizeBytes) { _, _ -> }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (failure: DownloadFailure) {
                 throw failure
             } catch (exception: Exception) {
@@ -257,4 +281,24 @@ class Downloader(
             temporary.delete()
         }
     }
+
+    /**
+     * Runs a fetch up to three times inside the check, one second and then three seconds apart, while it fails on the way;
+     * a 404, a 410 or any other refusal throws at once, since the object will not appear, and so does the last attempt's
+     * failure. The next check starts afresh.
+     */
+    private suspend fun <T> retryTransientFailures(fetch: suspend () -> T): T {
+        for (pauseMillis in RETRY_PAUSES_MILLIS) {
+            try {
+                return fetch()
+            } catch (failure: Exception) {
+                if (!isTransientFailure(failure)) throw failure
+            }
+            delay(pauseMillis)
+        }
+        return fetch()
+    }
+
+    /** A network error, a timeout or a short read, all three an `IOException`, or a 5xx: a later attempt may still bring the object. */
+    private fun isTransientFailure(failure: Exception): Boolean = failure is IOException || (failure is HttpStatusException && failure.status in 500..599)
 }

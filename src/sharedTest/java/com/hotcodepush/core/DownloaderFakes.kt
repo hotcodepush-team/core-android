@@ -15,14 +15,18 @@ class FakeHttpClient : HttpClient {
     val posts = mutableListOf<Triple<String, Map<String, String>, ByteArray>>()
     var isOffline = false
 
-    /** Thrown from the next downloads, as a large file's OutOfMemoryError is. */
-    var downloadFailure: Throwable? = null
+    /** Thrown by the next fetches of a URL, one each in order, as a dropped connection or a large file's OutOfMemoryError is. */
+    private val fetchFailures = mutableMapOf<String, ArrayDeque<Throwable>>()
 
     /** Holds every download until it completes: a download that is still on its way. */
     var downloadGate: CompletableDeferred<Unit>? = null
 
     /** Runs once inside the next post, before it answers: what the app does while a batch is on its way. */
     var whilePosting: (suspend () -> Unit)? = null
+
+    fun failNextFetches(url: String, vararg failures: Throwable) {
+        fetchFailures.getOrPut(url) { ArrayDeque() } += failures
+    }
 
     fun stub(url: String, status: Int = 200, headers: Map<String, String> = emptyMap(), body: ByteArray) {
         stubs[url] = Stub(status, headers, body)
@@ -33,6 +37,7 @@ class FakeHttpClient : HttpClient {
     override suspend fun get(url: String, headers: Map<String, String>): HttpResponse {
         requests += url to headers
         requestThreads += Thread.currentThread()
+        fetchFailures[url]?.removeFirstOrNull()?.let { throw it }
         if (isOffline) throw java.io.IOException("offline")
         val stub = stubs[url] ?: return HttpResponse(404, emptyMap(), ByteArray(0))
         return HttpResponse(stub.status, stub.headers, stub.body)
@@ -53,7 +58,7 @@ class FakeHttpClient : HttpClient {
     override suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit) {
         requests += url to emptyMap()
         downloadGate?.await()
-        downloadFailure?.let { throw it }
+        fetchFailures[url]?.removeFirstOrNull()?.let { throw it }
         if (isOffline) throw java.io.IOException("offline")
         val stub = stubs[url] ?: throw HttpStatusException(404)
         if (stub.status != 200) throw HttpStatusException(stub.status)

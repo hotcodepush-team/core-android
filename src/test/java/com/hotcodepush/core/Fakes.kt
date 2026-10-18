@@ -1,5 +1,6 @@
 package com.hotcodepush.core
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,8 +113,8 @@ class FixedClock(var now: Long) : Clock {
     override fun now(): Long = now
 }
 
-/** A core over fakes, in a fresh temporary directory. */
-class Harness(configuration: Configuration = Fixture.configuration(), isDebugBuild: Boolean = false, private val device: DeviceFacts = DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", isDebugBuild)) {
+/** A core over fakes, in a fresh temporary directory, its tasks on `dispatcher`: a test's own runs their pauses in virtual time. */
+class Harness(configuration: Configuration = Fixture.configuration(), isDebugBuild: Boolean = false, private val device: DeviceFacts = DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", isDebugBuild), dispatcher: CoroutineDispatcher = Dispatchers.Unconfined) {
     val root: File = Files.createTempDirectory("hotcodepush-tests").toFile()
     val store = InMemoryStore()
     val http = FakeHttpClient()
@@ -125,7 +126,7 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     val files = FileStore(File(root, "store"))
     /** What escaped the core's own tasks to the scope: on a device, the process's crash. */
     val uncaught = mutableListOf<Throwable>()
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, failure -> uncaught += failure })
+    val scope = CoroutineScope(SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, failure -> uncaught += failure })
 
     /** What the process's importance says at the next start: `false` for one the system started without a foreground activity. */
     var isProcessInForeground = true

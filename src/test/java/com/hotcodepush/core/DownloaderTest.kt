@@ -1,5 +1,11 @@
 package com.hotcodepush.core
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -7,6 +13,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 
 class DownloaderTest {
     private val indexHtml = "<html>v2</html>".toByteArray()
@@ -168,12 +175,12 @@ class DeltaPackTest {
     }
 
     @Test
-    fun shouldTakeTheFullPackWhenTheUpdatesHostRefusesTheStreamedDelta() {
+    fun shouldTakeTheFullPackAfterThreeAttemptsWhenTheUpdatesHostAnswersTheStreamedDelta503EachTime() = runTest {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, bundle.pack)
         harness.http.stub(streamedUrl, status = 503, body = ByteArray(0))
-        assertEquals(PackKind.FULL, harness.download(release, "b1").packKind)
-        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, streamedUrl, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
+        assertEquals(PackKind.FULL, harness.downloader.downloadRelease(release, "b1") { _, _ -> }.packKind)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL) + List(3) { streamedUrl } + DownloaderHarness.PACK_URL, harness.http.requests.map { it.first })
     }
 
     @Test
@@ -237,5 +244,56 @@ class DeltaPackTest {
         val single = DownloaderHarness.bundle(mapOf("index.html" to indexHtml))
         assertEquals(PackKind.FULL, harness.download(harness.publish(single.manifest, single.pack), null).packKind)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
+    }
+}
+
+class FetchRetryTest {
+    private val indexHtml = "<html>v2</html>".toByteArray()
+    private val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml))
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun shouldProceedWithTheDownloadWhenTheManifestDropsTwiceAndArrivesOnTheThirdAttempt() = runTest {
+        val harness = DownloaderHarness()
+        val release = harness.publish(bundle.manifest, bundle.pack)
+        harness.http.failNextFetches(DownloaderHarness.MANIFEST_URL, IOException("connection reset"), IOException("connection reset"))
+        assertEquals(PackKind.FULL, harness.downloader.downloadRelease(release, null) { _, _ -> }.packKind)
+        assertEquals(List(3) { DownloaderHarness.MANIFEST_URL } + DownloaderHarness.PACK_URL, harness.http.requests.map { it.first })
+        assertEquals(4_000L, currentTime)
+    }
+
+    @Test
+    fun shouldStoreAFileThatDropsTwiceAndArrivesOnTheThirdAttempt() = runTest {
+        val harness = DownloaderHarness()
+        val release = harness.publish(bundle.manifest, PackWriter.pack(emptyList()))
+        val sha256 = Hashing.sha256Hex(indexHtml)
+        val fileUrl = DownloaderHarness.fileUrl(sha256)
+        harness.http.stub(fileUrl, body = indexHtml)
+        harness.http.failNextFetches(fileUrl, IOException("connection reset"), IOException("connection reset"))
+        harness.downloader.downloadRelease(release, null) { _, _ -> }
+        assertEquals(3, harness.http.requests.count { it.first == fileUrl })
+        assertArrayEquals(indexHtml, harness.files.file(sha256).readBytes())
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun shouldRethrowTheCancellationWhenTheDownloadIsCancelledDuringAPause() = runTest {
+        val harness = DownloaderHarness()
+        val release = harness.publish(bundle.manifest, bundle.pack)
+        harness.http.failNextFetches(DownloaderHarness.PACK_URL, IOException("connection reset"))
+        var thrown: Throwable? = null
+        val download = launch {
+            try {
+                harness.downloader.downloadRelease(release, null) { _, _ -> }
+            } catch (failure: Throwable) {
+                thrown = failure
+                throw failure
+            }
+        }
+        runCurrent()
+        download.cancel()
+        runCurrent()
+        assertTrue("$thrown", thrown is CancellationException)
+        assertEquals(1, harness.http.requests.count { it.first == DownloaderHarness.PACK_URL })
     }
 }

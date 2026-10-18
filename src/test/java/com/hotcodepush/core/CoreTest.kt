@@ -1,14 +1,22 @@
 package com.hotcodepush.core
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 
 class CoreTest {
@@ -780,12 +788,65 @@ class CoreTest {
     @Test
     fun shouldFailTheDownloadAndKeepTheProcessWhenTheDownloadRunsOutOfMemory() = runBlocking {
         val harness = Harness()
-        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
-        harness.http.downloadFailure = OutOfMemoryError("a large file")
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.failNextFetches(v2.envelope.pack.url, OutOfMemoryError("a large file"))
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(FailedReason.DOWNLOAD_FAILED.name, result.reason)
         assertEquals(FailedReason.DOWNLOAD_FAILED.name, StateStore(harness.store).unsentEvents.last().reason)
         assertNull(harness.core.getState().nextRelease)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun shouldDownloadWithoutAFailedEventWhenThePackDropsTwiceAndArrivesOnTheThirdAttempt() = runTest {
+        val harness = Harness(dispatcher = UnconfinedTestDispatcher(testScheduler))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.failNextFetches(v2.envelope.pack.url, IOException("connection reset"), IOException("connection reset"))
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(3, harness.http.requests.count { it.first == v2.envelope.pack.url })
+        assertTrue(harness.listener.failed.isEmpty())
+        assertTrue(StateStore(harness.store).unsentEvents.none { it.type == "failed" })
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun shouldReportDownloadFailedOnceAfterTheThirdAttemptPausingOneSecondAndThenThreeWhenThePackAnswers503EachTime() = runTest {
+        val harness = Harness(dispatcher = StandardTestDispatcher(testScheduler))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.stub(v2.envelope.pack.url, status = 503, body = ByteArray(0))
+        val packAttemptCount = { harness.http.requests.count { it.first == v2.envelope.pack.url } }
+        val failedEvents = { StateStore(harness.store).unsentEvents.filter { it.type == "failed" } }
+        val sync = async { harness.core.sync(SyncTrigger.MANUAL) }
+        runCurrent()
+        assertEquals(1, packAttemptCount())
+        advanceTimeBy(1_000)
+        assertEquals(1, packAttemptCount())
+        runCurrent()
+        assertEquals(2, packAttemptCount())
+        advanceTimeBy(3_000)
+        assertEquals(2, packAttemptCount())
+        assertTrue(failedEvents().isEmpty())
+        runCurrent()
+        assertEquals(3, packAttemptCount())
+        assertEquals(FailedReason.DOWNLOAD_FAILED.name, sync.await().reason)
+        assertEquals(listOf(DeviceEvent.failed("r1", FailedReason.DOWNLOAD_FAILED.name)), failedEvents())
+        assertEquals(1, harness.listener.failed.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun shouldReportDownloadFailedAtOnceWithoutARetryWhenThePackAnswers404() = runTest {
+        val harness = Harness(dispatcher = UnconfinedTestDispatcher(testScheduler))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.stub(v2.envelope.pack.url, status = 404, body = ByteArray(0))
+        assertEquals(FailedReason.DOWNLOAD_FAILED.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(1, harness.http.requests.count { it.first == v2.envelope.pack.url })
+        assertEquals(0L, currentTime)
+        assertEquals(listOf(DeviceEvent.failed("r1", FailedReason.DOWNLOAD_FAILED.name)), StateStore(harness.store).unsentEvents.filter { it.type == "failed" })
     }
 
     @Test

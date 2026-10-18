@@ -26,7 +26,7 @@ interface HttpClient {
     suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit)
 }
 
-/** A download answered with a status other than 200 or 206; a redirect is one, since a download follows none. */
+/** A status the fetch does not take: for a download any but 200 or 206, a redirect among them, since a download follows none. */
 class HttpStatusException(val status: Int) : Exception("HTTP $status")
 
 class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : HttpClient {
