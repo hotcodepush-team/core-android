@@ -1,6 +1,7 @@
 package com.hotcodepush.core
 
 import android.os.Build
+import okio.ByteString.Companion.toByteString
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Files
@@ -28,7 +29,7 @@ class FileStore(val rootDirectory: File) {
         try {
             val digest = MessageDigest.getInstance("SHA-256")
             temporary.outputStream().use { output -> DigestInputStream(content, digest).copyTo(output) }
-            val actual = Hashing.hex(digest.digest())
+            val actual = digest.digest().toByteString().hex()
             if (actual != sha256) throw HashMismatchException(sha256, actual)
             if (!temporary.renameTo(file(sha256))) temporary.copyTo(file(sha256), overwrite = true)
         } finally {
