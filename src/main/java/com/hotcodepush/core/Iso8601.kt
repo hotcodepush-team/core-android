@@ -21,8 +21,6 @@ object Iso8601 {
         return parsed.time + fraction.padEnd(3, '0').take(3).toLong()
     }
 
-    fun parseOrNull(value: String?): Long? = value?.let { runCatching { parse(it) }.getOrNull() }
-
     /** A new formatter per call, since `SimpleDateFormat` is not thread-safe. */
     private fun formatter(pattern: String) = SimpleDateFormat(pattern, Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
