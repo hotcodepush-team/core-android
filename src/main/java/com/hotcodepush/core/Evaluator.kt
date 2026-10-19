@@ -17,8 +17,6 @@ data class DeviceInfo(
     val reportedAt: Long?,
 )
 
-data class Skip(val reason: SkippedReason, val condition: ConditionType? = null)
-
 /** The per-release verdict, the explanation behind the outcome and the probe's output. */
 data class ReleaseVerdict(val release: IndexRelease, val isEligible: Boolean, val reason: SkippedReason? = null, val condition: ConditionType? = null)
 

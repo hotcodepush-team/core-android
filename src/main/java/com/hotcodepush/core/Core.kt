@@ -372,12 +372,12 @@ class Core(
         return when (val evaluation = Evaluator.evaluate(index, deviceInfo())) {
             is Evaluation.UpToDate -> SyncResult.upToDate(current)
             is Evaluation.Available -> {
-                lock.withLock { recordChecked(evaluation.release, index, SyncStatus.AVAILABLE, null) }
+                lock.withLock { recordChecked(evaluation.release, index, SyncStatus.AVAILABLE) }
                 update(evaluation.release, evaluation.isMandatory, trigger, stage, options)
             }
             is Evaluation.Skipped -> when {
                 evaluation.reason != SkippedReason.RELEASE_REVOKED -> {
-                    evaluation.release?.let { release -> lock.withLock { recordChecked(release, index, SyncStatus.SKIPPED, Skip(evaluation.reason, evaluation.condition)) } }
+                    evaluation.release?.let { release -> lock.withLock { recordChecked(release, index, SyncStatus.SKIPPED, evaluation.reason, evaluation.condition) } }
                     SyncResult.skipped(evaluation.release?.release, evaluation.reason, evaluation.condition)
                 }
                 (evaluation.release?.bundleId ?: configuration.embeddedBundleId) == resolveRunningBundleId() -> {
@@ -962,14 +962,14 @@ class Core(
 
     // Events
 
-    private fun recordChecked(release: IndexRelease, index: ChannelIndex, status: SyncStatus, skip: Skip?) {
+    private fun recordChecked(release: IndexRelease, index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = null, condition: ConditionType? = null) {
         val checked = state.checkedReleaseIds.filter { id -> index.releases.any { it.id == id } }
         if (release.id in checked) {
             state.checkedReleaseIds = checked
             return
         }
         state.checkedReleaseIds = checked + release.id
-        enqueueDeviceEvent(DeviceEvent.checked(release.id, status, skip?.reason, skip?.condition))
+        enqueueDeviceEvent(DeviceEvent.checked(release.id, status, reason, condition))
     }
 
     private fun enqueueDeviceEvent(event: DeviceEvent) {
