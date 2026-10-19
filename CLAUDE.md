@@ -13,11 +13,11 @@ When code and plan disagree, stop and surface it; never improvise.
 ## Layout
 
 ```
-src/main/java/com/hotcodepush/core       the library: no framework import, Android's UI classes in DebugScreen.kt alone; the manifest carries INTERNET, the backup and data-extraction rules and the debug screen's activity
+src/main/java/com/hotcodepush/core       the library: no framework import, Android's UI classes in DebugScreen.kt alone; the manifest carries INTERNET and ACCESS_NETWORK_STATE, the backup and data-extraction rules and the debug screen's activity
 src/main/cpp                             the native library hotcodepush_bspatch behind one JNI function: bspatch/ is FreeBSD's bspatch.c and its header, byte for byte core-ios's, bzip2/ the decompression sources of bzip2 1.0.8, unmodified
 src/main/res/xml                         the rules that keep the store out of backups and device transfers
 src/main/res/values, values-v29          the debug screen's strings and its theme, day and night from API 29
-src/test/java/com/hotcodepush/core       JUnit on the JVM; FixtureTest and SigningTest read node_modules/@hotcodepush/protocol/fixtures after npm ci, DeviceEventsContractTest runs the package's schema with node; Robolectric runs the debug screen's activity
+src/test/java/com/hotcodepush/core       JUnit on the JVM; FixtureTest and SigningTest read node_modules/@hotcodepush/protocol/fixtures after npm ci, DeviceEventsContractTest runs the package's schema with node; Robolectric runs the debug screen's activity and what the core reads from the app's context
 src/sharedTest/java                      the download fakes and the pack writer the JVM tests and the on-device tests share
 src/androidTest/java/com/hotcodepush/core   the tests that need a device: the signature fixtures against the device's own `java.security` providers, bspatch on its hostile patches and the fixtures' patch cases through the native library of the device's ABI, the fixtures packaged as assets
 src/androidTest/assets/bspatch           what BspatchTest reads: the committed inputs old.bin, new.bin and valid.patch, the patch written once by bsdiff 4.3, and the hostile patches src/androidTest/make-bspatch-fixtures.sh writes with bash, xxd and bzip2
