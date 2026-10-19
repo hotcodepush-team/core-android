@@ -607,6 +607,34 @@ class CoreTest {
     }
 
     @Test
+    fun shouldSwitchToAReleaseOfTheEmbeddedBundleOnAMeteredConnectionUnderTheUnmeteredStrategy() = runBlocking {
+        val configuration = Fixture.configuration(downloadStrategy = DownloadStrategy.UNMETERED)
+        val harness = startOnConfirmedRelease(configuration)
+        harness.loader.isMetered = true
+        val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content), reverted), 2, etag = "\"e2\"")
+        assertEquals(SyncResult.downloaded(reverted.release.release, "notes 2", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
+        assertTrue(harness.http.requests.none { it.first == reverted.release.manifestUrl })
+        assertNull(startAgain(harness, configuration))
+        assertEquals(reverted.release.release, harness.core.getState().currentRelease)
+    }
+
+    @Test
+    fun shouldTakeAReleaseOfTheEmbeddedBundleToItsApplyMomentUnderTheManualDownloadStrategyAndOnlyAnnounceItAtACheck() = runBlocking {
+        val configuration = Fixture.configuration(downloadStrategy = DownloadStrategy.MANUAL)
+        val harness = startOnConfirmedRelease(configuration)
+        val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content), reverted), 2, etag = "\"e2\"")
+        assertEquals(SyncResult.available(reverted.release.release, "notes 2", reverted.release.sizeBytes), harness.core.checkForUpdate())
+        assertNull(harness.core.getState().nextRelease)
+        assertEquals(SyncResult.downloaded(reverted.release.release, "notes 2", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(reverted.release.release, harness.core.getState().nextRelease)
+        assertTrue(harness.http.requests.none { it.first == reverted.release.manifestUrl })
+        assertNull(startAgain(harness, configuration))
+        assertEquals(reverted.release.release, harness.core.getState().currentRelease)
+    }
+
+    @Test
     fun shouldGateAReleaseOfAThirdBundleWhenAnotherBundleRuns() = runBlocking {
         val harness = startOnConfirmedRelease(immediateApply)
         harness.core.handleRendered()

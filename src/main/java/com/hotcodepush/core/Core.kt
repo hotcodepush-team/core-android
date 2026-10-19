@@ -415,12 +415,19 @@ class Core(
         }
         val applyStrategy = requestedApplyStrategy ?: resolveConfiguredApplyStrategy(isMandatory)
         listener.updateAvailable(UpdateAvailableEvent(release, target.notes, target.sizeBytes, trigger))
-        return when (options.downloadStrategy ?: configuration.downloadStrategy) {
+        return when (resolveDownloadStrategy(target, stage, options)) {
             DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, target.sizeBytes)
             DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, applyStrategy, trigger)
             DownloadStrategy.AUTO -> downloadAndApply(target, isMandatory, applyStrategy, trigger)
         }
     }
+
+    /**
+     * The download gate of the cycle: the call's own strategy, else the configuration's. A release of the embedded bundle downloads
+     * nothing and passes it, `unmetered` and `manual` alike, at every stage but the check, whose gate stays shut.
+     */
+    private fun resolveDownloadStrategy(target: IndexRelease, stage: Stage, options: SyncOptions): DownloadStrategy =
+        if (target.bundleId == configuration.embeddedBundleId && stage != Stage.CHECK) DownloadStrategy.AUTO else options.downloadStrategy ?: configuration.downloadStrategy
 
     /** The release as the app sees it: the index's entry with the mandatory flag the evaluation decided, transitive included. */
     private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(target.id, target.number, target.bundleId, target.bundleVersion, isMandatory)
