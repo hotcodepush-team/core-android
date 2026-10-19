@@ -899,11 +899,7 @@ class Core(
 
     /** The channel id a cycle would fetch by, the runtime one or the build's, is a UUID; any other is a programming mistake, refused before anything is fetched. */
     private fun verifyChannelId() {
-        when (val choice = state.channel) {
-            is ChannelChoice.Id -> verifyChannelId(choice.id)
-            is ChannelChoice.Name -> Unit
-            null -> configuration.channelId?.let(::verifyChannelId)
-        }
+        channel().id?.let(::verifyChannelId)
     }
 
     private fun verifyChannelId(id: String) {
