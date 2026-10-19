@@ -166,6 +166,17 @@ data class UpdateFailedEvent(val release: Release?, val reason: FailedReason, va
         .put("trigger", trigger.wire)
 }
 
+/** While a pack downloads: `progressBytes` of its `downloadSizeBytes` have arrived, `progress` their share from 0 to 1. */
+data class DownloadProgressEvent(val downloadSizeBytes: Long, val progressBytes: Long, val releaseId: String) {
+    val progress: Double get() = if (downloadSizeBytes > 0) progressBytes.toDouble() / downloadSizeBytes else 0.0
+
+    fun toJson(): JSONObject = JSONObject()
+        .put("downloadSizeBytes", downloadSizeBytes)
+        .put("progress", progress)
+        .put("progressBytes", progressBytes)
+        .put("releaseId", releaseId)
+}
+
 /** At each start that follows a rollback until the app is up after one, before the readiness gate; `toRelease` is `null` for the embedded bundle. */
 data class UpdateRolledBackEvent(val fromRelease: Release, val toRelease: Release?, val reason: RollbackReason) {
     fun toJson(): JSONObject = JSONObject().put("fromRelease", fromRelease.toJson()).put("toRelease", toRelease?.toJson() ?: JSONObject.NULL).put("reason", reason.name)

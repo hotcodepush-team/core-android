@@ -49,5 +49,16 @@ class ContractTest {
         assertEquals(setOf("release", "applyStrategy", "trigger"), keys(UpdateDownloadedEvent(release, ApplyStrategy.NEXT_START, SyncTrigger.START).toJson()))
         assertEquals(setOf("fromRelease", "toRelease", "reason"), keys(UpdateRolledBackEvent(release, null, RollbackReason.APP_CRASHED).toJson()))
         assertEquals(setOf("release", "reason", "message", "trigger"), keys(UpdateFailedEvent(null, FailedReason.DEVICE_OFFLINE, "m", SyncTrigger.START).toJson()))
+        assertEquals(setOf("downloadSizeBytes", "progress", "progressBytes", "releaseId"), keys(DownloadProgressEvent(4, 1, "r1").toJson()))
+    }
+
+    @Test
+    fun shouldCarryTheShareOfThePackThatArrivedAsProgress() {
+        val json = DownloadProgressEvent(downloadSizeBytes = 4, progressBytes = 1, releaseId = "r1").toJson()
+        assertEquals(4L, json.getLong("downloadSizeBytes"))
+        assertEquals(0.25, json.getDouble("progress"), 0.0)
+        assertEquals(1L, json.getLong("progressBytes"))
+        assertEquals("r1", json.getString("releaseId"))
+        assertEquals(0.0, DownloadProgressEvent(downloadSizeBytes = 0, progressBytes = 0, releaseId = "r1").progress, 0.0)
     }
 }

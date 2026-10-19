@@ -462,7 +462,7 @@ class Core(
     /** Fetches, verifies and lays out the release's bundle and queues its `downloaded` event; answers the failed cycle, else `null`. */
     private suspend fun downloadBundle(target: IndexRelease, release: Release): SyncResult? {
         try {
-            val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(target.id, progressBytes, downloadSizeBytes) }
+            val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes, progressBytes, target.id)) }
             BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
             lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, target.bundleId, outcome.bytes, outcome.packKind)) }
         } catch (failure: DownloadFailure) {

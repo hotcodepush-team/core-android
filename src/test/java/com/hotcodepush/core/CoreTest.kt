@@ -67,6 +67,18 @@ class CoreTest {
     }
 
     @Test
+    fun shouldEmitTheDownloadProgressOfThePackForTheRelease() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        val packSizeBytes = v2.pack.size.toLong()
+        assertEquals(listOf(DownloadProgressEvent(packSizeBytes, packSizeBytes, "r1")), harness.listener.progress)
+        assertEquals(1.0, harness.listener.progress.single().progress, 0.0)
+    }
+
+    @Test
     fun shouldAnswerTheReleaseBeforeTheStartAsPreviousReleaseOnceAfterASwitchAtTheStart() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)

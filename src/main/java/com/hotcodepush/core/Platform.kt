@@ -41,7 +41,7 @@ interface CoreListener {
     fun updateAvailable(event: UpdateAvailableEvent)
     fun updateDownloaded(event: UpdateDownloadedEvent)
     fun updateFailed(event: UpdateFailedEvent)
-    fun downloadProgress(releaseId: String, progressBytes: Long, downloadSizeBytes: Long)
+    fun downloadProgress(event: DownloadProgressEvent)
     fun updateRolledBack(event: UpdateRolledBackEvent)
 }
 
