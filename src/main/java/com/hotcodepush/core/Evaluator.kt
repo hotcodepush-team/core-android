@@ -56,13 +56,9 @@ object Evaluator {
         val newerVerdict = verdicts.firstOrNull { it.release.number > currentNumber && it.reason != SkippedReason.RELEASE_REVOKED }
         val newerEligible = eligibleVerdicts.firstOrNull { it.release.number > currentNumber }
         val olderEligible = eligibleVerdicts.firstOrNull { it.release.number < currentNumber }
-        if (index.isPaused) {
-            if (isCurrentRevoked) return Evaluation.Skipped(olderEligible?.release, SkippedReason.RELEASE_REVOKED)
-            if (newerVerdict != null) return Evaluation.Skipped(newerVerdict.release, SkippedReason.CHANNEL_PAUSED)
-            return Evaluation.UpToDate(currentIndexRelease)
-        }
-        if (newerEligible != null) return Evaluation.Available(newerEligible.release, isMandatoryTransitively(newerEligible.release, currentNumber, eligibleVerdicts))
+        if (!index.isPaused && newerEligible != null) return Evaluation.Available(newerEligible.release, isMandatoryTransitively(newerEligible.release, currentNumber, eligibleVerdicts))
         if (isCurrentRevoked) return Evaluation.Skipped(olderEligible?.release, SkippedReason.RELEASE_REVOKED)
+        if (index.isPaused && newerVerdict != null) return Evaluation.Skipped(newerVerdict.release, SkippedReason.CHANNEL_PAUSED)
         if (newerVerdict?.reason != null) return Evaluation.Skipped(newerVerdict.release, newerVerdict.reason, newerVerdict.condition)
         return Evaluation.UpToDate(currentIndexRelease)
     }
