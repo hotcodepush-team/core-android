@@ -378,6 +378,10 @@ class Core(
                     SyncResult.skipped(evaluation.release?.release, evaluation.reason, evaluation.condition)
                 }
                 stage == Stage.CHECK -> SyncResult.skipped(evaluation.release?.release, SkippedReason.RELEASE_REVOKED)
+                (evaluation.release?.bundleId ?: configuration.embeddedBundleId) == resolveRunningBundleId() -> {
+                    lock.withLock { adoptInPlace(evaluation.release?.release) }
+                    SyncResult.skipped(evaluation.release?.release, SkippedReason.RELEASE_REVOKED)
+                }
                 evaluation.release == null -> {
                     lock.withLock { revertToEmbedded() }
                     SyncResult.skipped(null, SkippedReason.RELEASE_REVOKED)
@@ -715,8 +719,11 @@ class Core(
         listener.updateRolledBack(event)
     }
 
-    /** The adopted release runs already: a release waiting to apply is older and is dropped, so no start switches to it. */
-    private fun adoptInPlace(release: Release) {
+    /**
+     * The adopted release runs already, `null` for the embedded bundle a revoked release of it leaves: a release waiting to apply
+     * is older and is dropped, so no start switches to it.
+     */
+    private fun adoptInPlace(release: Release?) {
         val wasConfirmed = !isCurrentReleaseUnconfirmed()
         state.currentRelease = release
         state.nextRelease = null
