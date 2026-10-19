@@ -1,6 +1,8 @@
 package com.hotcodepush.core
 
 import android.app.ActivityManager
+import android.os.Handler
+import android.os.Looper
 import java.io.File
 
 /** What the platform knows about the binary and the OS. */
@@ -49,6 +51,19 @@ fun interface ScheduledTask {
 
 fun interface Scheduler {
     fun schedule(afterSeconds: Double, block: () -> Unit): ScheduledTask
+}
+
+/** The core's timers on the main looper; `cancelAll()` drops every one still pending, for a host that goes away. */
+class HandlerScheduler : Scheduler {
+    private val handler = Handler(Looper.getMainLooper())
+
+    override fun schedule(afterSeconds: Double, block: () -> Unit): ScheduledTask {
+        val runnable = Runnable(block)
+        handler.postDelayed(runnable, (afterSeconds * 1000).toLong())
+        return ScheduledTask { handler.removeCallbacks(runnable) }
+    }
+
+    fun cancelAll() = handler.removeCallbacksAndMessages(null)
 }
 
 fun interface Clock {
