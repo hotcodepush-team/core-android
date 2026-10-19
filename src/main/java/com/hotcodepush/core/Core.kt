@@ -670,10 +670,17 @@ class Core(
         restartThroughGate(isAskedByApp = false, ::applyNextRelease)
     }
 
-    /** The switch and the reload as the gate runs them: a release that left the index while they were held is discarded, and nothing reloads. */
+    /**
+     * The switch and the reload as the gate runs them. A release that left the index while they were held is discarded. With the
+     * release gone, discarded or dropped by a rollback or a revert whose own restart yielded to this one, the host reloads into
+     * the current bundle when it serves another, and else nothing reloads.
+     */
     private fun applyNextRelease() {
         discardNextReleaseThatLeftTheIndex()
-        if (state.nextRelease == null) return
+        if (state.nextRelease == null) {
+            if (loader.servedBundleId() != resolveServedBundleId(state.currentRelease)) reloadApp()
+            return
+        }
         switchToNextRelease()
         reloadApp()
     }

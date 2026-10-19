@@ -681,6 +681,21 @@ class CoreTest {
     }
 
     @Test
+    fun shouldReloadIntoTheEmbeddedBundleWhenTheRunningReleaseIsRevokedWhileAnImmediateApplyIsHeld() = runBlocking {
+        val harness = startOnConfirmedRelease(immediateApply)
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2, Fixture.release(2, "b3", "<html>v3</html>".toByteArray())), 2, etag = "\"e2\"")
+        assertEquals(SyncStatus.APPLIED, harness.core.sync(SyncTrigger.MANUAL).status)
+        harness.publish(listOf(v2), 3, revoked = listOf("r1"), etag = "\"e3\"")
+        assertEquals(SyncResult.skipped(null, SkippedReason.RELEASE_REVOKED), harness.core.sync(SyncTrigger.MANUAL))
+        assertTrue(harness.loader.loaded.isEmpty())
+        harness.core.handleRendered()
+        assertNull(harness.core.getState().currentRelease)
+        assertNull(harness.core.getState().nextRelease)
+        assertEquals(listOf<String?>(null), harness.loader.loaded)
+    }
+
+    @Test
     fun shouldQueueTheSwitchWithTheReloadWhileRestartsAreNotAllowed() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
@@ -1902,6 +1917,41 @@ class CoreTest {
         harness.scheduler.fire()
         assertEquals(listOf<String?>(null), harness.loader.loaded)
         assertEquals(listOf(RollbackReason.READINESS_TIMED_OUT), harness.listener.rollbacks.map { it.reason })
+    }
+
+    @Test
+    fun shouldReloadIntoTheFallbackAtTheReadyTimeoutWhenAnImmediateApplyIsHeldForTheReloadedApp() = runBlocking {
+        val harness = startOnUnconfirmedRelease()
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content), Fixture.release(2, "b3", "<html>v3</html>".toByteArray())), 2, etag = "\"e2\"")
+        assertEquals(SyncStatus.APPLIED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertEquals(listOf("b2"), harness.loader.loaded)
+        harness.scheduler.fire()
+        val state = harness.core.getState()
+        assertNull(state.currentRelease)
+        assertNull(state.nextRelease)
+        assertEquals(listOf("b2"), state.failedBundleIds)
+        assertEquals(listOf("b2", null), harness.loader.loaded)
+        harness.core.handleRendered()
+        assertEquals(listOf("b2", null), harness.loader.loaded)
+    }
+
+    @Test
+    fun shouldReloadIntoTheFallbackWhenTheAppAllowsRestartsAgainAfterTheReadyTimeoutRolledBackWhileAnApplyWasHeld() = runBlocking {
+        val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE, readySignal = ReadySignal.MANUAL))
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.core.handleAppStart()
+        harness.core.handleRendered()
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.core.handleRendered()
+        harness.core.setRestartAllowed(false)
+        harness.publish(listOf(v2, Fixture.release(2, "b3", "<html>v3</html>".toByteArray())), 2, etag = "\"e2\"")
+        harness.core.sync(SyncTrigger.MANUAL)
+        harness.scheduler.fire()
+        assertEquals(listOf("b2"), harness.loader.loaded)
+        harness.core.setRestartAllowed(true)
+        assertNull(harness.core.getState().currentRelease)
+        assertEquals(listOf("b2", null), harness.loader.loaded)
     }
 
     @Test
