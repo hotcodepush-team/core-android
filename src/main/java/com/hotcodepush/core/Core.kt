@@ -22,7 +22,7 @@ class Core(
     store: KeyValueStore,
     private val files: FileStore,
     private val embedded: EmbeddedBundle,
-    http: HttpClient,
+    private val http: HttpClient,
     private val loader: BundleLoader,
     private val listener: CoreListener,
     private val scheduler: Scheduler,
@@ -56,7 +56,6 @@ class Core(
 
     private val state = StateStore(store)
     private val downloader = Downloader(configuration, device.platform, files, embedded, http, temporaryDirectory)
-    private val httpClient = http
     private val lock = Mutex()
 
     /** A cycle and the file cleanup, one at a time: a download writes files no kept release lists yet. */
@@ -874,7 +873,7 @@ class Core(
                 ChannelResolution.Id(resolved.second)
             } else {
                 val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/channels/v1/index.json"
-                val response = runCatching { httpClient.get(url, emptyMap()) }.getOrNull()
+                val response = runCatching { http.get(url, emptyMap()) }.getOrNull()
                 when (response?.status) {
                     null -> ChannelResolution.Offline
                     200 -> {
@@ -919,7 +918,7 @@ class Core(
         val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/channels/$channelId/${device.platform}/v1/index.json"
         val cached = state.cachedIndex?.takeIf { it.body.channelId == channelId }
         val headers = cached?.etag?.let { mapOf("If-None-Match" to it) } ?: emptyMap()
-        val response = runCatching { httpClient.get(url, headers) }.getOrNull() ?: return cached?.let { IndexFetch.Index(it.body) } ?: IndexFetch.Offline
+        val response = runCatching { http.get(url, headers) }.getOrNull() ?: return cached?.let { IndexFetch.Index(it.body) } ?: IndexFetch.Offline
         return when (response.status) {
             304 -> {
                 if (cached == null) return IndexFetch.Offline
@@ -1003,7 +1002,7 @@ class Core(
             request
         }
         val url = "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/events"
-        val answer = BatchAnswer.of(runCatching { httpClient.post(url, mapOf("Content-Type" to "application/json"), request.toJson().toString().toByteArray()) }.getOrNull())
+        val answer = BatchAnswer.of(runCatching { http.post(url, mapOf("Content-Type" to "application/json"), request.toJson().toString().toByteArray()) }.getOrNull())
         log.record(LogEntry.ofBatch(answer, request.events.size, clock.now()))
         lock.withLock {
             isSendingDeviceEvents = false
