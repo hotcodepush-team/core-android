@@ -1,6 +1,10 @@
 package com.hotcodepush.core
 
 import android.app.ActivityManager
+import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.net.ConnectivityManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import java.io.File
@@ -13,7 +17,23 @@ data class DeviceFacts(
     val osVersion: String,
     val sdkVersion: String,
     val isDebugBuild: Boolean,
-)
+) {
+    companion object {
+        /** The running binary's facts: its version and build from the package manager, the OS version, and a debug build when the app is debuggable. */
+        fun current(context: Context, sdkVersion: String): DeviceFacts {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+            return DeviceFacts(
+                platform = "android",
+                binaryVersion = info.versionName ?: "",
+                binaryBuild = versionCode.toString(),
+                osVersion = Build.VERSION.RELEASE ?: "",
+                sdkVersion = sdkVersion,
+                isDebugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+            )
+        }
+    }
+}
 
 /** The framework's side of running a bundle: where a bundle is laid out and which one the WebView serves. */
 interface BundleLoader {
@@ -82,6 +102,12 @@ object ActivityManagerProcessState : ProcessState {
         ActivityManager.getMyMemoryState(process)
         return process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
     }
+}
+
+/** Whether the connection is metered, for a loader's `isConnectionMetered()`: the active network as the connectivity manager reports it. */
+class NetworkMonitor(private val context: Context) {
+    fun isConnectionMetered(): Boolean =
+        (context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager)?.isActiveNetworkMetered ?: false
 }
 
 /** The two programming mistakes the SDK reports with a plain error: nothing an app handles. */

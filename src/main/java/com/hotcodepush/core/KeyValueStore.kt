@@ -1,6 +1,7 @@
 package com.hotcodepush.core
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.SharedPreferences
 
 /** The platform's key-value store, one value per key in the store's native type; `SharedPreferences` on Android, a map in tests. */
@@ -14,6 +15,9 @@ interface KeyValueStore {
 /** Every write commits before it returns: `apply()` reaches the disk about 100 ms later, and a crash in that window would lose the state the next start rolls back from. */
 @SuppressLint("ApplySharedPref")
 class SharedPreferencesStore(private val preferences: SharedPreferences) : KeyValueStore {
+    /** The app's default `SharedPreferences`, the file `PreferenceManager.getDefaultSharedPreferences` names, without the dependency. */
+    constructor(context: Context) : this(context.getSharedPreferences("${context.packageName}_preferences", Context.MODE_PRIVATE))
+
     override fun getString(key: String): String? = preferences.getString(key, null)
 
     override fun putString(key: String, value: String?) {

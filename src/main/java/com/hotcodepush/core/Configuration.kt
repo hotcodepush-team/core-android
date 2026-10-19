@@ -1,7 +1,9 @@
 package com.hotcodepush.core
 
+import android.content.Context
 import org.json.JSONException
 import org.json.JSONObject
+import java.io.FileNotFoundException
 
 /** When a downloaded update is applied. */
 enum class ApplyStrategy(val wire: String) {
@@ -88,6 +90,9 @@ data class Configuration(
         const val DEFAULT_FILES_BASE_URL = "https://files.hotcodepush.com"
         const val DEFAULT_UPDATES_BASE_URL = "https://updates.hotcodepush.com"
 
+        /** Why an SDK runs without a core when the app's assets lack the resource file. */
+        const val MISSING_MESSAGE = "HotCodePush is not configured: hotcodepush.json is missing from the app's assets. Run `npx hotcodepush init` and build the app once."
+
         fun decode(text: String): Configuration = fromJson(JSONObject(text))
 
         fun fromJson(json: JSONObject) = Configuration(
@@ -110,6 +115,20 @@ data class Configuration(
             filesBaseUrl = json.getOptionalWireString("filesBaseUrl", WireRule.URL) ?: DEFAULT_FILES_BASE_URL,
             updatesBaseUrl = json.getOptionalWireString("updatesBaseUrl", WireRule.URL) ?: DEFAULT_UPDATES_BASE_URL,
         )
+
+        /** The resource file the build wrote into the app's assets, `null` when they lack it; a file the reader refuses throws its error. */
+        fun read(context: Context, assetPath: String = "hotcodepush.json"): Configuration? {
+            val text = try {
+                context.assets.open(assetPath).bufferedReader().use { it.readText() }
+            } catch (exception: FileNotFoundException) {
+                return null
+            }
+            return decode(text)
+        }
+
+        /** Why an SDK runs without a core when the reader refused the resource file: the reader's own message and what to do. */
+        fun resolveRefusedMessage(refusal: Exception): String =
+            "HotCodePush is not configured: the app's hotcodepush.json was refused: ${refusal.message}. Check the project's hotcodepush.json and build the app again."
     }
 }
 

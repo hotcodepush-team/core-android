@@ -1,5 +1,6 @@
 package com.hotcodepush.core
 
+import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -95,6 +96,34 @@ class Core(
 
     /** The release a switch in this process replaced, `null` for the embedded bundle, until `notifyReady()` reads it. */
     private var switchedFromRelease: Release? = null
+
+    /**
+     * The core as every SDK on Android wires it: the state in the app's default preferences, the files under the app's private
+     * files, the download's temporary files under its cache, OkHttp and the wall clock.
+     */
+    constructor(
+        context: Context,
+        configuration: Configuration,
+        device: DeviceFacts,
+        embedded: EmbeddedBundle,
+        loader: BundleLoader,
+        listener: CoreListener,
+        scope: CoroutineScope,
+        scheduler: Scheduler = HandlerScheduler(),
+    ) : this(
+        configuration = configuration,
+        device = device,
+        store = SharedPreferencesStore(context),
+        files = FileStore(FileStore.defaultRootDirectory(context)),
+        embedded = embedded,
+        http = OkHttpClientAdapter(),
+        loader = loader,
+        listener = listener,
+        scheduler = scheduler,
+        clock = Clock { System.currentTimeMillis() },
+        scope = scope,
+        temporaryDirectory = File(context.cacheDir, "hotcodepush"),
+    )
 
     // Lifecycle
 

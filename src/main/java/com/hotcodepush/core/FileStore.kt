@@ -1,5 +1,6 @@
 package com.hotcodepush.core
 
+import android.content.Context
 import android.os.Build
 import okio.ByteString.Companion.toByteString
 import java.io.File
@@ -71,6 +72,11 @@ class FileStore(val rootDirectory: File) {
 
     /** Whether every file the manifest lists is on disk; existence is the check, not a re-hash. */
     fun isComplete(manifest: BundleManifest, embedded: EmbeddedBundle): Boolean = manifest.files.all { hasFile(it.sha256) || embedded.has(it.sha256) }
+
+    companion object {
+        /** Where every SDK keeps its store: `hotcodepush` in the app's private files, under which its loader lays its bundles out too. */
+        fun defaultRootDirectory(context: Context): File = File(context.filesDir, "hotcodepush")
+    }
 }
 
 /** The files compiled into the binary, counted as present by hash; where they are is the platform's. */
@@ -79,6 +85,21 @@ interface EmbeddedBundle {
 
     /** Copies the embedded file with that hash to the destination. */
     fun copyFile(sha256: String, destination: File)
+}
+
+/** The files compiled into the binary, `assets/<assetDirectory>/` in the APK, addressed by the embedded manifest's hashes; none without a manifest. */
+class AssetsEmbeddedBundle(private val context: Context, manifest: EmbeddedBundleManifest?, private val assetDirectory: String) : EmbeddedBundle {
+    private val pathsBySha256 = manifest?.files.orEmpty().associate { it.sha256 to it.path }
+
+    override fun has(sha256: String): Boolean {
+        val path = pathsBySha256[sha256] ?: return false
+        return runCatching { context.assets.open("$assetDirectory/$path").close(); true }.getOrDefault(false)
+    }
+
+    override fun copyFile(sha256: String, destination: File) {
+        val path = pathsBySha256[sha256] ?: throw PlainException("No embedded file with hash $sha256")
+        context.assets.open("$assetDirectory/$path").use { input -> destination.outputStream().use { input.copyTo(it) } }
+    }
 }
 
 /** Lays a bundle out by path for the WebView, linking to the content-addressed files where the platform allows. */
