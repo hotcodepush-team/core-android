@@ -771,6 +771,26 @@ class CoreTest {
     }
 
     @Test
+    fun shouldAdoptTheRevokeTargetThatCarriesTheRunningBundleAtACheck() = runBlocking {
+        val harness = startOnConfirmedRelease(immediateApply)
+        harness.core.handleRendered()
+        val older = Fixture.release(1, "b2", v2Content)
+        val releases = listOf(older, older.copy(release = older.release.copy(id = "r2", number = 2)))
+        harness.publish(releases, 2, etag = "\"e2\"")
+        assertEquals(SyncResult.upToDate(releases[1].release.release), harness.core.checkForUpdate())
+        harness.publish(releases, 3, revoked = listOf("r2"), etag = "\"e3\"")
+        val requestCountBefore = harness.http.requests.size
+        val eventCountBefore = StateStore(harness.store).unsentEvents.size
+        assertEquals(SyncResult.skipped(older.release.release, SkippedReason.RELEASE_REVOKED), harness.core.checkForUpdate())
+        assertTrue(harness.loader.loaded.isEmpty())
+        assertTrue(harness.http.requests.drop(requestCountBefore).none { it.first == older.release.manifestUrl })
+        assertTrue(StateStore(harness.store).unsentEvents.drop(eventCountBefore).isEmpty())
+        val state = harness.core.getState()
+        assertEquals(older.release.release, state.currentRelease)
+        assertEquals(older.release.release, state.fallbackRelease)
+    }
+
+    @Test
     fun shouldReloadIntoTheEmbeddedBundleWhenTheRunningReleaseIsRevokedWhileAnImmediateApplyIsHeld() = runBlocking {
         val harness = startOnConfirmedRelease(immediateApply)
         val v2 = Fixture.release(1, "b2", v2Content)

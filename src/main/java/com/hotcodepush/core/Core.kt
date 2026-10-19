@@ -278,7 +278,10 @@ class Core(
         return runCycle(trigger, Stage.SYNC, options)
     }
 
-    /** `sync()` with the download gate closed: fetch and evaluate, download nothing and apply nothing; a release that carries the running bundle is adopted, as from every stage. */
+    /**
+     * `sync()` with the download gate closed: fetch and evaluate, download nothing and apply nothing; a release that carries the
+     * running bundle is adopted, as from every stage, a revoked release's target included.
+     */
     suspend fun checkForUpdate(): SyncResult {
         verifyChannelId()
         return runCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions(downloadStrategy = DownloadStrategy.MANUAL))
@@ -377,11 +380,11 @@ class Core(
                     evaluation.release?.let { release -> lock.withLock { recordChecked(release, index, SyncStatus.SKIPPED, Skip(evaluation.reason, evaluation.condition)) } }
                     SyncResult.skipped(evaluation.release?.release, evaluation.reason, evaluation.condition)
                 }
-                stage == Stage.CHECK -> SyncResult.skipped(evaluation.release?.release, SkippedReason.RELEASE_REVOKED)
                 (evaluation.release?.bundleId ?: configuration.embeddedBundleId) == resolveRunningBundleId() -> {
                     lock.withLock { adoptInPlace(evaluation.release?.release) }
                     SyncResult.skipped(evaluation.release?.release, SkippedReason.RELEASE_REVOKED)
                 }
+                stage == Stage.CHECK -> SyncResult.skipped(evaluation.release?.release, SkippedReason.RELEASE_REVOKED)
                 evaluation.release == null -> {
                     lock.withLock { revertToEmbedded() }
                     SyncResult.skipped(null, SkippedReason.RELEASE_REVOKED)
