@@ -42,14 +42,6 @@ data class NextRelease(val release: Release, val applyStrategy: ApplyStrategy) {
     }
 }
 
-data class LastRollback(val fromRelease: Release, val toRelease: Release?, val reason: RollbackReason) {
-    fun toJson(): JSONObject = JSONObject().put("fromRelease", fromRelease.toJson()).put("toRelease", toRelease?.toJson() ?: JSONObject.NULL).put("reason", reason.name)
-
-    companion object {
-        fun fromJson(json: JSONObject) = LastRollback(Release.fromJson(json.getJSONObject("fromRelease")), json.optJSONObject("toRelease")?.let(Release::fromJson), RollbackReason.valueOf(json.getString("reason")))
-    }
-}
-
 /**
  * The SDK's keys, `hotcodepush.<name>` each: three identity keys kept for the install's life,
  * the rest a cache under `stateVersion` that is dropped and rebuilt when unreadable.
@@ -115,8 +107,8 @@ class StateStore(private val store: KeyValueStore) {
         get() = readArray("checkedReleaseIds") { it.toWireStringList() } ?: emptyList()
         set(value) = putRaw("checkedReleaseIds", JSONArray(value).toString())
 
-    var lastRollback: LastRollback?
-        get() = readObject("lastRollback", LastRollback::fromJson)
+    var lastRollback: UpdateRolledBackEvent?
+        get() = readObject("lastRollback", UpdateRolledBackEvent::fromJson)
         set(value) = writeObject("lastRollback", value?.toJson())
 
     /** The `updateRolledBack` event the app has not come up after yet: announced at every start until it does. */

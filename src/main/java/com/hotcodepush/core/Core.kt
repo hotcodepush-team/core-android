@@ -775,8 +775,9 @@ class Core(
         val fallback = resolveFallbackRelease()
         state.currentRelease = fallback
         state.nextRelease = null
-        state.lastRollback = LastRollback(current, fallback, reason)
-        state.pendingRollbackEvent = UpdateRolledBackEvent(current, fallback, reason)
+        val rollback = UpdateRolledBackEvent(current, fallback, reason)
+        state.lastRollback = rollback
+        state.pendingRollbackEvent = rollback
         hasAnnouncedRollback = false
         enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.name, detail))
         enqueueDeviceEvent(DeviceEvent.rolledBack(current.id, fallback?.id))
