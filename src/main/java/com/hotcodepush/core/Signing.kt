@@ -79,5 +79,5 @@ object SignatureVerifier {
     }
 
     /** Base64 in its one spelling: padded, no unused bits set, so one value has exactly one form. */
-    private fun decodeCanonicalBase64(text: String): ByteArray? = text.decodeBase64()?.takeIf { it.base64() == text }?.toByteArray()
+    internal fun decodeCanonicalBase64(text: String): ByteArray? = text.decodeBase64()?.takeIf { it.base64() == text }?.toByteArray()
 }

@@ -312,7 +312,7 @@ internal enum class WireRule {
         PRINTABLE -> value.isNotEmpty() && value.none { it.isControlCharacter() }
         URL -> runCatching { URI(value) }.getOrNull()?.let { it.scheme?.lowercase() in URL_SCHEMES && !it.host.isNullOrEmpty() } ?: false
         SIGNATURE_VALUE -> signatureValuePattern.matches(value)
-        BASE64 -> base64Pattern.matches(value)
+        BASE64 -> value.isNotEmpty() && SignatureVerifier.decodeCanonicalBase64(value) != null
     }
 }
 
@@ -324,7 +324,6 @@ private val identifierPattern = Regex("[A-Za-z0-9_-]{1,64}")
 private val uuidPattern = Regex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 private val sha256Pattern = Regex("[0-9a-f]{64}")
 private val signatureValuePattern = Regex("[a-z0-9_-]+:[A-Za-z0-9+/]+=*")
-private val base64Pattern = Regex("(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)")
 
 /** A string, never a number or a boolean read as one, that the rule accepts; anything else fails the decode before it can name a file, a directory or a host. */
 internal fun JSONObject.getWireString(key: String, rule: WireRule? = null): String {

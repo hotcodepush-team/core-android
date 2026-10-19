@@ -74,7 +74,9 @@ class SigningTest {
     @Test
     fun shouldRefuseAResourceFileWhoseKeysAreNotDerBesideAKeyId() {
         val resourceFile = resourceFiles.first().getJSONObject("resourceFile")
-        for (publicKeys in listOf("""["rsa-v1_5-sha256:AAAA"]""", """[{"der":"not base64","keyId":"k"}]""", """[{"der":"AAAA"}]""", """[{"der":"AAAA","keyId":""}]""")) {
+        // Base64 in another spelling than the canonical one: empty, unpadded, an unused bit set, the URL-safe alphabet.
+        val keysWithNonCanonicalDer = listOf("", "AAA", "AB==", "AA-_").map { der -> """[{"der":"$der","keyId":"k"}]""" }
+        for (publicKeys in listOf("""["rsa-v1_5-sha256:AAAA"]""", """[{"der":"not base64","keyId":"k"}]""", """[{"der":"AAAA"}]""", """[{"der":"AAAA","keyId":""}]""") + keysWithNonCanonicalDer) {
             assertThrows(publicKeys, org.json.JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("publicKeys", org.json.JSONArray(publicKeys))) }
         }
     }
