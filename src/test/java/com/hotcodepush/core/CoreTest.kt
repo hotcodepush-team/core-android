@@ -637,13 +637,27 @@ class CoreTest {
         val harness = startOnConfirmedRelease(configuration)
         val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content), reverted), 2, etag = "\"e2\"")
-        assertEquals(SyncResult.available(reverted.release.release, "notes 2", reverted.release.sizeBytes), harness.core.checkForUpdate())
+        assertEquals(SyncResult.available(reverted.release.release, "notes 2", 0), harness.core.checkForUpdate())
         assertNull(harness.core.getState().nextRelease)
         assertEquals(SyncResult.downloaded(reverted.release.release, "notes 2", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(reverted.release.release, harness.core.getState().nextRelease)
         assertTrue(harness.http.requests.none { it.first == reverted.release.manifestUrl })
         assertNull(startAgain(harness, configuration))
         assertEquals(reverted.release.release, harness.core.getState().currentRelease)
+    }
+
+    @Test
+    fun shouldReportNoBytesToDownloadForAReleaseOfTheEmbeddedBundle() = runBlocking {
+        val harness = startOnConfirmedRelease(Fixture.configuration())
+        val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content), reverted), 2, etag = "\"e2\"")
+        val announcedCountBefore = harness.listener.available.size
+        val available = SyncResult.available(reverted.release.release, "notes 2", 0)
+        assertEquals(available, harness.core.checkForUpdate())
+        assertEquals(SyncResult.downloaded(reverted.release.release, "notes 2", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(available, harness.core.checkForUpdate())
+        val announced = UpdateAvailableEvent(reverted.release.release, "notes 2", 0, SyncTrigger.MANUAL)
+        assertEquals(listOf(announced, announced), harness.listener.available.drop(announcedCountBefore))
     }
 
     @Test

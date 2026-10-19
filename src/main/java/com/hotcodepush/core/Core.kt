@@ -410,17 +410,21 @@ class Core(
         val requestedApplyStrategy = resolveRequestedApplyStrategy(isMandatory, options)
         val downloaded = readDownloadedRelease(target)
         if (downloaded != null) {
-            if (stage == Stage.CHECK) return SyncResult.available(release, target.notes, target.sizeBytes)
+            if (stage == Stage.CHECK) return SyncResult.available(release, target.notes, resolveDownloadSizeBytes(target))
             return lock.withLock { applyDownloaded(NextRelease(release, requestedApplyStrategy ?: downloaded.applyStrategy), target.notes) }
         }
         val applyStrategy = requestedApplyStrategy ?: resolveConfiguredApplyStrategy(isMandatory)
-        listener.updateAvailable(UpdateAvailableEvent(release, target.notes, target.sizeBytes, trigger))
+        listener.updateAvailable(UpdateAvailableEvent(release, target.notes, resolveDownloadSizeBytes(target), trigger))
         return when (resolveDownloadStrategy(target, stage, options)) {
-            DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, target.sizeBytes)
+            DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, resolveDownloadSizeBytes(target))
             DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, applyStrategy, trigger)
             DownloadStrategy.AUTO -> downloadAndApply(target, isMandatory, applyStrategy, trigger)
         }
     }
+
+    /** The bytes this device will download for the release: none for a release of the embedded bundle, which the binary carries. */
+    private fun resolveDownloadSizeBytes(target: IndexRelease): Long =
+        if (target.bundleId == configuration.embeddedBundleId) 0 else target.sizeBytes
 
     /**
      * The download gate of the cycle: the call's own strategy, else the configuration's. A release of the embedded bundle downloads
