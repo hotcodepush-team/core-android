@@ -324,6 +324,33 @@ class CoreTest {
     }
 
     @Test
+    fun shouldAnswerNoReleaseWhenOfflineWithoutACachedIndexWhileAReleaseRuns() = runBlocking {
+        val harness = startOnConfirmedRelease(Fixture.configuration())
+        harness.core.setChannel(ChannelChoice.Id("5ab00000-0000-4000-8000-000000000002"))
+        harness.http.isOffline = true
+        assertEquals(SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channel index could not be fetched and no cached copy exists"), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals("r1", harness.core.getState().currentRelease?.id)
+    }
+
+    @Test
+    fun shouldAnswerNoReleaseWhenTheIndexIsInvalidWhileAReleaseRuns() = runBlocking {
+        val harness = startOnConfirmedRelease(Fixture.configuration())
+        harness.http.stubJson(Fixture.indexUrl(), Fixture.index(2, emptyList()).copy(appId = "another-app").toJson())
+        val message = "The channel index names another app, channel or platform"
+        assertEquals(SyncResult.failed(null, FailedReason.INDEX_INVALID, message), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(listOf(UpdateFailedEvent(null, FailedReason.INDEX_INVALID, message, SyncTrigger.MANUAL)), harness.listener.failed)
+        assertEquals("r1", harness.core.getState().currentRelease?.id)
+    }
+
+    @Test
+    fun shouldAnswerNoReleaseWhenTheChannelIsUnknownWhileAReleaseRuns() = runBlocking {
+        val harness = startOnConfirmedRelease(Fixture.configuration())
+        harness.core.setChannel(ChannelChoice.Name("nowhere"))
+        assertEquals(SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, "The channel set at runtime is not in the app's channels index"), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals("r1", harness.core.getState().currentRelease?.id)
+    }
+
+    @Test
     fun shouldSendTheEtagAndAcceptANotModified() = runBlocking {
         val harness = Harness()
         harness.publish(emptyList(), 1, etag = "\"e1\"")
@@ -975,6 +1002,7 @@ class CoreTest {
         harness.http.failNextFetches(v2.envelope.pack.url, OutOfMemoryError("a large file"))
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(FailedReason.DOWNLOAD_FAILED.name, result.reason)
+        assertEquals(v2.release.release, result.release)
         assertEquals(FailedReason.DOWNLOAD_FAILED.name, StateStore(harness.store).unsentEvents.last().reason)
         assertNull(harness.core.getState().nextRelease)
     }
@@ -1314,6 +1342,17 @@ class CoreTest {
         harness.core.handleAppStart()
         assertEquals(SyncResult.skipped(null, SkippedReason.BUILD_DEBUG), harness.core.sync(SyncTrigger.MANUAL))
         assertTrue(harness.http.posts.isEmpty())
+    }
+
+    @Test
+    fun shouldAnswerNoReleaseWhenLiveUpdatesAreOffInADebugBuildWhileAReleaseRuns() = runBlocking {
+        val harness = Harness(isDebugBuild = true)
+        harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        startAgain(harness, Fixture.configuration(isEnabledInDebugBuilds = false))
+        assertEquals("r1", harness.core.getState().currentRelease?.id)
+        assertEquals(SyncResult.skipped(null, SkippedReason.BUILD_DEBUG), harness.core.sync(SyncTrigger.MANUAL))
     }
 
     @Test

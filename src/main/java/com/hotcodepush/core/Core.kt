@@ -351,20 +351,20 @@ class Core(
 
     private suspend fun resolveCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
         val current = state.currentRelease
-        if (isDisabledInThisBuild) return SyncResult.skipped(current, SkippedReason.BUILD_DEBUG)
+        if (isDisabledInThisBuild) return SyncResult.skipped(null, SkippedReason.BUILD_DEBUG)
         val channelId = when (val resolution = resolveChannelId()) {
             is ChannelResolution.Id -> resolution.id
-            ChannelResolution.Offline -> return SyncResult.failed(current, FailedReason.DEVICE_OFFLINE, "The channels index could not be fetched to resolve the channel name")
-            ChannelResolution.Unknown -> return SyncResult.failed(current, FailedReason.CHANNEL_UNKNOWN, "The channel set at runtime is not in the app's channels index")
-            ChannelResolution.Missing -> return SyncResult.failed(current, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE)
-            is ChannelResolution.Invalid -> return SyncResult.failed(current, FailedReason.INDEX_INVALID, resolution.message)
+            ChannelResolution.Offline -> return SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channels index could not be fetched to resolve the channel name")
+            ChannelResolution.Unknown -> return SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, "The channel set at runtime is not in the app's channels index")
+            ChannelResolution.Missing -> return SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE)
+            is ChannelResolution.Invalid -> return SyncResult.failed(null, FailedReason.INDEX_INVALID, resolution.message)
         }
         val index = when (val fetch = fetchChannelIndex(channelId)) {
             is IndexFetch.Index -> fetch.index
-            IndexFetch.Offline -> return SyncResult.failed(current, FailedReason.DEVICE_OFFLINE, "The channel index could not be fetched and no cached copy exists")
-            is IndexFetch.Invalid -> return SyncResult.failed(current, FailedReason.INDEX_INVALID, fetch.message)
+            IndexFetch.Offline -> return SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channel index could not be fetched and no cached copy exists")
+            is IndexFetch.Invalid -> return SyncResult.failed(null, FailedReason.INDEX_INVALID, fetch.message)
             IndexFetch.Absent -> return SyncResult.upToDate(current)
-            IndexFetch.NoChannel -> return SyncResult.failed(current, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE)
+            IndexFetch.NoChannel -> return SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE)
         }
         return when (val evaluation = Evaluator.evaluate(index, deviceInfo())) {
             is Evaluation.UpToDate -> SyncResult.upToDate(current)
