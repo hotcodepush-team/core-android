@@ -100,7 +100,7 @@ object DebugReport {
         return DebugSection(
             "Index",
             listOf(
-                DebugRow("Sequence", state.indexSequence?.toString() ?: "none"),
+                DebugRow("Published at", state.indexSequence?.let(Iso8601::format) ?: "none"),
                 DebugRow("Fetched at", state.indexFetchedAt?.let(Iso8601::format) ?: "never"),
                 DebugRow("Reported at", state.reportedAt?.let(Iso8601::format) ?: "never"),
             ),
@@ -115,8 +115,6 @@ object DebugReport {
                 DebugRow("App id", configuration.appId),
                 DebugRow("Configured channel", configuration.channelId ?: "none"),
                 DebugRow("Built at", Iso8601.format(configuration.builtAt)),
-                DebugRow("Files host", configuration.filesBaseUrl),
-                DebugRow("Updates host", configuration.updatesBaseUrl),
                 DebugRow("Check strategy", if (configuration.checkStrategy == CheckStrategy.AUTO) "auto, every ${configuration.checkIntervalSeconds.toInt()} s" else "manual"),
                 DebugRow("Strategies", "download ${configuration.downloadStrategy.wire}, apply ${configuration.applyStrategy.wire}, mandatory ${configuration.mandatoryApplyStrategy.wire}"),
                 DebugRow("Ready signal", "${configuration.readySignal.wire}, ${configuration.readyTimeoutSeconds.toInt()} s"),

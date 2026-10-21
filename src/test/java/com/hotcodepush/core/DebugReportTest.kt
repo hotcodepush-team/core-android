@@ -20,7 +20,7 @@ class DebugReportTest {
         val text = DebugReport.text(snapshot)
         assertTrue(text, text.contains("Device id: ${harness.core.deviceResult().id}"))
         assertTrue(text, text.contains("Result: SKIPPED DEVICE_INCOMPATIBLE binary"))
-        assertTrue(text, text.contains("Sequence: 1759900000000"))
+        assertTrue(text, text.contains("Published at: 2025-10-08T05:06:40.000Z"))
         assertTrue(text, text.contains("Running: the embedded bundle"))
         assertTrue(text, text.contains("SKIPPED DEVICE_INCOMPATIBLE binary — manual: release #1 (1.1.0) is not taken"))
         assertEquals(listOf("Device", "Channel", "Releases", "Last check", "Index", "Configuration", "Log"), DebugReport.sections(snapshot).map { it.title })
@@ -61,7 +61,7 @@ class DebugReportTest {
               When: never
 
             Index
-              Sequence: none
+              Published at: none
               Fetched at: never
               Reported at: never
 
@@ -69,8 +69,6 @@ class DebugReportTest {
               App id: a0000000-0000-4000-8000-000000000001
               Configured channel: c0000000-0000-4000-8000-000000000001
               Built at: 2023-11-14T22:13:20.000Z
-              Files host: https://files.test
-              Updates host: https://updates.test
               Check strategy: manual
               Strategies: download auto, apply next-start, mandatory immediate
               Ready signal: render, 10 s
