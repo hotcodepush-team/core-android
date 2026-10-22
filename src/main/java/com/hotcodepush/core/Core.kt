@@ -982,7 +982,7 @@ class Core(
     private fun isIndexForDevice(index: ChannelIndex, channelId: String): Boolean =
         index.appId == configuration.appId && index.channelId == channelId && index.platform == device.platform
 
-    /** Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`. */
+    /** OTA updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`. */
     private val isDisabledInThisBuild: Boolean
         get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
 

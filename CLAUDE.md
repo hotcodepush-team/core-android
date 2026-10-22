@@ -92,6 +92,7 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - Booleans carry `is` or `has`; a state with a moment is a timestamp such as `pausedAt`, never a boolean.
 - Test titles read `should <verb> …`, lowercase, conditions starting with `when`.
 - Fixtures and examples carry invented data only.
+- Prose names the feature over-the-air (OTA) updates: "over-the-air (OTA) update" on the first mention of a surface, "OTA update" after it; "live update" is the Capacitor package's word (`capacitor-live-updates`), never HotCodePush's own.
 
 ## Agent workspace
 

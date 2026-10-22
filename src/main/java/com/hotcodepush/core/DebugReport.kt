@@ -137,9 +137,9 @@ object DebugReport {
         else -> "none: the build carries no channel, it was built without a token or offline"
     }
 
-    /** The registered bundle's id; a build without an embedded bundle says that live updates are off in it. */
+    /** The registered bundle's id; a build without an embedded bundle says that OTA updates are off in it. */
     private fun describeEmbeddedBundle(snapshot: DebugSnapshot): String = when {
-        snapshot.configuration.embeddedBundleManifest == null -> "none: the build embeds no bundle, live updates are off in it"
+        snapshot.configuration.embeddedBundleManifest == null -> "none: the build embeds no bundle, over-the-air (OTA) updates are off in it"
         else -> snapshot.state.embeddedBundleId ?: "not registered"
     }
 

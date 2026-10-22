@@ -11,7 +11,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * A build whose build step found no JavaScript bundled embeds no bundle: live updates are off in it, every cycle skips with
+ * A build whose build step found no JavaScript bundled embeds no bundle: OTA updates are off in it, every cycle skips with
  * `BUILD_DEBUG` without a request, and nothing is sent.
  */
 class MissingEmbeddedBundleTest {
@@ -145,7 +145,7 @@ class MissingEmbeddedBundleTest {
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
         val text = DebugReport.text(harness.core.debugSnapshot())
-        assertTrue(text, text.contains("Embedded bundle: none: the build embeds no bundle, live updates are off in it"))
+        assertTrue(text, text.contains("Embedded bundle: none: the build embeds no bundle, over-the-air (OTA) updates are off in it"))
         assertTrue(text, text.contains("Channel id: none: a build without an embedded bundle resolves no channel name"))
         assertTrue(text, text.contains("Result: SKIPPED BUILD_DEBUG"))
     }
