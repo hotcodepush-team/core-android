@@ -1460,7 +1460,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldSendNothingWhenLiveUpdatesAreOffInADebugBuild() = runBlocking {
+    fun shouldSendNothingWhenOtaUpdatesAreOffInADebugBuild() = runBlocking {
         val harness = Harness(Fixture.configuration(isEnabledInDebugBuilds = false), isDebugBuild = true)
         harness.acknowledgeEvents()
         harness.publish(emptyList(), 1)
@@ -1470,7 +1470,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAnswerNoReleaseWhenLiveUpdatesAreOffInADebugBuildWhileAReleaseRuns() = runBlocking {
+    fun shouldAnswerNoReleaseWhenOtaUpdatesAreOffInADebugBuildWhileAReleaseRuns() = runBlocking {
         val harness = Harness(isDebugBuild = true)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
