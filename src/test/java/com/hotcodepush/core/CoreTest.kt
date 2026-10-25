@@ -267,7 +267,7 @@ class CoreTest {
         assertEquals(listOf("b3"), status.failedBundleIds)
         assertEquals("b2", harness.loader.loaded.last())
         val events = StateStore(harness.store).unsentEvents
-        assertEquals("rolledBack", events.last().type)
+        assertEquals("rolled_back", events.last().type)
         assertEquals("r1", events.last().toReleaseId)
     }
 
@@ -332,7 +332,7 @@ class CoreTest {
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(SyncStatus.FAILED, result.status)
-        assertEquals(FailedReason.DEVICE_OFFLINE.name, result.reason)
+        assertEquals(FailedReason.DEVICE_OFFLINE.wire, result.reason)
     }
 
     @Test
@@ -394,7 +394,7 @@ class CoreTest {
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(SyncStatus.FAILED, result.status)
-        assertEquals(FailedReason.MANIFEST_INVALID.name, result.reason)
+        assertEquals(FailedReason.MANIFEST_INVALID.wire, result.reason)
     }
 
     @Test
@@ -403,7 +403,7 @@ class CoreTest {
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
-        assertEquals(FailedReason.SIGNATURE_INVALID.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(FailedReason.SIGNATURE_INVALID.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
     }
 
     @Test
@@ -426,7 +426,7 @@ class CoreTest {
         harness.http.stubJson(v2.release.manifestUrl, v2.envelope.copy(signature = fixture.sign(v2.envelope.manifest, "rsa-4096-a")).toJson())
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(FailedReason.SIGNATURE_INVALID.name, result.reason)
+        assertEquals(FailedReason.SIGNATURE_INVALID.wire, result.reason)
         assertTrue(result.message?.contains("does not hold") == true)
         assertEquals(FailedReason.SIGNATURE_INVALID, harness.listener.failed.single().reason)
     }
@@ -1036,7 +1036,7 @@ class CoreTest {
         assertEquals(SyncResult.upToDate(null), harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(ChannelResult("5ab00000-0000-4000-8000-000000000002", "staging", ChannelSource.RUNTIME), harness.core.channel())
         harness.core.setChannel(ChannelChoice.Name("nowhere"))
-        assertEquals(FailedReason.CHANNEL_UNKNOWN.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(FailedReason.CHANNEL_UNKNOWN.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
     }
 
     @Test
@@ -1079,7 +1079,7 @@ class CoreTest {
         for (other in listOf(index.copy(appId = "another-app"), index.copy(channelId = "5ab00000-0000-4000-8000-000000000002"), index.copy(platform = "ios"))) {
             harness.http.stubJson(Fixture.indexUrl(), other.toJson())
             val result = harness.core.sync(SyncTrigger.MANUAL)
-            assertEquals(FailedReason.INDEX_INVALID.name, result.reason)
+            assertEquals(FailedReason.INDEX_INVALID.wire, result.reason)
             assertNull(harness.core.getState().indexSequence)
         }
     }
@@ -1089,7 +1089,7 @@ class CoreTest {
         val harness = Harness()
         harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "../../other-app/channels/c1").put("name", "staging"))))
         harness.core.setChannel(ChannelChoice.Name("staging"))
-        assertEquals(FailedReason.INDEX_INVALID.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(FailedReason.INDEX_INVALID.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
         assertEquals(listOf("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json"), harness.http.requests.map { it.first })
     }
 
@@ -1100,7 +1100,7 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.listener.updateAvailableFailure = IllegalStateException("the listener broke")
         val failed = harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(FailedReason.INDEX_INVALID.name, failed.reason)
+        assertEquals(FailedReason.INDEX_INVALID.wire, failed.reason)
         assertTrue(failed.message, failed.message!!.contains("the listener broke"))
         harness.listener.updateAvailableFailure = null
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
@@ -1115,7 +1115,7 @@ class CoreTest {
         assertTrue(harness.uncaught.isEmpty())
         assertTrue(harness.core.debugSnapshot().log.any { it.message.contains("the listener broke") })
         harness.listener.updateFailedFailure = null
-        assertEquals(FailedReason.DEVICE_OFFLINE.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(FailedReason.DEVICE_OFFLINE.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
         assertEquals(1, harness.listener.failed.size)
     }
 
@@ -1126,9 +1126,9 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.http.failNextFetches(v2.envelope.pack.url, OutOfMemoryError("a large file"))
         val result = harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(FailedReason.DOWNLOAD_FAILED.name, result.reason)
+        assertEquals(FailedReason.DOWNLOAD_FAILED.wire, result.reason)
         assertEquals(v2.release.release, result.release)
-        assertEquals(FailedReason.DOWNLOAD_FAILED.name, StateStore(harness.store).unsentEvents.last().reason)
+        assertEquals(FailedReason.DOWNLOAD_FAILED.wire, StateStore(harness.store).unsentEvents.last().reason)
         assertNull(harness.core.getState().nextRelease)
     }
 
@@ -1166,8 +1166,8 @@ class CoreTest {
         assertTrue(failedEvents().isEmpty())
         runCurrent()
         assertEquals(3, packAttemptCount())
-        assertEquals(FailedReason.DOWNLOAD_FAILED.name, sync.await().reason)
-        assertEquals(listOf(DeviceEvent.failed("r1", FailedReason.DOWNLOAD_FAILED.name)), failedEvents())
+        assertEquals(FailedReason.DOWNLOAD_FAILED.wire, sync.await().reason)
+        assertEquals(listOf(DeviceEvent.failed("r1", FailedReason.DOWNLOAD_FAILED.wire)), failedEvents())
         assertEquals(1, harness.listener.failed.size)
     }
 
@@ -1178,10 +1178,10 @@ class CoreTest {
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.http.stub(v2.envelope.pack.url, status = 404, body = ByteArray(0))
-        assertEquals(FailedReason.DOWNLOAD_FAILED.name, harness.core.sync(SyncTrigger.MANUAL).reason)
+        assertEquals(FailedReason.DOWNLOAD_FAILED.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
         assertEquals(1, harness.http.requests.count { it.first == v2.envelope.pack.url })
         assertEquals(0L, currentTime)
-        assertEquals(listOf(DeviceEvent.failed("r1", FailedReason.DOWNLOAD_FAILED.name)), StateStore(harness.store).unsentEvents.filter { it.type == "failed" })
+        assertEquals(listOf(DeviceEvent.failed("r1", FailedReason.DOWNLOAD_FAILED.wire)), StateStore(harness.store).unsentEvents.filter { it.type == "failed" })
     }
 
     @Test
@@ -1216,7 +1216,7 @@ class CoreTest {
         val batch = JSONObject(String(harness.http.posts.last().third))
         assertTrue(batch.isNull("report"))
         assertTrue(batch.getJSONArray("events").length() > 0)
-        assertTrue(harness.core.debugSnapshot().log.any { it.code == "REPORT_UNREADABLE" })
+        assertTrue(harness.core.debugSnapshot().log.any { it.code == "report_unreadable" })
     }
 
     @Test
@@ -1236,7 +1236,7 @@ class CoreTest {
         harness.core.sync(SyncTrigger.MANUAL)
         assertTrue(harness.http.posts.isEmpty())
         assertTrue(StateStore(harness.store).unsentEvents.isNotEmpty())
-        assertTrue(harness.core.debugSnapshot().log.any { it.code == "REPORT_UNREADABLE" })
+        assertTrue(harness.core.debugSnapshot().log.any { it.code == "report_unreadable" })
     }
 
     @Test
@@ -1276,7 +1276,7 @@ class CoreTest {
         harness.core.sync(SyncTrigger.MANUAL)
         val events = StateStore(harness.store).unsentEvents.filter { it.type == "checked" }
         assertEquals(1, events.size)
-        assertEquals(SkippedReason.DEVICE_INCOMPATIBLE.name, events[0].reason)
+        assertEquals(SkippedReason.DEVICE_INCOMPATIBLE.wire, events[0].reason)
         assertEquals(ConditionType.OS, events[0].condition)
     }
 
@@ -1705,7 +1705,7 @@ class CoreTest {
         harness.core.notifyReady()
         harness.core.rollbackUpdate("checkout crashed")
         val failed = StateStore(harness.store).unsentEvents.last { it.type == "failed" }
-        assertEquals(RollbackReason.APP_REQUESTED.name, failed.reason)
+        assertEquals(RollbackReason.APP_REQUESTED.wire, failed.reason)
         assertEquals("checkout crashed", failed.detail)
         val error = runCatching { harness.core.rollbackUpdate("a\nb") }.exceptionOrNull()
         assertTrue(error is PlainException)
@@ -1854,7 +1854,7 @@ class CoreTest {
         harness.core.setChannel(ChannelChoice.Name("staging"))
         harness.http.isOffline = true
         val result = harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(FailedReason.DEVICE_OFFLINE.name, result.reason)
+        assertEquals(FailedReason.DEVICE_OFFLINE.wire, result.reason)
         assertEquals(listOf(FailedReason.DEVICE_OFFLINE), harness.listener.failed.map { it.reason })
     }
 

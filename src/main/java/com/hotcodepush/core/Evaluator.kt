@@ -21,8 +21,8 @@ data class DeviceInfo(
 data class ReleaseVerdict(val release: IndexRelease, val isEligible: Boolean, val reason: SkippedReason? = null, val condition: ConditionType? = null)
 
 /**
- * The outcome for the device. On `SKIPPED` with `RELEASE_REVOKED`, the release is the one the device resolves to —
- * `null` for the embedded bundle; on every other `SKIPPED` it is the newest release the device will not take.
+ * The outcome for the device. On `skipped` with `release_revoked`, the release is the one the device resolves to —
+ * `null` for the embedded bundle; on every other `skipped` it is the newest release the device will not take.
  */
 sealed class Evaluation {
     data class UpToDate(val release: IndexRelease?) : Evaluation()

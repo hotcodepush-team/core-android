@@ -17,7 +17,7 @@ data class DeviceEvent(
     val packKind: String? = null,
     val fromReleaseId: String? = null,
     val toReleaseId: String? = null,
-    /** The app's `rollback({ reason })` on `APP_REQUESTED`: printable, at most 256 characters. */
+    /** The app's `rollback({ reason })` on `app_requested`: printable, at most 256 characters. */
     val detail: String? = null,
 ) {
     /**
@@ -41,10 +41,10 @@ data class DeviceEvent(
     }
 
     companion object {
-        private const val ROLLED_BACK = "rolledBack"
+        private const val ROLLED_BACK = "rolled_back"
 
         fun checked(releaseId: String, status: SyncStatus, reason: SkippedReason? = null, condition: ConditionType? = null) =
-            DeviceEvent("checked", releaseId = releaseId, status = status.wire, reason = reason?.name, condition = condition)
+            DeviceEvent("checked", releaseId = releaseId, status = status.wire, reason = reason?.wire, condition = condition)
 
         fun downloaded(releaseId: String, bundleId: String, downloadSizeBytes: Long, packKind: PackKind) =
             DeviceEvent("downloaded", releaseId = releaseId, bundleId = bundleId, downloadSizeBytes = downloadSizeBytes, packKind = packKind.wire)

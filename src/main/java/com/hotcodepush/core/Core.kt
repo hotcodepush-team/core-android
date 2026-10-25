@@ -134,7 +134,7 @@ class Core(
      * Whatever the start throws, the stored releases of a store it cannot read among it, answers the embedded bundle and is
      * logged, never thrown at the host.
      *
-     * A reload the core did not perform serves the running bundle and is not interpreted; a `next-start` release applies at the next
+     * A reload the core did not perform serves the running bundle and is not interpreted; a `next_start` release applies at the next
      * start or through the core's own apply.
      *
      * `isHeadless` says no screen will render in this run, an Android process started without an activity or an Expo background
@@ -210,13 +210,13 @@ class Core(
     }
 
     /**
-     * The moment stored with the release at its download decides, so a per-call strategy holds for that release: `next-start`,
+     * The moment stored with the release at its download decides, so a per-call strategy holds for that release: `next_start`,
      * and an `immediate` apply still held; one the app took over waits across starts; a bundle the WebView already serves is adopted.
      */
     private fun shouldSwitchAtStart(next: NextRelease): Boolean =
         loader.servedBundleId() == resolveServedBundleId(next.release) || next.applyStrategy == ApplyStrategy.NEXT_START || next.applyStrategy == ApplyStrategy.IMMEDIATE
 
-    /** A release whose stored moment is `next-resume`; a mandatory one never is, so one the app took over with `manual` waits for `applyUpdate()`. */
+    /** A release whose stored moment is `next_resume`; a mandatory one never is, so one the app took over with `manual` waits for `applyUpdate()`. */
     private fun shouldApplyAtResume(next: NextRelease): Boolean = next.applyStrategy == ApplyStrategy.NEXT_RESUME
 
     /**
@@ -255,7 +255,7 @@ class Core(
 
     /**
      * The background: the interval timer stops, since interval checks belong to the foreground, the readiness timer stops, since an
-     * app that cannot render there proves nothing, and the moment is kept for `next-resume`.
+     * app that cannot render there proves nothing, and the moment is kept for `next_resume`.
      */
     suspend fun handleAppPause() = lock.withLock {
         backgroundedAt = clock.now()
@@ -264,7 +264,7 @@ class Core(
         pauseReadyTimer()
     }
 
-    /** A resume starts a paused readiness window again, applies a `next-resume` release after enough time in the background, else checks when the interval has passed. */
+    /** A resume starts a paused readiness window again, applies a `next_resume` release after enough time in the background, else checks when the interval has passed. */
     suspend fun handleAppResume() = lock.withLock {
         val backgroundDuration = backgroundedAt?.let { (clock.now() - it) / 1000.0 }
         backgroundedAt = null
@@ -364,14 +364,14 @@ class Core(
         }
         log.record(LogEntry.ofCycle(result, trigger, clock.now()))
         if (result.status == SyncStatus.FAILED) {
-            val reason = result.reason?.let { name -> FailedReason.entries.firstOrNull { it.name == name } }
+            val reason = result.reason?.let { wire -> FailedReason.entries.firstOrNull { it.wire == wire } }
             if (reason != null) listener.updateFailed(UpdateFailedEvent(result.release, reason, result.message ?: "", trigger))
         }
         launchTask { sendDeviceEvents() }
         return result
     }
 
-    /** A cycle answers, whatever is thrown inside it: what no stage turned into its own reason is `FAILED` with `INDEX_INVALID`, the cause in the message. */
+    /** A cycle answers, whatever is thrown inside it: what no stage turned into its own reason is `failed` with `index_invalid`, the cause in the message. */
     private suspend fun resolveCycleSafely(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult = try {
         resolveCycle(trigger, stage, options)
     } catch (cancellation: CancellationException) {
@@ -428,7 +428,7 @@ class Core(
     /**
      * A release the device qualifies for: adopted in place when it carries the running bundle, the embedded one included, else
      * announced and taken as far as the download gate lets it. An adopted release runs already without a reload, so the cycle
-     * answers `UP_TO_DATE` with it.
+     * answers `up_to_date` with it.
      * The apply moment is the call's own strategy, else the one a release downloaded already carries, else the configuration's,
      * so an automatic cycle never overrides the app's choice.
      */
@@ -501,21 +501,21 @@ class Core(
             BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
             lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, target.bundleId, outcome.bytes, outcome.packKind)) }
         } catch (failure: DownloadFailure) {
-            lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, failure.reason.name)) }
+            lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, failure.reason.wire)) }
             return SyncResult.failed(release, failure.reason, failure.message ?: "")
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Throwable) {
             // An OutOfMemoryError from a large file among them: the download fails, the process lives.
-            lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, FailedReason.DOWNLOAD_FAILED.name)) }
+            lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, FailedReason.DOWNLOAD_FAILED.wire)) }
             return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, failure.message ?: failure.toString())
         }
         return null
     }
 
     /**
-     * Choosing and applying are two acts: the stored moment is a policy over the four functions. `APPLIED` when the apply runs
-     * now, the reload following once the gate lets it; else `DOWNLOADED`, the apply scheduled or the app's.
+     * Choosing and applying are two acts: the stored moment is a policy over the four functions. `applied` when the apply runs
+     * now, the reload following once the gate lets it; else `downloaded`, the apply scheduled or the app's.
      */
     private fun applyDownloaded(next: NextRelease, notes: String?): SyncResult {
         setNextRelease(next)
@@ -807,7 +807,7 @@ class Core(
         state.lastRollback = rollback
         state.pendingRollbackEvent = rollback
         hasAnnouncedRollback = false
-        enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.name, detail))
+        enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.wire, detail))
         enqueueDeviceEvent(DeviceEvent.rolledBack(current.id, fallback?.id))
         persistServedBundle(fallback)
     }
@@ -982,7 +982,7 @@ class Core(
     private fun isIndexForDevice(index: ChannelIndex, channelId: String): Boolean =
         index.appId == configuration.appId && index.channelId == channelId && index.platform == device.platform
 
-    /** OTA updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`. */
+    /** OTA updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `build_debug`. */
     private val isDisabledInThisBuild: Boolean
         get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
 
@@ -1076,7 +1076,7 @@ class Core(
         private const val CACHED_INDEX_MAX_AGE = 86_400.0
 
         /** The session log's code for a report or a batch the events endpoint would refuse, which the device does not send. */
-        private const val REPORT_UNREADABLE = "REPORT_UNREADABLE"
+        private const val REPORT_UNREADABLE = "report_unreadable"
 
         /** What a build without a channel answers, without a request: it can never update until the app sets a channel at runtime. */
         const val MISSING_CHANNEL_MESSAGE = "The build carries no channel: it was built without a token or offline, so the channel's name was never resolved. Build it with a token to receive updates."

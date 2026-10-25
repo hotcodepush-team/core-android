@@ -12,7 +12,7 @@ import java.io.File
 
 /**
  * A build whose build step ran without a token or offline carries no channel: it checks nothing on its own, answers an explicit
- * call `FAILED` with `CHANNEL_UNKNOWN`, requests nothing and reports nothing until a channel is set at runtime.
+ * call `failed` with `channel_unknown`, requests nothing and reports nothing until a channel is set at runtime.
  */
 class MissingChannelTest {
     private val v2Content = "<html>v2</html>".toByteArray()
@@ -230,7 +230,7 @@ class MissingChannelTest {
         val text = DebugReport.text(harness.core.debugSnapshot())
         assertTrue(text, text.contains("Channel\n  Channel id: none: the build carries no channel, it was built without a token or offline\n  Name: none\n  Source: config\n"))
         assertTrue(text, text.contains("Configured channel: none"))
-        assertTrue(text, text.contains("Result: FAILED CHANNEL_UNKNOWN"))
+        assertTrue(text, text.contains("Result: failed channel_unknown"))
         harness.core.setChannel(ChannelChoice.Id(Fixture.CHANNEL_ID))
         assertTrue(DebugReport.text(harness.core.debugSnapshot()).contains("Channel\n  Channel id: ${Fixture.CHANNEL_ID}\n  Name: none\n  Source: runtime\n"))
     }

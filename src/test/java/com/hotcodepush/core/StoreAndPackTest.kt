@@ -135,6 +135,17 @@ class StateStoreTest {
     }
 
     @Test
+    fun shouldDropAnOutboxStoredInTheOldSpellingByTheFourthStateVersion() {
+        val store = InMemoryStore()
+        store.putInt("hotcodepush.stateVersion", 4)
+        store.putString("hotcodepush.unsentEvents", """[{"type":"checked","releaseId":"r1","status":"AVAILABLE"},{"type":"rolledBack","fromReleaseId":"r1","toReleaseId":null}]""")
+        store.putString("hotcodepush.deviceId", "device-1")
+        val state = StateStore(store)
+        assertEquals(emptyList<DeviceEvent>(), state.unsentEvents)
+        assertEquals("device-1", state.deviceId)
+    }
+
+    @Test
     fun shouldDropTheCacheWhenAValueDoesNotParse() {
         val store = InMemoryStore()
         val state = StateStore(store)
@@ -157,7 +168,7 @@ class StateStoreTest {
 
     @Test
     fun shouldDropTheCacheWhenAStoredValueHoldsWhatThisSdkDoesNotKnow() {
-        val notice = JSONObject().put("fromRelease", Release("r1", 1, "b1", "1", false).toJson()).put("toRelease", JSONObject.NULL).put("reason", "REASON_OF_A_LATER_SDK")
+        val notice = JSONObject().put("fromRelease", Release("r1", 1, "b1", "1", false).toJson()).put("toRelease", JSONObject.NULL).put("reason", "reason_of_a_later_sdk")
         for ((key, value) in listOf("pendingRollbackEvent" to notice.toString(), "lastCheck" to JSONObject().put("checkedAt", "yesterday").toString(), "lastBuiltAt" to "yesterday")) {
             val store = InMemoryStore()
             val state = StateStore(store)

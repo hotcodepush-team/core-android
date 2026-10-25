@@ -19,10 +19,10 @@ class DebugReportTest {
         val snapshot = harness.core.debugSnapshot()
         val text = DebugReport.text(snapshot)
         assertTrue(text, text.contains("Device id: ${harness.core.deviceResult().id}"))
-        assertTrue(text, text.contains("Result: SKIPPED DEVICE_INCOMPATIBLE binary"))
+        assertTrue(text, text.contains("Result: skipped device_incompatible binary"))
         assertTrue(text, text.contains("Published at: 2025-10-08T05:06:40.123Z"))
         assertTrue(text, text.contains("Running: the embedded bundle"))
-        assertTrue(text, text.contains("SKIPPED DEVICE_INCOMPATIBLE binary — manual: release #1 (1.1.0) is not taken"))
+        assertTrue(text, text.contains("skipped device_incompatible binary — manual: release #1 (1.1.0) is not taken"))
         assertEquals(listOf("Device", "Channel", "Releases", "Last check", "Index", "Configuration", "Log"), DebugReport.sections(snapshot).map { it.title })
     }
 
@@ -31,7 +31,7 @@ class DebugReportTest {
         val running = Release("r2", 2, "b2", "1.2.0", true)
         val device = DeviceResult("d1", "android", "2.4.1", "57", "14", "0.0.0", null, ChannelResult("c2", "beta", ChannelSource.RUNTIME), mapOf("plan" to "pro", "cohort" to "a"))
         val state = StateResult(running, null, running, null, null, null, null, listOf("b0", "b1"), null)
-        val log = listOf(LogEntry(Fixture.BUILT_AT, "APPLIED", "release r2 is the running release"))
+        val log = listOf(LogEntry(Fixture.BUILT_AT, "applied", "release r2 is the running release"))
         val expected = """
             HotCodePush debug report, 2023-11-14T22:13:21.000Z
 
@@ -70,13 +70,13 @@ class DebugReportTest {
               Configured channel: c0000000-0000-4000-8000-000000000001
               Built at: 2023-11-14T22:13:20.000Z
               Check strategy: manual
-              Strategies: download auto, apply next-start, mandatory immediate
+              Strategies: download auto, apply next_start, mandatory immediate
               Ready signal: render, 10 s
               Debug builds: enabled
               Public keys: 0
 
             Log
-              2023-11-14T22:13:20.000Z: APPLIED — release r2 is the running release
+              2023-11-14T22:13:20.000Z: applied — release r2 is the running release
         """.trimIndent()
         assertEquals(expected, DebugReport.text(DebugSnapshot(Fixture.BUILT_AT + 1_000, device, Fixture.configuration(), true, state, log)))
     }
@@ -92,16 +92,16 @@ class DebugReportTest {
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.notifyReady()
         val log = harness.core.debugSnapshot().log
-        val lifecycle = log.filter { !it.code.startsWith("REPORT") }
-        assertEquals(listOf("DOWNLOADED", "APPLIED", "APPLIED", "CONFIRMED"), lifecycle.map { it.code })
+        val lifecycle = log.filter { !it.code.startsWith("report") }
+        assertEquals(listOf("downloaded", "applied", "applied", "confirmed"), lifecycle.map { it.code })
         assertEquals("release r1: ${v2.pack.size} bytes as full pack", lifecycle[0].message)
         assertEquals("manual: release #1 (1.1.0) is applied and the app reloads", lifecycle[2].message)
-        assertTrue(log.map { it.code }.joinToString(), log.any { it.code == "REPORTED" })
+        assertTrue(log.map { it.code }.joinToString(), log.any { it.code == "reported" })
     }
 
     @Test
     fun shouldLogTheMomentADownloadedUpdateIsAppliedAtOrThatItWaitsForApplyUpdate() = runBlocking {
-        for ((applyStrategy, sentence) in listOf(ApplyStrategy.NEXT_START to "applies at next-start", ApplyStrategy.MANUAL to "waits for applyUpdate()")) {
+        for ((applyStrategy, sentence) in listOf(ApplyStrategy.NEXT_START to "applies at next_start", ApplyStrategy.MANUAL to "waits for applyUpdate()")) {
             val harness = Harness(Fixture.configuration(applyStrategy = applyStrategy))
             harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
             harness.core.handleAppStart()
@@ -114,12 +114,12 @@ class DebugReportTest {
     @Test
     fun shouldLogARateLimitedReportAndKeepTheOutbox() = runBlocking {
         val harness = Harness()
-        harness.http.stubJson(Fixture.eventsUrl(), JSONObject().put("error", "E_RATE_LIMITED"), status = 429)
+        harness.http.stubJson(Fixture.eventsUrl(), JSONObject(), status = 429)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
         val log = harness.core.debugSnapshot().log
-        assertEquals("REPORT_FAILED", log.last().code)
+        assertEquals("report_failed", log.last().code)
         assertEquals("2 events kept for the next sync: HTTP 429", log.last().message)
         assertEquals(2, StateStore(harness.store).unsentEvents.size)
     }
@@ -127,12 +127,12 @@ class DebugReportTest {
     @Test
     fun shouldLogARefusedBatchWithTheCountAndTheStatus() = runBlocking {
         val harness = Harness()
-        harness.http.stubJson(Fixture.eventsUrl(), JSONObject().put("error", "E_VALIDATION"), status = 422)
+        harness.http.stubJson(Fixture.eventsUrl(), JSONObject(), status = 422)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
         val log = harness.core.debugSnapshot().log
-        assertEquals("REPORT_REFUSED", log.last().code)
+        assertEquals("report_refused", log.last().code)
         assertEquals("2 events dropped: HTTP 422", log.last().message)
     }
 
@@ -144,7 +144,7 @@ class DebugReportTest {
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
         val log = harness.core.debugSnapshot().log
-        assertEquals("REPORT_FAILED", log.last().code)
+        assertEquals("report_failed", log.last().code)
         assertEquals("2 events kept for the next sync: HTTP 202", log.last().message)
         assertEquals(2, StateStore(harness.store).unsentEvents.size)
         assertNull(StateStore(harness.store).reportedAt)
@@ -158,8 +158,8 @@ class DebugReportTest {
         harness.core.handleRendered()
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.handleReadyTimeout()
-        val log = harness.core.debugSnapshot().log.filter { !it.code.startsWith("REPORT") }
-        assertEquals(listOf("FAILED READINESS_TIMED_OUT", "ROLLED_BACK"), log.takeLast(2).map { it.code })
+        val log = harness.core.debugSnapshot().log.filter { !it.code.startsWith("report") }
+        assertEquals(listOf("failed readiness_timed_out", "rolled_back"), log.takeLast(2).map { it.code })
         assertEquals("release r1 rolled back to the embedded bundle", log.last().message)
     }
 
@@ -172,6 +172,6 @@ class DebugReportTest {
         repeat(LogEntry.CAPACITY + 5) { harness.core.checkForUpdate() }
         val log = harness.core.debugSnapshot().log
         assertEquals(LogEntry.CAPACITY, log.size)
-        assertEquals("UP_TO_DATE", log.last().code)
+        assertEquals("up_to_date", log.last().code)
     }
 }

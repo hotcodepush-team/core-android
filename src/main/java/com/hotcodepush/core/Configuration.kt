@@ -7,7 +7,7 @@ import java.io.FileNotFoundException
 
 /** When a downloaded update is applied. */
 enum class ApplyStrategy(val wire: String) {
-    IMMEDIATE("immediate"), MANUAL("manual"), NEXT_RESUME("next-resume"), NEXT_START("next-start");
+    IMMEDIATE("immediate"), MANUAL("manual"), NEXT_RESUME("next_resume"), NEXT_START("next_start");
 
     companion object {
         fun fromWire(value: String?): ApplyStrategy? = entries.firstOrNull { it.wire == value }
@@ -32,7 +32,7 @@ enum class DownloadStrategy(val wire: String) {
     }
 }
 
-/** When a mandatory update is applied; `next-start` is excluded, since it would make the flag mean nothing. */
+/** When a mandatory update is applied; `next_start` is excluded, since it would make the flag mean nothing. */
 enum class MandatoryApplyStrategy(val wire: String) {
     IMMEDIATE("immediate"), MANUAL("manual");
 
@@ -66,7 +66,7 @@ data class Configuration(
     val downloadStrategy: DownloadStrategy,
     val applyStrategy: ApplyStrategy,
     val mandatoryApplyStrategy: MandatoryApplyStrategy,
-    /** The least time in the background before a `next-resume` apply. */
+    /** The least time in the background before a `next_resume` apply. */
     val nextResumeMinimumBackgroundSeconds: Double,
     val readySignal: ReadySignal,
     val readyTimeoutSeconds: Double,

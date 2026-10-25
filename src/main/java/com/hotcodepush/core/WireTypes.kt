@@ -256,7 +256,7 @@ data class BundleManifest(
         .put("keyId", keyId ?: JSONObject.NULL)
         .put("platforms", JSONArray(platforms))
 
-    /** Whether the manifest names the device's app and lists its platform, signed or not: another app's or platform's is `MANIFEST_INVALID`. */
+    /** Whether the manifest names the device's app and lists its platform, signed or not: another app's or platform's is `manifest_invalid`. */
     fun isForDevice(appId: String, platform: String): Boolean = this.appId == appId && platform in platforms
 
     companion object {

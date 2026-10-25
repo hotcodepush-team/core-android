@@ -151,7 +151,7 @@ class StateStore(private val store: KeyValueStore) {
     private fun putRaw(key: String, value: String?) = store.putString(PREFIX + key, value)
 
     companion object {
-        const val STATE_VERSION = 4
+        const val STATE_VERSION = 5
         const val PREFIX = "hotcodepush."
         private val CACHE_KEYS = listOf(
             "currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport",

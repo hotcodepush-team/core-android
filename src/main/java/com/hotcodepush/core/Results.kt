@@ -5,22 +5,27 @@ import org.json.JSONObject
 
 enum class SyncTrigger(val wire: String) { START("start"), RESUME("resume"), INTERVAL("interval"), MANUAL("manual") }
 
-enum class SyncStatus(val wire: String) { UP_TO_DATE("UP_TO_DATE"), AVAILABLE("AVAILABLE"), DOWNLOADED("DOWNLOADED"), APPLIED("APPLIED"), SKIPPED("SKIPPED"), FAILED("FAILED") }
+enum class SyncStatus(val wire: String) { UP_TO_DATE("up_to_date"), AVAILABLE("available"), DOWNLOADED("downloaded"), APPLIED("applied"), SKIPPED("skipped"), FAILED("failed") }
 
-enum class SkippedReason {
-    BUILD_DEBUG, BUNDLE_FAILED_BEFORE, CHANNEL_PAUSED, CONDITION_UNSUPPORTED, CONNECTION_METERED, DEVICE_INCOMPATIBLE,
-    DEVICE_NOT_IN_ROLLOUT, DEVICE_NOT_TARGETED, RELEASE_OLDER_THAN_BINARY, RELEASE_REVOKED, SPENDING_CAP_REACHED
+enum class SkippedReason(val wire: String) {
+    BUILD_DEBUG("build_debug"), BUNDLE_FAILED_BEFORE("bundle_failed_before"), CHANNEL_PAUSED("channel_paused"),
+    CONDITION_UNSUPPORTED("condition_unsupported"), CONNECTION_METERED("connection_metered"), DEVICE_INCOMPATIBLE("device_incompatible"),
+    DEVICE_NOT_IN_ROLLOUT("device_not_in_rollout"), DEVICE_NOT_TARGETED("device_not_targeted"), RELEASE_OLDER_THAN_BINARY("release_older_than_binary"),
+    RELEASE_REVOKED("release_revoked"), SPENDING_CAP_REACHED("spending_cap_reached")
 }
 
-enum class FailedReason { CHANNEL_UNKNOWN, CONTENT_MISMATCHED, DEVICE_OFFLINE, DOWNLOAD_FAILED, INDEX_INVALID, MANIFEST_INVALID, SIGNATURE_INVALID }
+enum class FailedReason(val wire: String) {
+    CHANNEL_UNKNOWN("channel_unknown"), CONTENT_MISMATCHED("content_mismatched"), DEVICE_OFFLINE("device_offline"), DOWNLOAD_FAILED("download_failed"),
+    INDEX_INVALID("index_invalid"), MANIFEST_INVALID("manifest_invalid"), SIGNATURE_INVALID("signature_invalid")
+}
 
-enum class RollbackReason { APP_CRASHED, APP_REQUESTED, READINESS_TIMED_OUT }
+enum class RollbackReason(val wire: String) { APP_CRASHED("app_crashed"), APP_REQUESTED("app_requested"), READINESS_TIMED_OUT("readiness_timed_out") }
 
 enum class PackKind(val wire: String) { FULL("full"), DELTA("delta"), STREAMED("streamed"), FILES("files") }
 
 /**
  * One shape for `SyncResult`, `CheckForUpdateResult` and `DownloadUpdateResult`: the status says which fields are set.
- * `DOWNLOADED` carries `applyStrategy`, the moment the apply runs or `manual` for the app's `applyUpdate()`; `APPLIED` says the
+ * `downloaded` carries `applyStrategy`, the moment the apply runs or `manual` for the app's `applyUpdate()`; `applied` says the
  * apply happened and the reload follows the result.
  */
 data class SyncResult(
@@ -48,8 +53,8 @@ data class SyncResult(
         fun available(release: Release, notes: String?, downloadSizeBytes: Long?) = SyncResult(SyncStatus.AVAILABLE, release, notes = notes, downloadSizeBytes = downloadSizeBytes)
         fun downloaded(release: Release, notes: String?, applyStrategy: ApplyStrategy) = SyncResult(SyncStatus.DOWNLOADED, release, notes = notes, applyStrategy = applyStrategy)
         fun applied(release: Release, notes: String?) = SyncResult(SyncStatus.APPLIED, release, notes = notes)
-        fun skipped(release: Release?, reason: SkippedReason, condition: ConditionType? = null) = SyncResult(SyncStatus.SKIPPED, release, reason = reason.name, condition = condition)
-        fun failed(release: Release?, reason: FailedReason, message: String) = SyncResult(SyncStatus.FAILED, release, reason = reason.name, message = message)
+        fun skipped(release: Release?, reason: SkippedReason, condition: ConditionType? = null) = SyncResult(SyncStatus.SKIPPED, release, reason = reason.wire, condition = condition)
+        fun failed(release: Release?, reason: FailedReason, message: String) = SyncResult(SyncStatus.FAILED, release, reason = reason.wire, message = message)
 
         fun fromJson(json: JSONObject) = SyncResult(
             status = SyncStatus.entries.first { it.wire == json.getString("status") },
@@ -64,7 +69,7 @@ data class SyncResult(
     }
 }
 
-enum class ApplyStatus(val wire: String) { APPLIED("APPLIED"), NOTHING_TO_APPLY("NOTHING_TO_APPLY") }
+enum class ApplyStatus(val wire: String) { APPLIED("applied"), NOTHING_TO_APPLY("nothing_to_apply") }
 
 /** What `applyUpdate()` answers: the update is the current release and the reload follows, or nothing waits. */
 data class ApplyUpdateResult(val status: ApplyStatus, val release: Release?) {
@@ -76,7 +81,7 @@ data class NotifyReadyResult(val currentRelease: Release?, val previousRelease: 
         .put("currentRelease", currentRelease?.toJson() ?: JSONObject.NULL)
         .put("previousRelease", previousRelease?.toJson() ?: JSONObject.NULL)
         .put("isRolledBack", isRolledBack)
-        .putIfNotNull("rollbackReason", rollbackReason?.name)
+        .putIfNotNull("rollbackReason", rollbackReason?.wire)
 }
 
 data class LastCheck(val checkedAt: Long, val trigger: SyncTrigger, val result: SyncResult) {
@@ -161,7 +166,7 @@ data class UpdateDownloadedEvent(val release: Release, val applyStrategy: ApplyS
 data class UpdateFailedEvent(val release: Release?, val reason: FailedReason, val message: String, val trigger: SyncTrigger) {
     fun toJson(): JSONObject = JSONObject()
         .put("release", release?.toJson() ?: JSONObject.NULL)
-        .put("reason", reason.name)
+        .put("reason", reason.wire)
         .put("message", message)
         .put("trigger", trigger.wire)
 }
@@ -179,10 +184,10 @@ data class DownloadProgressEvent(val downloadSizeBytes: Long, val progressBytes:
 
 /** At each start that follows a rollback until the app is up after one, before the readiness gate; `toRelease` is `null` for the embedded bundle. */
 data class UpdateRolledBackEvent(val fromRelease: Release, val toRelease: Release?, val reason: RollbackReason) {
-    fun toJson(): JSONObject = JSONObject().put("fromRelease", fromRelease.toJson()).put("toRelease", toRelease?.toJson() ?: JSONObject.NULL).put("reason", reason.name)
+    fun toJson(): JSONObject = JSONObject().put("fromRelease", fromRelease.toJson()).put("toRelease", toRelease?.toJson() ?: JSONObject.NULL).put("reason", reason.wire)
 
     companion object {
-        fun fromJson(json: JSONObject) = UpdateRolledBackEvent(Release.fromJson(json.getJSONObject("fromRelease")), json.optJSONObject("toRelease")?.let(Release::fromJson), RollbackReason.valueOf(json.getString("reason")))
+        fun fromJson(json: JSONObject) = UpdateRolledBackEvent(Release.fromJson(json.getJSONObject("fromRelease")), json.optJSONObject("toRelease")?.let(Release::fromJson), RollbackReason.entries.first { it.wire == json.getString("reason") })
     }
 }
 

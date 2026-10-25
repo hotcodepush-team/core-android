@@ -17,9 +17,9 @@ class FixtureTest {
     private data class Expected(val status: String, val releaseId: String?, val isMandatory: Boolean?, val reason: String?, val condition: String?) {
         companion object {
             fun of(evaluation: Evaluation) = when (evaluation) {
-                is Evaluation.UpToDate -> Expected("UP_TO_DATE", evaluation.release?.id, null, null, null)
-                is Evaluation.Available -> Expected("AVAILABLE", evaluation.release.id, evaluation.isMandatory, null, null)
-                is Evaluation.Skipped -> Expected("SKIPPED", evaluation.release?.id, null, evaluation.reason.name, evaluation.condition?.wire)
+                is Evaluation.UpToDate -> Expected(SyncStatus.UP_TO_DATE.wire, evaluation.release?.id, null, null, null)
+                is Evaluation.Available -> Expected(SyncStatus.AVAILABLE.wire, evaluation.release.id, evaluation.isMandatory, null, null)
+                is Evaluation.Skipped -> Expected(SyncStatus.SKIPPED.wire, evaluation.release?.id, null, evaluation.reason.wire, evaluation.condition?.wire)
             }
 
             fun fromJson(json: JSONObject) = Expected(
@@ -34,7 +34,7 @@ class FixtureTest {
 
     private data class ExpectedVerdict(val releaseId: String, val isEligible: Boolean, val reason: String?, val condition: String?) {
         companion object {
-            fun of(verdict: ReleaseVerdict) = ExpectedVerdict(verdict.release.id, verdict.isEligible, verdict.reason?.name, verdict.condition?.wire)
+            fun of(verdict: ReleaseVerdict) = ExpectedVerdict(verdict.release.id, verdict.isEligible, verdict.reason?.wire, verdict.condition?.wire)
 
             fun fromJson(json: JSONObject) = ExpectedVerdict(json.getString("releaseId"), json.getBoolean("isEligible"), json.optNullableString("reason"), json.optNullableString("condition"))
         }
@@ -170,7 +170,7 @@ class FixtureTest {
             assertEquals(name, file.optString("checkStrategy", "auto"), configuration.checkStrategy.wire)
             assertEquals(name, file.optDouble("checkIntervalSeconds", 900.0), configuration.checkIntervalSeconds, 0.0)
             assertEquals(name, file.optString("downloadStrategy", "auto"), configuration.downloadStrategy.wire)
-            assertEquals(name, file.optString("applyStrategy", "next-start"), configuration.applyStrategy.wire)
+            assertEquals(name, file.optString("applyStrategy", "next_start"), configuration.applyStrategy.wire)
             assertEquals(name, file.optString("mandatoryApplyStrategy", "immediate"), configuration.mandatoryApplyStrategy.wire)
             assertEquals(name, file.optDouble("nextResumeMinimumBackgroundSeconds", 300.0), configuration.nextResumeMinimumBackgroundSeconds, 0.0)
             assertEquals(name, file.optString("readySignal", "render"), configuration.readySignal.wire)

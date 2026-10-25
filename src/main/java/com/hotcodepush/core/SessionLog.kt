@@ -16,21 +16,21 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
 
         /** An outcome event as it enters the outbox; a check event is the cycle's line already. */
         fun ofDeviceEvent(event: DeviceEvent, at: Long): LogEntry? = when (event.type) {
-            "downloaded" -> LogEntry(at, "DOWNLOADED", "release ${event.releaseId ?: ""}: ${event.downloadSizeBytes ?: 0} bytes as ${event.packKind ?: ""} pack")
-            "applied" -> LogEntry(at, "APPLIED", "release ${event.releaseId ?: ""} is the running release")
-            "confirmed" -> LogEntry(at, "CONFIRMED", "release ${event.releaseId ?: ""} passed the readiness gate")
-            "failed" -> LogEntry(at, "FAILED ${event.reason ?: ""}", "release ${event.releaseId ?: ""}" + (event.detail?.let { ": $it" } ?: ""))
-            "rolledBack" -> LogEntry(at, "ROLLED_BACK", "release ${event.fromReleaseId ?: ""} rolled back to ${event.toReleaseId ?: "the embedded bundle"}")
+            "downloaded" -> LogEntry(at, "downloaded", "release ${event.releaseId ?: ""}: ${event.downloadSizeBytes ?: 0} bytes as ${event.packKind ?: ""} pack")
+            "applied" -> LogEntry(at, "applied", "release ${event.releaseId ?: ""} is the running release")
+            "confirmed" -> LogEntry(at, "confirmed", "release ${event.releaseId ?: ""} passed the readiness gate")
+            "failed" -> LogEntry(at, "failed ${event.reason ?: ""}", "release ${event.releaseId ?: ""}" + (event.detail?.let { ": $it" } ?: ""))
+            "rolled_back" -> LogEntry(at, "rolled_back", "release ${event.fromReleaseId ?: ""} rolled back to ${event.toReleaseId ?: "the embedded bundle"}")
             else -> null
         }
 
         /** A batch's answer: acknowledged, refused and its events dropped, or failed and its events kept for the next sync. */
         internal fun ofBatch(answer: BatchAnswer, eventCount: Int, at: Long): LogEntry = when (answer) {
-            is BatchAnswer.Acknowledged -> LogEntry(at, "REPORTED", "$eventCount events acknowledged")
-            is BatchAnswer.Refused -> LogEntry(at, "REPORT_REFUSED", "$eventCount events dropped: HTTP ${answer.status}")
+            is BatchAnswer.Acknowledged -> LogEntry(at, "reported", "$eventCount events acknowledged")
+            is BatchAnswer.Refused -> LogEntry(at, "report_refused", "$eventCount events dropped: HTTP ${answer.status}")
             is BatchAnswer.Failed -> when (answer.status) {
-                null -> LogEntry(at, "REPORT_FAILED", "$eventCount events kept for the next sync: the events endpoint could not be reached")
-                else -> LogEntry(at, "REPORT_FAILED", "$eventCount events kept for the next sync: HTTP ${answer.status}")
+                null -> LogEntry(at, "report_failed", "$eventCount events kept for the next sync: the events endpoint could not be reached")
+                else -> LogEntry(at, "report_failed", "$eventCount events kept for the next sync: HTTP ${answer.status}")
             }
         }
 

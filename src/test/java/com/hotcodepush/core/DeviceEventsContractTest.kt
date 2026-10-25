@@ -22,10 +22,10 @@ class DeviceEventsContractTest {
         DeviceEvent.downloaded("r2", "b2", 2048, PackKind.STREAMED),
         DeviceEvent.applied("r2"),
         DeviceEvent.confirmed("r2"),
-        DeviceEvent.failed("r2", FailedReason.SIGNATURE_INVALID.name),
-        DeviceEvent.failed("r2", FailedReason.MANIFEST_INVALID.name),
-        DeviceEvent.failed("r2", FailedReason.CONTENT_MISMATCHED.name),
-        DeviceEvent.failed("r2", RollbackReason.APP_REQUESTED.name, "checkout broke"),
+        DeviceEvent.failed("r2", FailedReason.SIGNATURE_INVALID.wire),
+        DeviceEvent.failed("r2", FailedReason.MANIFEST_INVALID.wire),
+        DeviceEvent.failed("r2", FailedReason.CONTENT_MISMATCHED.wire),
+        DeviceEvent.failed("r2", RollbackReason.APP_REQUESTED.wire, "checkout broke"),
         DeviceEvent.rolledBack("r3", "r2"),
         DeviceEvent.rolledBack("r2", null),
     )
@@ -101,7 +101,7 @@ class DeviceEventsContractTest {
         harness.core.sync(SyncTrigger.MANUAL)
         val batch = JSONObject(String(harness.http.posts.last().third))
         val sent = batch.getJSONArray("events").map { it }
-        assertEquals(listOf("checked", "downloaded", "applied", "failed", "rolledBack"), sent.map { it.getString("type") })
+        assertEquals(listOf("checked", "downloaded", "applied", "failed", "rolled_back"), sent.map { it.getString("type") })
         assertTrue(sent.last().has("toReleaseId") && sent.last().isNull("toReleaseId"))
         assertEquals("", resolveSchemaIssues(batch))
         assertTrue(StateStore(harness.store).unsentEvents.isEmpty())

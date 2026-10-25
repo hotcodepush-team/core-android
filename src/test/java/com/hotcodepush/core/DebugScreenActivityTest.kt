@@ -39,7 +39,7 @@ class DebugScreenActivityTest {
         assertTrue(report.text.toString(), report.text.contains("Last check\n  When: never"))
 
         (buttons.getChildAt(0) as Button).performClick()
-        idleMainLooperUntil { report.text.contains("Result: FAILED DEVICE_OFFLINE") }
+        idleMainLooperUntil { report.text.contains("Result: failed device_offline") }
         assertTrue(harness.http.requestThreads.isNotEmpty())
         assertTrue(harness.http.requestThreads.none { it == Looper.getMainLooper().thread })
 
@@ -48,7 +48,7 @@ class DebugScreenActivityTest {
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         val shared = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
         assertEquals(report.text.toString(), shared?.getStringExtra(Intent.EXTRA_TEXT))
-        assertTrue(shared?.getStringExtra(Intent.EXTRA_TEXT)?.contains("Result: FAILED DEVICE_OFFLINE") == true)
+        assertTrue(shared?.getStringExtra(Intent.EXTRA_TEXT)?.contains("Result: failed device_offline") == true)
     }
 
     /** The check runs off the main thread and renders back on it: the main looper runs until the screen shows the answer, ten seconds at most. */
