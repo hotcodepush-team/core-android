@@ -128,7 +128,7 @@ class DownloaderTest {
     }
 }
 
-class DeltaPackTest {
+class DeltaTest {
     private val indexHtml = "<html>v3</html>".toByteArray()
     private val appJs = "console.log('v3')".toByteArray()
     private val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
@@ -201,7 +201,7 @@ class DeltaPackTest {
     }
 
     @Test
-    fun shouldFetchTheFilesADeltaPackDidNotCarryOneByOne() {
+    fun shouldFetchTheFilesADeltaDidNotCarryOneByOne() {
         val harness = DownloaderHarness()
         val delta = PackWriter.pack(listOf(PackedEntry.file(Hashing.sha256Hex(indexHtml), Gzip.compress(indexHtml))))
         val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to delta))

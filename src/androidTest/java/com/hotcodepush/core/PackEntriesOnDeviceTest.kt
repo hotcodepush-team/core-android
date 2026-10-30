@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 
 /**
  * The patch cases of the protocol's pack-entries fixture through the downloader and the native bspatch of the device's ABI:
- * each case's patch entry in a delta pack against the running bundle, the held files in the file store or the embedded
+ * each case's patch entry in a delta against the running bundle, the held files in the file store or the embedded
  * bundle, and every file of the manifest on the files host. Applied writes the file without fetching it, fallback fetches
  * it, ignored does neither.
  */
