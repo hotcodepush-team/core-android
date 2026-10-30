@@ -144,7 +144,7 @@ class DownloaderHarness(configuration: Configuration = Fixture.configuration()) 
     val embedded = InMemoryEmbeddedBundle()
     val downloader = Downloader(configuration, "android", files, embedded, http, File(root, "tmp"))
 
-    /** Serves the envelope, its pack when given and its delta packs by base, where the index entry says they are and returns that entry. */
+    /** Serves the envelope, its pack when given and its deltas by base, where the index entry says they are and returns that entry. */
     fun publish(manifest: BundleManifest, pack: ByteArray? = null, packUrl: String = PACK_URL, packSizeBytes: Long? = null, bundleId: String = BUNDLE_ID, manifestUrl: String = MANIFEST_URL, deltas: Map<String, ByteArray> = emptyMap()): IndexRelease {
         val json = manifest.toJson().toString()
         val deltaEntries = deltas.map { (baseBundleId, delta) -> ManifestEnvelope.Delta(baseBundleId, "$PACK_URL-from-$baseBundleId", delta.size.toLong()) }

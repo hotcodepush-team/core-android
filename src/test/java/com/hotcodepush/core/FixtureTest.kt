@@ -296,7 +296,7 @@ class FixtureTest {
     }
 
     @Test
-    fun shouldReadAndWriteTheDeltaPackOfThePackEntriesFixture() {
+    fun shouldReadAndWriteTheDeltaOfThePackEntriesFixture() {
         val fixture = load("pack-entries.json").getJSONObject("deltaPack")
         val pack = Base64.getDecoder().decode(fixture.getString("packBase64"))
         assertEquals(fixture.getString("packSha256"), Hashing.sha256Hex(pack))
