@@ -42,9 +42,8 @@ class CatalogTest {
             DeviceEvent.applied("r1"),
             DeviceEvent.checked("r1", SyncStatus.AVAILABLE),
             DeviceEvent.confirmed("r1"),
-            DeviceEvent.downloaded("r1", "b1", 1, PackKind.FULL),
+            DeviceEvent.downloaded("r1", 1, PackKind.FULL),
             DeviceEvent.failed("r1", FailedReason.DOWNLOAD_FAILED.wire),
-            DeviceEvent.rolledBack("r1", null),
         ).map { it.type },
     )
 

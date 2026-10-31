@@ -54,7 +54,7 @@ class WireTypesTest {
     @Test
     fun shouldRefuseAnIndexReleaseMissingAField() {
         val json = decodeIndexRelease("r1", "b1").toJson()
-        for (key in listOf("isMandatory", "rolloutPercentage", "conditions", "sizeBytes", "notes")) {
+        for (key in listOf("isMandatory", "rolloutPercent", "conditions", "sizeBytes", "notes")) {
             val incomplete = JSONObject(json.toString()).also { it.remove(key) }
             assertThrows(key, JSONException::class.java) { IndexRelease.fromJson(incomplete) }
         }
@@ -65,7 +65,7 @@ class WireTypesTest {
         val json = decodeIndexRelease("r1", "b1").toJson()
         assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("id", 2)) }
         assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("isMandatory", "true")) }
-        assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("rolloutPercentage", 50.5)) }
+        assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("rolloutPercent", 50.5)) }
         assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("sizeBytes", "7")) }
     }
 

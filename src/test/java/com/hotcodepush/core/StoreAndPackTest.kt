@@ -145,6 +145,18 @@ class StateStoreTest {
     }
 
     @Test
+    fun shouldDropALastCheckAndAnOutboxStoredUnderTheFieldNamesOfVersionFive() {
+        val store = InMemoryStore()
+        val result = JSONObject().put("status", "skipped").put("release", JSONObject.NULL).put("reason", "device_incompatible").put("condition", "os")
+        store.putInt("hotcodepush.stateVersion", 5)
+        store.putString("hotcodepush.lastCheck", JSONObject().put("checkedAt", "2026-10-30T10:00:00.000Z").put("trigger", "manual").put("result", result).toString())
+        store.putString("hotcodepush.unsentEvents", """[{"type":"failed","releaseId":"r2","reason":"app_crashed"},{"type":"rolled_back","fromReleaseId":"r2","toReleaseId":null}]""")
+        val state = StateStore(store)
+        assertNull(state.lastCheck)
+        assertEquals(emptyList<DeviceEvent>(), state.unsentEvents)
+    }
+
+    @Test
     fun shouldDropTheCacheWhenAValueDoesNotParse() {
         val store = InMemoryStore()
         val state = StateStore(store)

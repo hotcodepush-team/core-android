@@ -13,7 +13,7 @@ data class ChannelIndex(
     val appId: String,
     val channelId: String,
     val platform: String,
-    val isPaused: Boolean,
+    val pausedAt: Long?,
     val cappedAt: Long?,
     val revokedReleaseIds: List<String>,
     val releases: List<IndexRelease>,
@@ -24,7 +24,7 @@ data class ChannelIndex(
         .put("appId", appId)
         .put("channelId", channelId)
         .put("platform", platform)
-        .put("isPaused", isPaused)
+        .put("pausedAt", pausedAt?.let(Iso8601::format) ?: JSONObject.NULL)
         .put("cappedAt", cappedAt?.let(Iso8601::format) ?: JSONObject.NULL)
         .put("revokedReleaseIds", JSONArray(revokedReleaseIds))
         .put("releases", JSONArray(releases.map { it.toJson() }))
@@ -45,7 +45,7 @@ data class ChannelIndex(
                 appId = json.getWireString("appId", WireRule.NON_EMPTY),
                 channelId = json.getWireString("channelId", WireRule.NON_EMPTY),
                 platform = platform,
-                isPaused = json.getWireBoolean("isPaused"),
+                pausedAt = json.getNullableTimestamp("pausedAt"),
                 cappedAt = json.getNullableTimestamp("cappedAt"),
                 revokedReleaseIds = json.getJSONArray("revokedReleaseIds").toWireStringList(WireRule.IDENTIFIER),
                 releases = json.getJSONArray("releases").map { IndexRelease.fromJson(it) },
@@ -60,7 +60,7 @@ data class IndexRelease(
     val createdAt: Long,
     val isMandatory: Boolean,
     val notes: String?,
-    val rolloutPercentage: Int,
+    val rolloutPercent: Int,
     val conditions: List<Condition>,
     val bundleId: String,
     val bundleVersion: String,
@@ -76,7 +76,7 @@ data class IndexRelease(
         .put("createdAt", Iso8601.format(createdAt))
         .put("isMandatory", isMandatory)
         .put("notes", notes ?: JSONObject.NULL)
-        .put("rolloutPercentage", rolloutPercentage)
+        .put("rolloutPercent", rolloutPercent)
         .put("conditions", JSONArray(conditions.map { it.toJson() }))
         .put("bundleId", bundleId)
         .put("bundleVersion", bundleVersion)
@@ -91,7 +91,7 @@ data class IndexRelease(
             createdAt = json.getTimestamp("createdAt"),
             isMandatory = json.getWireBoolean("isMandatory"),
             notes = json.getNullableWireString("notes"),
-            rolloutPercentage = json.getWireInt("rolloutPercentage", minimum = 0, maximum = 100),
+            rolloutPercent = json.getWireInt("rolloutPercent", minimum = 0, maximum = 100),
             conditions = json.getJSONArray("conditions").map { Condition.fromJson(it) },
             bundleId = json.getWireString("bundleId", WireRule.IDENTIFIER),
             bundleVersion = json.getWireString("bundleVersion"),

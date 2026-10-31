@@ -16,15 +16,13 @@ class DeviceEventsContractTest {
         DeviceEvent.checked("r2", SyncStatus.AVAILABLE),
         DeviceEvent.checked("r3", SyncStatus.SKIPPED, SkippedReason.DEVICE_INCOMPATIBLE, ConditionType.BINARY),
         DeviceEvent.checked("r4", SyncStatus.SKIPPED, SkippedReason.CONDITION_UNSUPPORTED),
-        DeviceEvent.downloaded("r2", "b2", 2048, PackKind.STREAMED),
+        DeviceEvent.downloaded("r2", 2048, PackKind.STREAMED),
         DeviceEvent.applied("r2"),
         DeviceEvent.confirmed("r2"),
         DeviceEvent.failed("r2", FailedReason.SIGNATURE_INVALID.wire),
         DeviceEvent.failed("r2", FailedReason.MANIFEST_INVALID.wire),
         DeviceEvent.failed("r2", FailedReason.CONTENT_MISMATCHED.wire),
         DeviceEvent.failed("r2", RollbackReason.APP_REQUESTED.wire, "checkout broke"),
-        DeviceEvent.rolledBack("r3", "r2"),
-        DeviceEvent.rolledBack("r2", null),
     )
 
     private fun keys(json: JSONObject): Set<String> = json.keys().asSequence().toSet()
@@ -34,28 +32,18 @@ class DeviceEventsContractTest {
         assertEquals(
             listOf(
                 setOf("type", "releaseId", "status"),
-                setOf("type", "releaseId", "status", "reason", "condition"),
+                setOf("type", "releaseId", "status", "reason", "conditionType"),
                 setOf("type", "releaseId", "status", "reason"),
-                setOf("type", "releaseId", "bundleId", "downloadSizeBytes", "packKind"),
+                setOf("type", "releaseId", "downloadSizeBytes", "packKind"),
                 setOf("type", "releaseId"),
                 setOf("type", "releaseId"),
                 setOf("type", "releaseId", "reason"),
                 setOf("type", "releaseId", "reason"),
                 setOf("type", "releaseId", "reason"),
                 setOf("type", "releaseId", "reason", "detail"),
-                setOf("type", "fromReleaseId", "toReleaseId"),
-                setOf("type", "fromReleaseId", "toReleaseId"),
             ),
             events.map { keys(it.toJson()) },
         )
-    }
-
-    @Test
-    fun shouldSendARollbackToTheEmbeddedBundleWithANullToReleaseId() {
-        val json = DeviceEvent.rolledBack("r2", null).toJson()
-        assertTrue(json.has("toReleaseId"))
-        assertTrue(json.isNull("toReleaseId"))
-        assertTrue(json.toString().contains("\"toReleaseId\":null"))
     }
 
     @Test
@@ -98,17 +86,10 @@ class DeviceEventsContractTest {
         harness.core.sync(SyncTrigger.MANUAL)
         val batch = JSONObject(String(harness.http.posts.last().third))
         val sent = batch.getJSONArray("events").map { it }
-        assertEquals(listOf("checked", "downloaded", "applied", "failed", "rolled_back"), sent.map { it.getString("type") })
-        assertTrue(sent.last().has("toReleaseId") && sent.last().isNull("toReleaseId"))
+        assertEquals(listOf("checked", "downloaded", "applied", "failed"), sent.map { it.getString("type") })
+        assertEquals(RollbackReason.READINESS_TIMED_OUT.wire, sent.last().getString("reason"))
         assertEquals("", resolveSchemaIssues(batch))
         assertTrue(StateStore(harness.store).unsentEvents.isEmpty())
-    }
-
-    @Test
-    fun shouldBeRefusedByTheSchemaWhenARollbackLeavesItsToReleaseIdOut() {
-        val event = DeviceEvent.rolledBack("r2", null).toJson().apply { remove("toReleaseId") }
-        val batch = DeviceEventsRequest("d1", emptyList(), "android", null, "0.0.0").toJson().put("events", JSONArray(listOf(event)))
-        assertFalse(resolveSchemaIssues(batch).isEmpty())
     }
 
     @Test
@@ -171,7 +152,7 @@ class DeviceEventsContractTest {
 
     private companion object {
         val BATCH_KEYS = setOf("deviceId", "events", "platform", "report", "sdkVersion")
-        val EVENT_KEYS = setOf("type", "releaseId", "bundleId", "status", "reason", "condition", "downloadSizeBytes", "packKind", "fromReleaseId", "toReleaseId", "detail")
+        val EVENT_KEYS = setOf("type", "releaseId", "status", "reason", "conditionType", "downloadSizeBytes", "packKind", "detail")
         val REPORT_KEYS = setOf("attributes", "binaryBuild", "binaryVersion", "channelId", "channelSource", "embeddedBundleId", "fingerprint", "osVersion", "releaseId")
     }
 }

@@ -32,7 +32,7 @@ data class SyncResult(
     val status: SyncStatus,
     val release: Release?,
     val reason: String? = null,
-    val condition: ConditionType? = null,
+    val conditionType: ConditionType? = null,
     val notes: String? = null,
     val applyStrategy: ApplyStrategy? = null,
     val downloadSizeBytes: Long? = null,
@@ -42,7 +42,7 @@ data class SyncResult(
         .put("status", status.wire)
         .put("release", release?.toJson() ?: JSONObject.NULL)
         .putIfNotNull("reason", reason)
-        .putIfNotNull("condition", condition?.wire)
+        .putIfNotNull("conditionType", conditionType?.wire)
         .putIfNotNull("notes", notes, nullWhenStatus = status == SyncStatus.APPLIED || status == SyncStatus.AVAILABLE || status == SyncStatus.DOWNLOADED)
         .putIfNotNull("applyStrategy", applyStrategy?.wire)
         .putIfNotNull("downloadSizeBytes", downloadSizeBytes, nullWhenStatus = status == SyncStatus.AVAILABLE)
@@ -53,14 +53,14 @@ data class SyncResult(
         fun available(release: Release, notes: String?, downloadSizeBytes: Long?) = SyncResult(SyncStatus.AVAILABLE, release, notes = notes, downloadSizeBytes = downloadSizeBytes)
         fun downloaded(release: Release, notes: String?, applyStrategy: ApplyStrategy) = SyncResult(SyncStatus.DOWNLOADED, release, notes = notes, applyStrategy = applyStrategy)
         fun applied(release: Release, notes: String?) = SyncResult(SyncStatus.APPLIED, release, notes = notes)
-        fun skipped(release: Release?, reason: SkippedReason, condition: ConditionType? = null) = SyncResult(SyncStatus.SKIPPED, release, reason = reason.wire, condition = condition)
+        fun skipped(release: Release?, reason: SkippedReason, conditionType: ConditionType? = null) = SyncResult(SyncStatus.SKIPPED, release, reason = reason.wire, conditionType = conditionType)
         fun failed(release: Release?, reason: FailedReason, message: String) = SyncResult(SyncStatus.FAILED, release, reason = reason.wire, message = message)
 
         fun fromJson(json: JSONObject) = SyncResult(
             status = SyncStatus.entries.first { it.wire == json.getString("status") },
             release = json.optJSONObject("release")?.let(Release::fromJson),
             reason = json.optNullableString("reason"),
-            condition = json.optNullableString("condition")?.let { wire -> ConditionType.entries.firstOrNull { it.wire == wire } },
+            conditionType = json.optNullableString("conditionType")?.let { wire -> ConditionType.entries.firstOrNull { it.wire == wire } },
             notes = json.optNullableString("notes"),
             applyStrategy = json.optNullableString("applyStrategy")?.let(ApplyStrategy::fromWire),
             downloadSizeBytes = if (json.isNull("downloadSizeBytes")) null else json.optLong("downloadSizeBytes"),

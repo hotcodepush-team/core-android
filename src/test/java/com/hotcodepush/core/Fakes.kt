@@ -139,8 +139,8 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
         http.stubJson(Fixture.eventsUrl(), JSONObject().put("reportedAt", reportedAt), status = 202)
     }
 
-    fun publish(releases: List<Fixture.Published>, sequence: Long, revoked: List<String> = emptyList(), isPaused: Boolean = false, cappedAt: Long? = null, etag: String = "\"e1\"") {
-        http.stubJson(Fixture.indexUrl(), Fixture.index(sequence, releases.map { it.release }, revoked, isPaused, cappedAt).toJson(), headers = mapOf("ETag" to etag))
+    fun publish(releases: List<Fixture.Published>, sequence: Long, revoked: List<String> = emptyList(), pausedAt: Long? = null, cappedAt: Long? = null, etag: String = "\"e1\"") {
+        http.stubJson(Fixture.indexUrl(), Fixture.index(sequence, releases.map { it.release }, revoked, pausedAt, cappedAt).toJson(), headers = mapOf("ETag" to etag))
         for (entry in releases) {
             http.stubJson(entry.release.manifestUrl, entry.envelope.toJson())
             http.stub(entry.envelope.pack.url, body = entry.pack)
