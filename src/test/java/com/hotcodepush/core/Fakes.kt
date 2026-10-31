@@ -32,7 +32,6 @@ class FakeLoader(private val root: File) : BundleLoader {
     var hasPersisted = false
     val loaded = mutableListOf<String?>()
     var served: String? = null
-    var isMetered = false
 
     var persistFailure: Throwable? = null
     var loadFailure: Throwable? = null
@@ -59,8 +58,6 @@ class FakeLoader(private val root: File) : BundleLoader {
     }
 
     override fun servedBundleId(): String? = served
-
-    override fun isConnectionMetered(): Boolean = isMetered
 }
 
 class FakeListener : CoreListener {
@@ -125,11 +122,12 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     val uncaught = mutableListOf<Throwable>()
     val scope = CoroutineScope(SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, failure -> uncaught += failure })
 
+    var isConnectionMetered = false
     var isProcessInForeground = true
     var core: Core = build(configuration)
 
     private fun build(configuration: Configuration, scope: CoroutineScope = this.scope) =
-        Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp")) { isProcessInForeground }
+        Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"), { isConnectionMetered }) { isProcessInForeground }
 
     fun restart(configuration: Configuration = Fixture.configuration(), scope: CoroutineScope = this.scope) {
         core = build(configuration, scope)

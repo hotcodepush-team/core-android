@@ -1,10 +1,13 @@
 package com.hotcodepush.core
 
+import android.app.Activity
 import android.app.ActivityManager
+import android.app.Application
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import java.io.File
@@ -51,9 +54,6 @@ interface BundleLoader {
 
     /** The bundle the WebView runs right now, `null` for the embedded bundle. */
     fun servedBundleId(): String?
-
-    /** Whether the connection is metered or constrained, for the `unmetered` download strategy. */
-    fun isConnectionMetered(): Boolean
 }
 
 /** The five events, named by what happened to the update; a cycle's start and end fire nothing. */
@@ -104,10 +104,41 @@ object ActivityManagerProcessState : ProcessState {
     }
 }
 
-/** Whether the connection is metered, for a loader's `isConnectionMetered()`: the active network as the connectivity manager reports it. */
-class NetworkMonitor(private val context: Context) {
-    fun isConnectionMetered(): Boolean =
+/** Whether the connection is metered, for the `unmetered` download strategy. */
+fun interface NetworkState {
+    fun isConnectionMetered(): Boolean
+}
+
+/** The active network as the connectivity manager reports it. */
+class NetworkMonitor(private val context: Context) : NetworkState {
+    override fun isConnectionMetered(): Boolean =
         (context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager)?.isActiveNetworkMetered ?: false
+}
+
+// The first resume is the start, not a return from the background, unless the process started in the background.
+internal class AppLifecycleObserver(
+    private var hasPaused: Boolean,
+    private val onPause: () -> Unit,
+    private val onResume: () -> Unit,
+) : Application.ActivityLifecycleCallbacks {
+    override fun onActivityPaused(activity: Activity) {
+        hasPaused = true
+        onPause()
+    }
+
+    override fun onActivityResumed(activity: Activity) {
+        if (hasPaused) onResume()
+    }
+
+    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+
+    override fun onActivityDestroyed(activity: Activity) = Unit
+
+    override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+
+    override fun onActivityStarted(activity: Activity) = Unit
+
+    override fun onActivityStopped(activity: Activity) = Unit
 }
 
 /** The two programming mistakes the SDK reports with a plain error: nothing an app handles. */

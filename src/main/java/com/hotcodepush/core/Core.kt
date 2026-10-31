@@ -1,5 +1,6 @@
 package com.hotcodepush.core
 
+import android.app.Application
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -15,6 +16,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** The update state machine every SDK on Android shares: the releases, the readiness gate and the update cycle. */
 class Core(
@@ -30,6 +32,7 @@ class Core(
     private val clock: Clock,
     private val scope: CoroutineScope,
     temporaryDirectory: File,
+    private val networkState: NetworkState,
     private val processState: ProcessState = ActivityManagerProcessState,
 ) {
     private enum class Stage { CHECK, DOWNLOAD, SYNC }
@@ -72,6 +75,7 @@ class Core(
     // A readiness signal reported before the latest bundle load belongs to the replaced bundle.
     @Volatile private var bundleLoadCount = 0
 
+    private val isObservingAppLifecycle = AtomicBoolean(false)
     private var isStartSyncPending = false
     private var isSendingDeviceEvents = false
     private var eventCountEnqueuedInFlight = 0
@@ -110,6 +114,7 @@ class Core(
         clock = Clock { System.currentTimeMillis() },
         scope = scope,
         temporaryDirectory = File(context.cacheDir, "hotcodepush"),
+        networkState = NetworkMonitor(context),
     )
 
     /**
@@ -231,6 +236,20 @@ class Core(
     }
 
     /**
+     * Follows the app between background and foreground for the lifetime of the core through `handleAppPause()` and
+     * `handleAppResume()`. Call it once, after creating the core; a second call does nothing.
+     */
+    fun observeAppLifecycle(application: Application) {
+        if (!isObservingAppLifecycle.compareAndSet(false, true)) return
+        val observer = AppLifecycleObserver(
+            hasPaused = !processState.isInForeground(),
+            onPause = { launchTask(::handleAppPause) },
+            onResume = { launchTask(::handleAppResume) },
+        )
+        application.registerActivityLifecycleCallbacks(observer)
+    }
+
+    /**
      * Handles the move to the background: stops the interval and readiness timers and records the moment for `next_resume`.
      * Interval checks belong to the foreground, and an app that cannot render in the background proves nothing.
      */
@@ -326,9 +345,9 @@ class Core(
     /** Applies the downloaded update and reloads the app, at once or, before the app is up in this run, once it is. */
     suspend fun applyUpdate(): ApplyUpdateResult = lock.withLock {
         discardNextReleaseThatLeftTheIndex()
-        val next = state.nextRelease ?: return ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, state.currentRelease)
+        val next = state.nextRelease ?: return ApplyUpdateResult(ApplyUpdateStatus.NOTHING_TO_APPLY, state.currentRelease)
         restartThroughGate(isAskedByApp = true, ::applyNextRelease)
-        ApplyUpdateResult(ApplyStatus.APPLIED, next.release)
+        ApplyUpdateResult(ApplyUpdateStatus.APPLIED, next.release)
     }
 
     private suspend fun performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
@@ -420,7 +439,7 @@ class Core(
         listener.updateAvailable(UpdateAvailableEvent(release, target.notes, resolveDownloadSizeBytes(target), trigger))
         return when (resolveDownloadStrategy(target, stage, options)) {
             DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, resolveDownloadSizeBytes(target))
-            DownloadStrategy.UNMETERED -> if (loader.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, applyStrategy, trigger)
+            DownloadStrategy.UNMETERED -> if (networkState.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, applyStrategy, trigger)
             DownloadStrategy.AUTO -> downloadAndApply(target, isMandatory, applyStrategy, trigger)
         }
     }
@@ -524,11 +543,11 @@ class Core(
     }
 
     /** Returns everything the debug screen shows: the device, the configuration, the state and this session's log. */
-    fun debugSnapshot(): DebugSnapshot = DebugSnapshot(clock.now(), deviceResult(), configuration, device.isDebugBuild, getState(), log.entries())
+    fun debugSnapshot(): DebugSnapshot = DebugSnapshot(clock.now(), getDevice(), configuration, device.isDebugBuild, getState(), log.entries())
 
-    fun getState(): StateResult {
+    fun getState(): GetStateResult {
         val cached = state.cachedIndex
-        return StateResult(
+        return GetStateResult(
             currentRelease = state.currentRelease,
             nextRelease = state.nextRelease?.release,
             fallbackRelease = state.fallbackRelease,
@@ -541,10 +560,10 @@ class Core(
         )
     }
 
-    fun channel(): ChannelResult = when (val choice = state.channel) {
-        is ChannelChoice.Id -> ChannelResult(choice.id, null, ChannelSource.RUNTIME)
-        is ChannelChoice.Name -> ChannelResult(resolvedChannelName?.takeIf { it.first == choice.name }?.second, choice.name, ChannelSource.RUNTIME)
-        null -> ChannelResult(configuration.channelId, null, ChannelSource.CONFIG)
+    fun getChannel(): GetChannelResult = when (val choice = state.channel) {
+        is ChannelChoice.Id -> GetChannelResult(choice.id, null, ChannelSource.RUNTIME)
+        is ChannelChoice.Name -> GetChannelResult(resolvedChannelName?.takeIf { it.first == choice.name }?.second, choice.name, ChannelSource.RUNTIME)
+        null -> GetChannelResult(configuration.channelId, null, ChannelSource.CONFIG)
     }
 
     /**
@@ -557,7 +576,7 @@ class Core(
         state.cachedIndex = null
     }
 
-    fun deviceResult(): DeviceResult = DeviceResult(state.deviceId, device.platform, device.binaryVersion, device.binaryBuild, device.osVersion, device.sdkVersion, configuration.fingerprint, channel(), state.attributes)
+    fun getDevice(): GetDeviceResult = GetDeviceResult(state.deviceId, device.platform, device.binaryVersion, device.binaryBuild, device.osVersion, device.sdkVersion, configuration.fingerprint, getChannel(), state.attributes)
 
     suspend fun setAttributes(changes: Map<String, String?>) = lock.withLock {
         val attributes = state.attributes.toMutableMap()
@@ -857,7 +876,7 @@ class Core(
     }
 
     private fun verifyChannelId() {
-        channel().id?.let(::verifyChannelId)
+        getChannel().id?.let(::verifyChannelId)
     }
 
     private fun verifyChannelId(id: String) {
@@ -939,7 +958,7 @@ class Core(
             if (events.isEmpty() && report == null) return
             val request = DeviceEventsRequest(state.deviceId, events, device.platform, report, device.sdkVersion)
             if (!request.isReadable) {
-                log.record(LogEntry(clock.now(), REPORT_UNREADABLE, "${events.size} events kept: the SDK's version or the platform is one the events endpoint refuses"))
+                log.record(LogEntry(clock.now(), REPORT_UNREADABLE, "${events.size} events kept: the device id, the SDK's version or the platform is one the events endpoint refuses"))
                 return
             }
             isSendingDeviceEvents = true
@@ -969,7 +988,7 @@ class Core(
     }
 
     private fun buildDeviceReport(): DeviceReport? {
-        val channel = channel()
+        val channel = getChannel()
         // A device without a channel id reports nothing, since a row for it would mislead.
         val channelId = channel.id ?: return null
         val report = DeviceReport(state.attributes, device.binaryBuild, device.binaryVersion, channelId, channel.source, configuration.embeddedBundleId, configuration.fingerprint, device.osVersion, state.currentRelease?.id)

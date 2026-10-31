@@ -123,6 +123,7 @@ class FixtureTest {
     @Test
     fun shouldAcceptEveryAcceptedWireRulesFixture() {
         assertAccepted("wire-rules.json", "acceptedIndexes", "index", ChannelIndex::fromJson)
+        assertAccepted("wire-rules.json", "acceptedChannelsIndexes", "channelsIndex", ChannelsIndex::fromJson)
         assertAccepted("wire-rules.json", "acceptedManifests", "manifest", BundleManifest::fromJson)
         assertAccepted("wire-rules.json", "acceptedEnvelopes", "envelope", ManifestEnvelope::fromJson)
     }
@@ -130,6 +131,7 @@ class FixtureTest {
     @Test
     fun shouldRefuseEveryRefusedWireRulesFixture() {
         assertRefused("wire-rules.json", "refusedIndexes", "index", ChannelIndex::fromJson)
+        assertRefused("wire-rules.json", "refusedChannelsIndexes", "channelsIndex", ChannelsIndex::fromJson)
         assertRefused("wire-rules.json", "refusedManifests", "manifest", BundleManifest::fromJson)
         assertRefused("wire-rules.json", "refusedEnvelopes", "envelope", ManifestEnvelope::fromJson)
     }
@@ -199,7 +201,7 @@ class FixtureTest {
     @Test
     fun shouldMatchEveryConfiguredHostFixture() {
         for (case in cases("configured-hosts.json", "cases")) {
-            assertEquals(case.getString("name"), case.getBoolean("isOnConfiguredHost"), configuration(case).isUrlOnConfiguredHost(case.getString("url")))
+            assertEquals(case.getString("name"), case.getBoolean("isOnConfiguredHost"), configuration(case).isOnConfiguredHost(case.getString("url")))
         }
     }
 
@@ -246,7 +248,7 @@ class FixtureTest {
                 statuses,
             )
             assertEquals(name, PackDownloadOutcome(case.optNullableString("packKind"), case.getJSONArray("requests").map(::packSource)), outcome)
-            for (request in outcome.requests) assertTrue(name, configuration.isUrlOnConfiguredHost(request.url))
+            for (request in outcome.requests) assertTrue(name, configuration.isOnConfiguredHost(request.url))
         }
     }
 

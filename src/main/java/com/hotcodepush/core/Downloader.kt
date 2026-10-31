@@ -214,7 +214,7 @@ class Downloader(
     }
 
     internal fun resolvePinnedUrl(url: String): String {
-        if (!configuration.isUrlOnConfiguredHost(url)) throw DownloadFailure.ManifestInvalid("$url is not on a configured host")
+        if (!configuration.isOnConfiguredHost(url)) throw DownloadFailure.ManifestInvalid("$url is not on a configured host")
         return url
     }
 

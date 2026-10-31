@@ -158,7 +158,7 @@ class MissingChannelTest {
         assertTrue(state.unsentEvents.isEmpty())
         assertNull(state.acknowledgedReport)
         assertNull(harness.core.getState().reportedAt)
-        assertEquals(ChannelResult(null, null, ChannelSource.CONFIG), harness.core.channel())
+        assertEquals(GetChannelResult(null, null, ChannelSource.CONFIG), harness.core.getChannel())
     }
 
     @Test
@@ -182,7 +182,7 @@ class MissingChannelTest {
         harness.core.handleAppStart()
         harness.core.setChannel(ChannelChoice.Name("beta"))
         assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
-        assertEquals(ChannelResult(Fixture.CHANNEL_ID, "beta", ChannelSource.RUNTIME), harness.core.channel())
+        assertEquals(GetChannelResult(Fixture.CHANNEL_ID, "beta", ChannelSource.RUNTIME), harness.core.getChannel())
     }
 
     @Test
@@ -205,7 +205,7 @@ class MissingChannelTest {
         harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003"))
         assertEquals(failed, harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(listOf("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/90e00000-0000-4000-8000-000000000003/android/v1/index.json"), harness.http.requests.map { it.first })
-        assertEquals(ChannelResult(null, null, ChannelSource.CONFIG), harness.core.channel())
+        assertEquals(GetChannelResult(null, null, ChannelSource.CONFIG), harness.core.getChannel())
     }
 
     @Test
@@ -215,7 +215,7 @@ class MissingChannelTest {
         harness.core.handleAppStart()
         harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003"))
         assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
-        assertEquals(ChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.channel())
+        assertEquals(GetChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.getChannel())
     }
 
     @Test

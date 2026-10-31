@@ -620,7 +620,7 @@ class CoreTest {
     fun shouldSwitchToAReleaseOfTheEmbeddedBundleOnAMeteredConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val configuration = Fixture.configuration(downloadStrategy = DownloadStrategy.UNMETERED)
         val harness = startOnConfirmedRelease(configuration)
-        harness.loader.isMetered = true
+        harness.isConnectionMetered = true
         val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content), reverted), 2, etag = "\"e2\"")
         assertEquals(SyncResult.downloaded(reverted.release.release, "notes 2", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
@@ -708,7 +708,7 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyUpdateStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
         harness.publish(listOf(v2), 2, revoked = listOf("r1"), etag = "\"e2\"")
         harness.core.sync(SyncTrigger.MANUAL)
         harness.core.handleRendered()
@@ -833,7 +833,7 @@ class CoreTest {
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
         assertEquals(ApplyStrategy.MANUAL, harness.core.sync(SyncTrigger.MANUAL).applyStrategy)
-        assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyUpdateStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
         assertTrue(harness.loader.loaded.isEmpty())
         assertNull(harness.core.getState().currentRelease)
         harness.core.setRestartAllowed(false)
@@ -941,7 +941,7 @@ class CoreTest {
         assertNull(harness.core.getState().currentRelease)
         assertEquals(v2.release.release, harness.core.getState().nextRelease)
         harness.core.handleRendered()
-        assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyUpdateStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
         assertEquals(listOf("b2"), harness.loader.loaded)
     }
 
@@ -1018,7 +1018,7 @@ class CoreTest {
     @Test
     fun shouldSkipOnAMeteredConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val harness = Harness()
-        harness.loader.isMetered = true
+        harness.isConnectionMetered = true
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1032,7 +1032,7 @@ class CoreTest {
         harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/5ab00000-0000-4000-8000-000000000002/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "5ab00000-0000-4000-8000-000000000002", "android", null, null, emptyList(), emptyList()).toJson())
         harness.core.setChannel(ChannelChoice.Name("staging"))
         assertEquals(SyncResult.upToDate(null), harness.core.sync(SyncTrigger.MANUAL))
-        assertEquals(ChannelResult("5ab00000-0000-4000-8000-000000000002", "staging", ChannelSource.RUNTIME), harness.core.channel())
+        assertEquals(GetChannelResult("5ab00000-0000-4000-8000-000000000002", "staging", ChannelSource.RUNTIME), harness.core.getChannel())
         harness.core.setChannel(ChannelChoice.Name("nowhere"))
         assertEquals(FailedReason.CHANNEL_UNKNOWN.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
     }
@@ -1043,9 +1043,9 @@ class CoreTest {
         harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "5ab00000-0000-4000-8000-000000000002").put("name", "staging"))))
         harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/5ab00000-0000-4000-8000-000000000002/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "5ab00000-0000-4000-8000-000000000002", "android", null, null, emptyList(), emptyList()).toJson())
         harness.core.setChannel(ChannelChoice.Name("staging"))
-        assertEquals(ChannelResult(null, "staging", ChannelSource.RUNTIME), harness.core.channel())
+        assertEquals(GetChannelResult(null, "staging", ChannelSource.RUNTIME), harness.core.getChannel())
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(ChannelResult("5ab00000-0000-4000-8000-000000000002", "staging", ChannelSource.RUNTIME), harness.core.channel())
+        assertEquals(GetChannelResult("5ab00000-0000-4000-8000-000000000002", "staging", ChannelSource.RUNTIME), harness.core.getChannel())
     }
 
     @Test
@@ -1055,7 +1055,7 @@ class CoreTest {
             val error = runCatching { harness.core.setChannel(ChannelChoice.Id(id)) }.exceptionOrNull()
             assertTrue(id, error is PlainException)
         }
-        assertEquals(ChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.channel())
+        assertEquals(GetChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.getChannel())
         assertTrue(harness.http.requests.isEmpty())
     }
 
@@ -1256,7 +1256,7 @@ class CoreTest {
         val harness = Harness()
         harness.core.setAttributes(mapOf("plan" to "beta", "userId" to "42"))
         harness.core.setAttributes(mapOf("plan" to null))
-        val device = harness.core.deviceResult()
+        val device = harness.core.getDevice()
         assertEquals(mapOf("userId" to "42"), device.attributes)
         assertEquals(ChannelSource.CONFIG, device.channel.source)
         assertEquals("fp1:abc", device.fingerprint)
@@ -1574,7 +1574,7 @@ class CoreTest {
         assertTrue(status.failedBundleIds.isEmpty())
         assertTrue(!harness.files.hasFile(Hashing.sha256Hex(v2Content)))
         assertNull(harness.loader.loaded.last())
-        assertEquals(mapOf("plan" to "beta"), harness.core.deviceResult().attributes)
+        assertEquals(mapOf("plan" to "beta"), harness.core.getDevice().attributes)
     }
 
     @Test
@@ -1594,15 +1594,15 @@ class CoreTest {
         val state = harness.core.getState()
         assertEquals(v2.release.release, state.nextRelease)
         assertEquals(SyncStatus.DOWNLOADED, state.lastCheck?.result?.status)
-        assertEquals(ApplyUpdateResult(ApplyStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyUpdateStatus.APPLIED, v2.release.release), harness.core.applyUpdate())
         assertEquals(listOf("b2"), harness.loader.loaded)
-        assertEquals(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, v2.release.release), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyUpdateStatus.NOTHING_TO_APPLY, v2.release.release), harness.core.applyUpdate())
     }
 
     @Test
     fun shouldDownloadOnCallWhateverTheConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val harness = Harness(Fixture.configuration(downloadStrategy = DownloadStrategy.UNMETERED))
-        harness.loader.isMetered = true
+        harness.isConnectionMetered = true
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1673,10 +1673,10 @@ class CoreTest {
         val harness = Harness()
         val emoji = "\uD83D\uDE00".repeat(256)
         harness.core.setAttributes(mapOf("mood" to emoji))
-        assertEquals(emoji, harness.core.deviceResult().attributes["mood"])
+        assertEquals(emoji, harness.core.getDevice().attributes["mood"])
         val error = runCatching { harness.core.setAttributes(mapOf("plan" to "beta\u0085")) }.exceptionOrNull()
         assertTrue(error is PlainException)
-        assertEquals(mapOf("mood" to emoji), harness.core.deviceResult().attributes)
+        assertEquals(mapOf("mood" to emoji), harness.core.getDevice().attributes)
     }
 
     @Test
@@ -1920,7 +1920,7 @@ class CoreTest {
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.MANUAL), harness.core.sync(SyncTrigger.MANUAL))
         harness.publish(emptyList(), 2, etag = "\"e2\"")
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyUpdateStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
         assertTrue(harness.loader.loaded.isEmpty())
         assertNull(harness.core.getState().nextRelease)
     }

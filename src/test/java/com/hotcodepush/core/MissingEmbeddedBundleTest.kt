@@ -126,7 +126,7 @@ class MissingEmbeddedBundleTest {
     fun shouldAnswerNothingToApplyAndNoRollbackWhenTheBuildEmbedsNoBundle() = runBlocking {
         val harness = harnessWithoutEmbeddedBundle()
         harness.core.handleAppStart()
-        assertEquals(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
+        assertEquals(ApplyUpdateResult(ApplyUpdateStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
         assertEquals(NotifyReadyResult(null, null, false, null), harness.core.notifyReady())
         harness.core.rollbackUpdate(null)
         assertTrue(harness.loader.loaded.isEmpty())

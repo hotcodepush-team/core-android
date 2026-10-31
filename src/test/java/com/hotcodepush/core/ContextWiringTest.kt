@@ -137,7 +137,7 @@ class ContextWiringTest {
         val root = Files.createTempDirectory("hotcodepush-tests").toFile()
         val core = Core(application, Fixture.configuration(), DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", false), InMemoryEmbeddedBundle(), FakeLoader(root), FakeListener(), scope, ManualScheduler())
 
-        val deviceId = core.deviceResult().id
+        val deviceId = core.getDevice().id
 
         assertEquals(deviceId, application.getSharedPreferences("${application.packageName}_preferences", Context.MODE_PRIVATE).getString("hotcodepush.deviceId", null))
         scope.cancel()
