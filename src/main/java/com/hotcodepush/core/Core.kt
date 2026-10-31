@@ -500,7 +500,7 @@ class Core(
 
     /**
      * Returns to the embedded bundle and deletes every downloaded update and the failed list; the device identity stays.
-     * Reloads at once or, before the app is up in this run, once it is.
+     * Before the app is up in this run, the whole call waits until it is, the deletion included.
      */
     suspend fun clearUpdates() = lock.withLock {
         restartThroughGate(isAskedByApp = true) {

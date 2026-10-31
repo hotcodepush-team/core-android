@@ -102,7 +102,7 @@ data class StateResult(
     val indexSequence: Long?,
     val indexFetchedAt: Long?,
     val failedBundleIds: List<String>,
-    /** The server time of the first acknowledged device report this month, which the spending cap is compared with. */
+    /** The server time of the first acknowledged device report in the latest UTC month that has one; the spending cap is compared with it. */
     val reportedAt: Long?,
 ) {
     fun toJson(): JSONObject = JSONObject()
