@@ -13,10 +13,8 @@ import org.junit.runner.RunWith
 import java.net.CookieManager
 import java.net.CookiePolicy
 
-/**
- * The OkHttp the core brings into an app, on the device: React Native's networking client keeps cookies in
- * okhttp-urlconnection's jar, which calls okhttp3.internal.Util, gone in OkHttp 5, so a host that sets a cookie must still work.
- */
+// React Native keeps cookies in okhttp-urlconnection's jar, which calls okhttp3.internal.Util.
+// OkHttp 5 removed it, so this checks that a host that sets a cookie still works on a device.
 @RunWith(AndroidJUnit4::class)
 class CookieOnDeviceTest {
     @Test

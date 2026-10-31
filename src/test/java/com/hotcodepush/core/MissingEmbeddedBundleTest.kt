@@ -10,10 +10,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
-/**
- * A build whose build step found no JavaScript bundled embeds no bundle: OTA updates are off in it, every cycle skips with
- * `build_debug` without a request, and nothing is sent.
- */
 class MissingEmbeddedBundleTest {
     private val v2Content = "<html>v2</html>".toByteArray()
     private val skipped = SyncResult.skipped(null, SkippedReason.BUILD_DEBUG)
@@ -21,10 +17,8 @@ class MissingEmbeddedBundleTest {
         List(cases.length()) { cases.getJSONObject(it) }.single { it.isNull("embeddedBundleManifest") }
     }
 
-    /** A later binary than the harness's first one, built without an embedded bundle. */
     private fun configurationWithoutEmbeddedBundle(channelId: String? = Fixture.CHANNEL_ID) = Fixture.configuration(builtAt = Fixture.BUILT_AT + 86_400_000, channelId = channelId, hasEmbeddedBundle = false)
 
-    /** A debug build served by the development server, with debug builds enabled as the project leaves them, and a release on its channel. */
     private fun harnessWithoutEmbeddedBundle() = Harness(configurationWithoutEmbeddedBundle(), isDebugBuild = true).apply {
         acknowledgeEvents()
         publish(listOf(Fixture.release(1, "b2", v2Content)), 1)

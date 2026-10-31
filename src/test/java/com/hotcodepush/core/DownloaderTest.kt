@@ -19,7 +19,6 @@ class DownloaderTest {
     private val indexHtml = "<html>v2</html>".toByteArray()
     private val appJs = "console.log('v2')".toByteArray()
 
-    /** A pack that carries none of the files, so each arrives through the single-file fetch after it. */
     private val emptyPack = PackWriter.pack(emptyList())
 
     @Test

@@ -95,10 +95,7 @@ class HttpClientTest {
         assertFalse(file.exists())
     }
 
-    /**
-     * React Native's networking client keeps cookies in this jar, whose okhttp-urlconnection 4.9.2 calls okhttp3.internal.Util:
-     * under OkHttp 5 the jar, and MockWebServer 4 with it, throws NoClassDefFoundError.
-     */
+    // React Native keeps cookies in this jar. Its okhttp-urlconnection 4.9.2 calls okhttp3.internal.Util, which OkHttp 5 removed.
     @Test
     fun shouldSendTheCookieAHostSetThroughReactNativesCookieJar() = runBlocking {
         MockWebServer().use { server ->
@@ -123,12 +120,10 @@ class HttpClientTest {
         }
     }
 
-    /** The real OkHttp client with the network replaced by the reply. */
     private fun client(reply: (Request) -> Response) = OkHttpClientAdapter(OkHttpClient.Builder().addInterceptor { chain -> reply(chain.request()) }.build())
 
     private fun response(request: Request, code: Int, body: ResponseBody) = Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(code).message("").body(body).build()
 
-    /** A body whose connection drops once what it delivered has been read. */
     private fun droppedBody(delivered: ByteArray): ResponseBody = object : ResponseBody() {
         override fun contentType(): MediaType? = null
 

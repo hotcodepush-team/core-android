@@ -73,8 +73,8 @@ repositories {
 }
 
 dependencies {
-    // OkHttp 4, never 5: React Native's okhttp-urlconnection 4.9.2 calls okhttp3.internal.Util, which OkHttp 5 removed, so the
-    // core forcing OkHttp 5 into an app throws NoClassDefFoundError from every request to a host that sets a cookie.
+    // OkHttp 4, never 5: React Native's okhttp-urlconnection 4.9.2 calls okhttp3.internal.Util, which OkHttp 5 removed.
+    // Forcing OkHttp 5 into an app breaks every request to a host that sets a cookie.
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'com.squareup.okio:okio:3.6.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'

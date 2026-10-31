@@ -12,11 +12,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
-/**
- * FreeBSD's bspatch on the patches `src/androidTest/make-bspatch-fixtures.sh` writes, through the native library of the
- * device's ABI: a patch arrives unsigned, so a hostile one must end in an error or in bytes the hash check refuses, never
- * in a read or write outside a buffer.
- */
+// A patch arrives unsigned, so a hostile one must end in an error or in bytes the hash check refuses.
+// It must never read or write outside a buffer.
 @RunWith(AndroidJUnit4::class)
 class BspatchTest {
     private val context = InstrumentationRegistry.getInstrumentation().context
@@ -126,7 +123,7 @@ class BspatchTest {
         assertEquals(expected, assertThrows(BspatchException::class.java) { apply(patch, maximumBytes) }.failure)
     }
 
-    /** The patch with one header field set the way bsdiff writes an offset: eight bytes little-endian, the sign in the top bit. */
+    // bsdiff writes an offset as eight bytes little-endian, with the sign in the top bit.
     private fun settingOffset(value: Long, offset: Int, patch: ByteArray): ByteArray {
         val magnitude = if (value < 0) -value else value
         for (index in 0 until 8) patch[offset + index] = (magnitude ushr (8 * index)).toByte()

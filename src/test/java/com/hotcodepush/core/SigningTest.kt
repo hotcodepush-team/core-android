@@ -11,7 +11,6 @@ import java.security.KeyFactory
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Base64
 
-/** The protocol's signature fixtures, each with the keys an Android resource file carries, and the refusals behind the ones that do not verify. */
 class SigningTest {
     private val fixture = SignatureFixtures()
     private val manifest = Fixture.release(1, "b2", "<html>v2</html>".toByteArray()).envelope.manifest
@@ -47,7 +46,6 @@ class SigningTest {
         }
     }
 
-    /** The key id is the fingerprint over the SPKI bytes, the very bytes an Android resource file carries. */
     @Test
     fun shouldCarryEveryAndroidKeyAsItsSpkiBytesBesideTheirFingerprint() {
         val keys = fixture.manifests.flatMap(fixture::devicePublicKeys).distinct()
@@ -105,25 +103,21 @@ class SigningTest {
     }
 }
 
-/** The test keys of `fixtures/signatures.json`, the keys of each case as an Android resource file carries them, and a signer over them through the JVM's providers. */
 class SignatureFixtures {
     private val document = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/signatures.json").readText())
     val keys: List<JSONObject> = document.getJSONArray("keys").map { it }
     val manifests: List<JSONObject> = document.getJSONArray("manifests").map { it }
 
-    /** A fixture key as an Android resource file carries it: the SPKI DER beside the fingerprint. */
     fun devicePublicKey(name: String): DevicePublicKey = key(name).let { DevicePublicKey(it.getString("publicKey").substringAfter(':'), it.getString("fingerprint")) }
 
     fun devicePublicKeys(case: JSONObject): List<DevicePublicKey> = case.getJSONObject("devicePublicKeys").getJSONArray("android").map(DevicePublicKey::fromJson)
 
-    /** A `manifests` case through the verifier: the signed half of its envelope against its Android keys. */
     fun verify(case: JSONObject): SignatureRefusal? {
         val envelope = case.getJSONObject("envelope")
         val signature = envelope.getNullableObject("signature")?.let(Signature::fromJson)
         return SignatureVerifier.verifyManifestSignature(envelope.getString("manifest"), signature, devicePublicKeys(case))
     }
 
-    /** The signature over the manifest string under the named key, as the CLI makes it. */
     fun sign(manifest: String, name: String): Signature {
         val key = key(name)
         val signer = java.security.Signature.getInstance("SHA256withRSA")

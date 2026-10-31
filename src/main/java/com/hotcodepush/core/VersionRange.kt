@@ -22,7 +22,6 @@ object VersionRange {
         return parseComponents(components)
     }
 
-    /** The components as numbers, `null` when one is above `COMPONENT_MAXIMUM`. */
     private fun parseComponents(components: List<String>): List<Long>? = components.map { component ->
         component.toLongOrNull()?.takeIf { it <= COMPONENT_MAXIMUM } ?: return null
     }
@@ -55,10 +54,8 @@ object VersionRange {
         }
     }
 
-    /**
-     * One comparator: an optional operator, optional whitespace, a version that may end in wildcards or be
-     * wildcards alone, then whitespace or the end; an alternative parses only when comparators cover it entirely.
-     */
+    // An optional operator, a version that may end in wildcards or be wildcards alone, then whitespace or the end.
+    // An alternative parses only when comparators cover it entirely.
     private val comparatorPattern = Regex("""(>=|<=|>|<|=)?\s*(\d+(?:\.\d+)*(?:\.[xX*])*|[xX*](?:\.[xX*])*)(?:\s+|$)""")
 
     private fun parseAlternative(alternative: String): List<Comparator>? {
@@ -83,7 +80,8 @@ object VersionRange {
         return parseComponents(components.take(if (wildcardIndex == -1) components.size else wildcardIndex))?.let(::intervalComparators)
     }
 
-    /** A partial or wildcard version as the interval it names: `1.2` and `1.2.x` are `>=1.2 <1.3`, `x` is everything. */
+    // `1.2` and `1.2.x` are `>=1.2 <1.3`, and `x` is everything.
+
     private fun intervalComparators(fixed: List<Long>): List<Comparator> {
         if (fixed.isEmpty()) return emptyList()
         val upper = fixed.toMutableList().also { it[it.size - 1] += 1 }

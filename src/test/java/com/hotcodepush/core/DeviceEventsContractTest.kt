@@ -10,10 +10,7 @@ import org.junit.Test
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-/**
- * The batch to the events endpoint as `@hotcodepush/protocol`'s `DeviceEventsRequestSchema` reads it: the endpoint answers
- * 400 for a required key that is absent, so a nullable key travels as `null` and only an optional one is left out.
- */
+// The endpoint answers 400 for an absent required key, so a nullable key travels as `null` and only an optional one is left out.
 class DeviceEventsContractTest {
     private val events = listOf(
         DeviceEvent.checked("r2", SyncStatus.AVAILABLE),
@@ -114,10 +111,6 @@ class DeviceEventsContractTest {
         assertFalse(resolveSchemaIssues(batch).isEmpty())
     }
 
-    /**
-     * Every batch the endpoint accepts, read into the core's types, is written back key for key, the events the endpoint skips
-     * left out and the fields the core does not know dropped: a nullable key as `null`, an optional one left out, as the encoder must.
-     */
     @Test
     fun shouldWriteEveryAcceptedBatchOfTheDeviceEventsFixtureBackKeyForKey() {
         val fixture = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/device-events.json").readText())
@@ -136,7 +129,6 @@ class DeviceEventsContractTest {
         }
     }
 
-    /** No batch the endpoint refuses can be rebuilt into one the device would send: the core's types cannot hold it, or it is not readable, or it writes back otherwise. */
     @Test
     fun shouldNeverWriteABatchTheDeviceEventsFixtureRefuses() {
         val fixture = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/device-events.json").readText())
@@ -153,7 +145,7 @@ class DeviceEventsContractTest {
 
     private fun retainKeys(json: JSONObject, keys: Set<String>): JSONObject = JSONObject(json.toString()).apply { json.keys().asSequence().filter { it !in keys }.toList().forEach(::remove) }
 
-    /** A JSON value as plain values that compare by content: an object as a map, an array as a list, a whole number as a Long. */
+    // org.json holds a whole number as an Int or a Long, so both compare as a Long.
     private fun resolveComparable(value: Any?): Any? = when (value) {
         is JSONObject -> value.keys().asSequence().associateWith { resolveComparable(value.get(it)) }
         is JSONArray -> List(value.length()) { resolveComparable(value.get(it)) }
@@ -161,7 +153,6 @@ class DeviceEventsContractTest {
         else -> value
     }
 
-    /** The issues `DeviceEventsRequestSchema` of the installed protocol package finds in the batch, empty when it accepts it; Node runs the schema. */
     private fun resolveSchemaIssues(batch: JSONObject): String {
         val script = """
             import { DeviceEventsRequestSchema } from '@hotcodepush/protocol';

@@ -8,7 +8,7 @@ import java.net.URI
 /** The channel's index for a platform: `/apps/{appId}/channels/{channelId}/{platform}/v1/index.json`. */
 data class ChannelIndex(
     val schema: Int,
-    /** The rebuild's time in milliseconds, which the never-backwards rule compares: beyond a 32-bit integer. */
+    /** The rebuild time in milliseconds, which the never-backwards rule compares. It exceeds a 32-bit integer. */
     val sequence: Long,
     val appId: String,
     val channelId: String,
@@ -33,7 +33,7 @@ data class ChannelIndex(
         const val SCHEMA = 1
         val PLATFORMS = listOf("android", "ios")
 
-        /** Every field of the format is present, a nullable one as `null`; another schema major or platform fails the whole index. */
+        /** Parses an index that carries every field, a nullable one as `null`. Another schema major or platform fails it. */
         fun fromJson(json: JSONObject): ChannelIndex {
             val schema = json.getWireInt("schema", minimum = 0)
             if (schema != SCHEMA) throw JSONException("The index has schema $schema, this reader reads $SCHEMA")
@@ -153,7 +153,7 @@ data class ChannelsIndex(val schema: Int, val channels: List<Entry>) {
     companion object {
         const val SCHEMA = 1
 
-        /** Another schema major fails the whole index, and so does an entry whose id is not a UUID, since the id names the channel's index. */
+        /** Parses the channels index. Another schema major fails it, and so does an entry id that is not a UUID. */
         fun fromJson(json: JSONObject): ChannelsIndex {
             val schema = json.getWireInt("schema", minimum = 0)
             if (schema != SCHEMA) throw JSONException("The channels index has schema $schema, this reader reads $SCHEMA")
@@ -172,9 +172,9 @@ data class Signature(val keyId: String, val value: String) {
 }
 
 /**
- * The document at `/apps/{appId}/bundles/{bundleId}/manifest.json`: the manifest as the signed string, its signature, the
- * reserved encryption slot and, unsigned beside them, the server's facts — the bundle's id and creation time, and the pack
- * and the deltas as stored. An envelope stored while bundles carried `patches` still parses; the key is not read.
+ * The document at `/apps/{appId}/bundles/{bundleId}/manifest.json`: the signed manifest string, its signature and the
+ * reserved encryption slot, with the server's unsigned facts beside them.
+ * An envelope stored while bundles carried `patches` still parses; the key is not read.
  */
 data class ManifestEnvelope(
     val bundleId: String,
@@ -227,9 +227,8 @@ data class ManifestEnvelope(
 }
 
 /**
- * The bundle manifest, the content the CLI knows before the upload and signs as canonical JSON: the files with their hashes
- * and sizes, the platforms, the bundle version, the fingerprint and the signing key's id. A manifest stored while bundles
- * carried `patches` still parses; the key is not read.
+ * The bundle manifest the CLI signs as canonical JSON before the upload.
+ * A manifest stored while bundles carried `patches` still parses; the key is not read.
  */
 data class BundleManifest(
     val appId: String,
@@ -256,7 +255,7 @@ data class BundleManifest(
         .put("keyId", keyId ?: JSONObject.NULL)
         .put("platforms", JSONArray(platforms))
 
-    /** Whether the manifest names the device's app and lists its platform, signed or not: another app's or platform's is `manifest_invalid`. */
+    /** Whether the manifest names the device's app and lists its platform, signed or not. */
     fun isForDevice(appId: String, platform: String): Boolean = this.appId == appId && platform in platforms
 
     companion object {
@@ -271,36 +270,32 @@ data class BundleManifest(
     }
 }
 
-/** The embedded bundle's manifest in the resource file, the bundle manifest itself. */
+/** The manifest of the embedded bundle, read from the resource file. */
 typealias EmbeddedBundleManifest = BundleManifest
 
-/** What a value may hold before it names a file, a directory or a host: nothing that climbs out of its directory, nothing off the wire's format. */
+// A value is checked before it names a file, a directory or a host, so nothing climbs out of its directory.
 internal enum class WireRule {
-    /** Letters, digits, `_` and `-`, at most 64: a bundle id names a directory. */
+    // A bundle id names a directory.
     IDENTIFIER,
 
-    /** A UUID in its textual form, hexadecimal in either case: a channel id names a path segment of the index's URL. */
+    // A channel id names a path segment of the index URL.
     UUID,
 
-    /** 64 lowercase hexadecimal characters: a file hash names a file. */
+    // A file hash names a file.
     SHA256,
 
-    /** Relative and `/`-separated, with no empty, `.` or `..` segment, no backslash and no NUL; split on code units, so `..` cannot hide behind a combining mark. */
+    // Split on code units, so `..` cannot hide behind a combining mark.
     RELATIVE_PATH,
-
-    /** At least one character. */
     NON_EMPTY,
 
-    /** At least one character and no control character: the text a device reports, which the server stores as sent. */
+    // The server stores the text a device reports as sent.
     PRINTABLE,
-
-    /** An absolute `http` or `https` URL with a host: `javascript:`, `file:`, `data:` and every other scheme are refused. */
     URL,
 
-    /** The scheme, a colon and the base64 of the signature. */
+    // The scheme, a colon and the base64 of the signature.
     SIGNATURE_VALUE,
 
-    /** Base64 in its one canonical spelling: padded, no unused bits set. */
+    // Base64 in its one canonical spelling: padded, with no unused bits set.
     BASE64;
 
     fun accepts(value: String): Boolean = when (this) {
@@ -318,27 +313,27 @@ internal enum class WireRule {
 
 private val URL_SCHEMES = setOf("http", "https")
 
-/** Unicode's `Cc`: C0, DEL and C1, all in the Basic Multilingual Plane, so a check per UTF-16 unit finds every one. */
+// Unicode's `Cc` set: C0, DEL and C1. All sit in the Basic Multilingual Plane, so a check per UTF-16 unit finds every one.
 internal fun Char.isControlCharacter(): Boolean = code <= 0x1F || code in 0x7F..0x9F
 private val identifierPattern = Regex("[A-Za-z0-9_-]{1,64}")
 private val uuidPattern = Regex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 private val sha256Pattern = Regex("[0-9a-f]{64}")
 private val signatureValuePattern = Regex("[a-z0-9_-]+:[A-Za-z0-9+/]+=*")
 
-/** A string, never a number or a boolean read as one, that the rule accepts; anything else fails the decode before it can name a file, a directory or a host. */
+// Only a real string passes, never a number or a boolean that org.json would coerce.
 internal fun JSONObject.getWireString(key: String, rule: WireRule? = null): String {
     val value = get(key) as? String ?: throw JSONException("$key is not a string")
     if (rule != null && !rule.accepts(value)) throw JSONException("Not a valid $key: $value")
     return value
 }
 
-/** A key that must be present, `null` when it holds nothing: the wire carries every field, so an absent one is a broken document, never an empty value. */
+// The wire carries every field, so an absent key is a broken document, never an empty value.
 internal fun JSONObject.getNullableWireString(key: String, rule: WireRule? = null): String? {
     if (!has(key)) throw JSONException("$key is absent; the wire carries it as null when there is none")
     return if (isNull(key)) null else getWireString(key, rule)
 }
 
-/** A key the format may leave out, `null` when it does: the resource file's hosts, absent in a production build. */
+// For a key the format may leave out, such as the resource file's hosts in a production build.
 internal fun JSONObject.getOptionalWireString(key: String, rule: WireRule? = null): String? = if (isNull(key)) null else getWireString(key, rule)
 
 internal fun JSONObject.getNullableObject(key: String): JSONObject? {
@@ -348,7 +343,6 @@ internal fun JSONObject.getNullableObject(key: String): JSONObject? {
 
 internal fun JSONObject.getWireBoolean(key: String): Boolean = get(key) as? Boolean ?: throw JSONException("$key is not a boolean")
 
-/** A whole number within its bounds; a fraction, a string or a number outside them fails the decode. */
 internal fun JSONObject.getWireLong(key: String, minimum: Long, maximum: Long = Long.MAX_VALUE): Long {
     val value = when (val number = get(key)) {
         is Int -> number.toLong()
@@ -371,7 +365,6 @@ internal fun JSONObject.optNullableString(key: String): String? = if (isNull(key
 
 internal fun JSONArray?.toStringList(): List<String> = this?.let { array -> List(array.length()) { array.getString(it) } } ?: emptyList()
 
-/** The strings of the array, each one the rule accepts; a number or a boolean among them fails the decode. */
 internal fun JSONArray.toWireStringList(rule: WireRule? = null): List<String> = List(length()) { index ->
     val value = get(index) as? String ?: throw JSONException("An entry is not a string")
     if (rule != null && !rule.accepts(value)) throw JSONException("Not a valid entry: $value")

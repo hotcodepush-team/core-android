@@ -6,8 +6,8 @@ import java.io.PushbackInputStream
 import java.util.zip.GZIPInputStream
 
 /**
- * One entry of a pack, by its name: a file's stored object, gzip as the bucket serves it, named by the file's content hash,
- * or a BSDIFF40 patch that turns the file `fromSha256` into the file `toSha256`. Its body streams through `PackReader`.
+ * One pack entry: a file's gzip object named by its content hash, or a BSDIFF40 patch from the file `fromSha256` to the
+ * file `toSha256`. Its body streams through `PackReader`.
  */
 sealed interface PackEntry {
     data class File(val sha256: String) : PackEntry
@@ -32,13 +32,12 @@ object PackReader {
     private val sizeField = 124 until 136
 
     /**
-     * Reads the `length` bytes of the input entry after entry up to the two end-of-archive blocks: a pack that ends before them is refused,
-     * a header whose checksum does not add up is refused, an entry named neither by a content hash nor `patches/{hash}/{hash}` is skipped
-     * with its body, so a later kind does not break this reader, anything after the end is ignored, and an entry the header claims larger
-     * than what is left is refused before any of it is read.
+     * Reads the `length` bytes of the input entry by entry, up to the two end-of-archive blocks, and passes each one to `read`.
+     * A cut pack, a header checksum that does not add up, or an entry larger than what is left is refused. An entry of any
+     * other name is skipped with its body, so a later entry kind does not break this reader. Anything after the end is ignored.
      *
-     * `read` receives each entry with its body as a stream of exactly the entry's size, which refuses a pack cut inside it; what `read`
-     * leaves unread is skipped. A read holds one header and one chunk in memory, however large the pack and its entries are.
+     * Each body is a stream of exactly the entry size; what `read` leaves unread is skipped. Memory holds one header and one
+     * chunk at a time, however large the pack.
      */
     fun forEachEntry(input: InputStream, length: Long, read: (PackEntry, InputStream) -> Unit) {
         val header = ByteArray(BLOCK_SIZE)
@@ -62,14 +61,12 @@ object PackReader {
         }
     }
 
-    /** The entry's full name: `prefix/name` when the prefix field holds one. */
     private fun resolveName(header: ByteArray): String {
         val name = field(header, nameField)
         val prefix = field(header, prefixField)
         return if (prefix.isEmpty()) name else "$prefix/$name"
     }
 
-    /** The kind a full name gives an entry, `null` for a name of neither kind. */
     private fun resolveEntry(name: String): PackEntry? {
         if (WireRule.SHA256.accepts(name)) return PackEntry.File(name)
         val segments = name.split('/')
@@ -77,7 +74,7 @@ object PackReader {
         return PackEntry.Patch(segments[1], segments[2])
     }
 
-    /** The ustar checksum: the sum of the header's bytes with the checksum field read as spaces, stored in octal. */
+    // The ustar checksum is the sum of the header bytes with the checksum field read as spaces, stored in octal.
     private fun verifyChecksum(header: ByteArray) {
         val expected = field(header, checksumField).toIntOrNull(8) ?: throw PackFormatException("Invalid checksum field")
         val actual = header.indices.sumOf { index -> if (index in checksumField) 0x20 else header[index].toInt() and 0xff }
@@ -101,7 +98,6 @@ object PackReader {
         return total
     }
 
-    /** Reads past `count` bytes a chunk at a time, never holding more than one chunk, and returns how many there were. */
     private fun InputStream.skipFully(count: Long): Long {
         val buffer = ByteArray(minOf(count, CHUNK_SIZE.toLong()).toInt())
         var total = 0L
@@ -113,7 +109,6 @@ object PackReader {
         return total
     }
 
-    /** An entry's body: exactly `size` bytes of the pack, a cut inside them a format error, closing it leaving the pack open. */
     private class EntryBodyInputStream(private val pack: InputStream, private var remaining: Long) : InputStream() {
         override fun read(): Int {
             val byte = ByteArray(1)
@@ -134,16 +129,18 @@ object PackReader {
             remaining = 0
         }
 
+        // Closing a body leaves the pack open.
         override fun close() = Unit
     }
 }
 
-/** Decodes a pack entry, the gzip bytes the bucket serves, into the file's content. */
+/** Decodes a pack entry, the gzip bytes the bucket serves, into the file content. */
 object Gzip {
     /**
-     * The content the gzip body inflates to, as a stream that stops past `maximumBytes`, the file's size: a few bytes that
-     * would inflate to gigabytes are refused on the way. An empty body is an empty file.
+     * Inflates the gzip body into a stream that stops past `maximumBytes`, the file size.
+     * A few bytes that would inflate to gigabytes are refused on the way. An empty body is an empty file.
      */
+
     fun inflate(body: InputStream, maximumBytes: Long): InputStream {
         val input = PushbackInputStream(body, 1)
         val first = input.read()

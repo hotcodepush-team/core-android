@@ -129,7 +129,6 @@ object DebugReport {
         return DebugSection("Log", rows.ifEmpty { listOf(DebugRow("Entries", "none this session")) })
     }
 
-    /** The id in effect; without one, a runtime name waits for its first sync and a build without a channel says why it has none. */
     private fun describeChannelId(channel: ChannelResult, configuration: Configuration): String = when {
         channel.id != null -> channel.id
         channel.source == ChannelSource.RUNTIME -> "unresolved"
@@ -137,7 +136,6 @@ object DebugReport {
         else -> "none: the build carries no channel, it was built without a token or offline"
     }
 
-    /** The registered bundle's id; a build without an embedded bundle says that OTA updates are off in it. */
     private fun describeEmbeddedBundle(snapshot: DebugSnapshot): String = when {
         snapshot.configuration.embeddedBundleManifest == null -> "none: the build embeds no bundle, over-the-air (OTA) updates are off in it"
         else -> snapshot.state.embeddedBundleId ?: "not registered"

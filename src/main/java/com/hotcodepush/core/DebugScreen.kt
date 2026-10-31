@@ -17,9 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference
 
-/** The SDK's debug screen, one implementation every framework's SDK presents: `showDebugScreen()` ends here. */
+/** The debug screen every SDK presents through `showDebugScreen()`. */
 object DebugScreen {
-    /** The core the screen reads, held weakly: the SDK that showed the screen owns it. */
+    // Held weakly, since the SDK that showed the screen owns the core.
     @Volatile
     internal var core: WeakReference<Core>? = null
 
@@ -31,7 +31,7 @@ object DebugScreen {
     }
 }
 
-/** What `DebugReport` renders as one selectable text under two buttons: a check now, and the same text into the system share sheet. */
+/** Shows the `DebugReport` text under two buttons: check now, and share the same text through the system share sheet. */
 class DebugScreenActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var report: TextView? = null
@@ -76,10 +76,8 @@ class DebugScreenActivity : Activity() {
         scope.cancel()
     }
 
-    /**
-     * The first stage alone: the check answers why, and downloads and reloads nothing behind the screen. It runs off the main
-     * thread, where Android refuses the network.
-     */
+    // Only the check runs, so nothing downloads or reloads behind the screen. Android refuses the network on the main thread.
+
     private fun checkNow(core: Core, button: Button) {
         button.isEnabled = false
         scope.launch {

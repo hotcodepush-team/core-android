@@ -19,9 +19,9 @@ interface HttpClient {
     suspend fun post(url: String, headers: Map<String, String>, body: ByteArray): HttpResponse
 
     /**
-     * Downloads to the file, appending from its current size with a `Range` request when it exists; what arrived stays
-     * when the connection drops, for the next attempt to resume. Past `maximumBytes` it stops and deletes the file; on a
-     * status other than 200 or 206 — a redirect included, which it never follows — it deletes the file and throws `HttpStatusException`.
+     * Downloads to the file, resuming from its current size with a `Range` request; what arrived stays for the next attempt.
+     * Past `maximumBytes` it stops and deletes the file. On a status other than 200 or 206, a redirect included, it deletes
+     * the file and throws `HttpStatusException`.
      */
     suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit)
 }
@@ -71,11 +71,12 @@ class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : Htt
         }
     }
 
-    /** The same pools and interceptors, following no redirect: a download stays on the URL the core pinned. */
+    // A download follows no redirect, so it stays on the URL the core pinned.
     private val downloadClient: OkHttpClient by lazy { client.newBuilder().followRedirects(false).followSslRedirects(false).build() }
 
     companion object {
-        /** One client per process, as OkHttp asks: its pools and threads outlive every activity. */
+        // OkHttp asks for one client per process, since its pools and threads outlive every activity.
+
         private val sharedClient: OkHttpClient by lazy { OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build() }
     }
 }

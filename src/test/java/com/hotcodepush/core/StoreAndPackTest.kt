@@ -75,7 +75,6 @@ class PackTest {
         assertThrows(PackFormatException::class.java) { PackReader.forEachEntry(cut.inputStream(), pack.size.toLong()) { _, body -> body.readBytes() } }
     }
 
-    /** `size` zero bytes, made as they are read. */
     private class ZeroInputStream(private var remaining: Long) : InputStream() {
         override fun read(): Int = if (remaining-- > 0) 0 else -1
 

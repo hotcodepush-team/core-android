@@ -95,6 +95,14 @@ The fixtures and `catalog.json` move with `package.json`'s pin: a protocol chang
 - Prose names the feature over-the-air (OTA) updates: "over-the-air (OTA) update" on the first mention of a surface, "OTA update" after it, and the appositive "HotCodePush, the over-the-air (OTA) update platform for React Native, Expo, Capacitor and Cordova". "Live update" is the Capacitor community's word: it stays in the `capacitor-live-updates` package name and in a list of alternative names for search, never as HotCodePush's own term.
 - Wherever the supported frameworks are listed, the order is React Native, Expo, Capacitor and Cordova, the larger communities first.
 
+## Comments
+
+- Comment only what the code cannot say: the why behind a choice, an outside quirk or limit, what a regex matches, a TODO with its issue link. Never what the code does.
+- Before adding a comment, try a clearer name or a small extracted function first.
+- One or two short plain sentences. Capital letter, full stop, own line above the code. No run-on sentences, no chains of possessives.
+- Doc comments (JSDoc, KDoc, `///`, docstrings) only on a package's public API: one line that says what it does, then only what a caller must know.
+- Never: section banners, commented-out code, change history, the same comment in two places.
+
 ## Agent workspace
 
 - `.claude/skills/` holds the developer skills copied from `hotcodepush-team/.github`, pinned in `skills-lock.json`.

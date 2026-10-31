@@ -10,7 +10,6 @@ import org.junit.Test
 import java.io.File
 import java.util.Base64
 
-/** The protocol's fixture suite, read from the installed `@hotcodepush/protocol` package: the same cases every core runs. */
 class FixtureTest {
     private val fixturesDirectory = File("node_modules/@hotcodepush/protocol/fixtures").canonicalFile
 
@@ -53,11 +52,10 @@ class FixtureTest {
         reportedAt = json.optNullableString("reportedAt")?.let(Iso8601::parse),
     )
 
-    /** A `202` as the device reads it, its stamp through the response's own reader. */
     private fun acknowledgement(json: JSONObject) =
         DeviceEventsAcknowledgement(json.getBoolean("hasReport"), DeviceEventsResponse.fromJson(JSONObject().put("reportedAt", json.getString("reportedAt"))).reportedAt)
 
-    /** A resource file with the case's app id and hosts, a base of `null` left out as a production build leaves it. */
+    // A production build leaves a `null` base out of its resource file.
     private fun configuration(case: JSONObject, appId: String? = null): Configuration {
         val json = JSONObject(cases("resource-files.json", "cases").first().getJSONObject("resourceFile").toString())
         appId?.let { json.put("appId", it) }
@@ -160,7 +158,6 @@ class FixtureTest {
         }
     }
 
-    /** The SDK options as the file spells them, and the schema's defaults where it leaves them out. */
     @Test
     fun shouldReadTheSdkOptionsOfEveryResourceFileFixtureWithTheDefaultsWhereTheFileLeavesThemOut() {
         for (case in cases("resource-files.json", "cases")) {
@@ -179,7 +176,6 @@ class FixtureTest {
         }
     }
 
-    /** A refused file throws as an unreadable one does: a check interval below its floor is a schema violation like any other. */
     @Test
     fun shouldRefuseEveryRefusedResourceFileFixture() {
         assertRefused("resource-files.json", "refusedResourceFiles", "resourceFile", Configuration::fromJson)
@@ -200,7 +196,6 @@ class FixtureTest {
         }
     }
 
-    /** A base of `null` is a production build, whose resource file names no host: the reader's defaults are the production hosts. */
     @Test
     fun shouldMatchEveryConfiguredHostFixture() {
         for (case in cases("configured-hosts.json", "cases")) {
@@ -219,7 +214,6 @@ class FixtureTest {
 
     private data class PackDownloadOutcome(val packKind: String?, val requests: List<PackSource>)
 
-    /** The requests a download makes against the answers in order, and the kind of the pack that served it: `files` when it requested none, `null` when it failed. */
     private fun resolvePackDownloadOutcome(downloader: Downloader, envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int, statuses: List<Int>): PackDownloadOutcome {
         val requests = mutableListOf<PackSource>()
         var source = downloader.resolvePackSource(envelope, baseBundleId, missingFileCount) ?: return PackDownloadOutcome(PackKind.FILES.wire, requests)
@@ -256,7 +250,6 @@ class FixtureTest {
         }
     }
 
-    /** Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form; `SigningTest` verifies them. */
     @Test
     fun shouldDecodeTheManifestOfEverySignatureFixture() {
         val cases = cases("signatures.json", "manifests")
@@ -268,7 +261,7 @@ class FixtureTest {
         }
     }
 
-    /** The bounds are the writer's: a reader takes a release with more conditions, and a device condition with more ids, than the API accepts. */
+    // The bounds are the writer's: a reader takes more conditions and more ids than the API accepts.
     @Test
     fun shouldReadPastTheWriterBoundsFixture() {
         val bounds = load("bounds.json")
@@ -312,7 +305,6 @@ class FixtureTest {
         assertEquals(fixture.getJSONArray("entries").map(::describeFixtureEntry), PackReader.entries(pack).map(::describeEntry))
     }
 
-    /** An entry as the values a test compares, its body by content. */
     private fun describeEntry(packed: PackedEntry): List<String> = when (val entry = packed.entry) {
         is PackEntry.File -> listOf("file", entry.sha256, Base64.getEncoder().encodeToString(packed.body))
         is PackEntry.Patch -> listOf("patch", entry.fromSha256, entry.toSha256, Base64.getEncoder().encodeToString(packed.body))

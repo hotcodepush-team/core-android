@@ -24,7 +24,6 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
             else -> null
         }
 
-        /** A batch's answer: acknowledged, refused and its events dropped, or failed and its events kept for the next sync. */
         internal fun ofBatch(answer: BatchAnswer, eventCount: Int, at: Long): LogEntry = when (answer) {
             is BatchAnswer.Acknowledged -> LogEntry(at, "reported", "$eventCount events acknowledged")
             is BatchAnswer.Refused -> LogEntry(at, "report_refused", "$eventCount events dropped: HTTP ${answer.status}")
