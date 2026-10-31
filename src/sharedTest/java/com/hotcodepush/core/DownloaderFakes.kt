@@ -114,19 +114,19 @@ object Fixture {
 
     fun eventsUrl() = "$UPDATES_BASE_URL/v1/apps/$APP_ID/events"
 
-    fun release(number: Int, bundleId: String, content: ByteArray, createdAt: Long = BUILT_AT + 60_000, rolloutPercentage: Int = 100, conditions: List<Condition> = emptyList(), isMandatory: Boolean = false): Published {
+    fun release(number: Int, bundleId: String, content: ByteArray, createdAt: Long = BUILT_AT + 60_000, rolloutPercent: Int = 100, conditions: List<Condition> = emptyList(), isMandatory: Boolean = false): Published {
         val sha256 = Hashing.sha256Hex(content)
         val js = "js-$bundleId".toByteArray()
         val pack = PackWriter.pack(listOf(PackedEntry.file(sha256, Gzip.compress(content)), PackedEntry.file(Hashing.sha256Hex(js), Gzip.compress(js))))
         val manifest = BundleManifest(appId = APP_ID, bundleVersion = "1.$number.0", files = listOf(BundleManifest.File("index.html", sha256, content.size.toLong()), BundleManifest.File("assets/app.js", Hashing.sha256Hex(js), js.size.toLong())), platforms = listOf("android"))
         val manifestJson = manifest.toJson().toString()
         val envelope = ManifestEnvelope(bundleId, createdAt, manifestJson, null, ManifestEnvelope.Pack("$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/pack", pack.size.toLong()), emptyList())
-        val release = IndexRelease("r$number", number, createdAt, isMandatory, "notes $number", rolloutPercentage, conditions, bundleId, manifest.bundleVersion, "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json", Hashing.sha256Hex(manifestJson), content.size.toLong())
+        val release = IndexRelease("r$number", number, createdAt, isMandatory, "notes $number", rolloutPercent, conditions, bundleId, manifest.bundleVersion, "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json", Hashing.sha256Hex(manifestJson), content.size.toLong())
         return Published(release, manifest, envelope, pack)
     }
 
-    fun index(sequence: Long, releases: List<IndexRelease>, revoked: List<String> = emptyList(), isPaused: Boolean = false, cappedAt: Long? = null) =
-        ChannelIndex(ChannelIndex.SCHEMA, sequence, APP_ID, CHANNEL_ID, "android", isPaused, cappedAt, revoked, releases)
+    fun index(sequence: Long, releases: List<IndexRelease>, revoked: List<String> = emptyList(), pausedAt: Long? = null, cappedAt: Long? = null) =
+        ChannelIndex(ChannelIndex.SCHEMA, sequence, APP_ID, CHANNEL_ID, "android", pausedAt, cappedAt, revoked, releases)
 }
 
 class DownloaderHarness(configuration: Configuration = Fixture.configuration()) {

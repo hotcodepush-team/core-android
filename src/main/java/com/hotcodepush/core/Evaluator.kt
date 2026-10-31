@@ -18,7 +18,7 @@ data class DeviceInfo(
 )
 
 /** The per-release verdict, the explanation behind the outcome and the probe's output. */
-data class ReleaseVerdict(val release: IndexRelease, val isEligible: Boolean, val reason: SkippedReason? = null, val condition: ConditionType? = null)
+data class ReleaseVerdict(val release: IndexRelease, val isEligible: Boolean, val reason: SkippedReason? = null, val conditionType: ConditionType? = null)
 
 /**
  * The outcome for the device. On `skipped` with `release_revoked`, the release is the one the device resolves to —
@@ -27,7 +27,7 @@ data class ReleaseVerdict(val release: IndexRelease, val isEligible: Boolean, va
 sealed class Evaluation {
     data class UpToDate(val release: IndexRelease?) : Evaluation()
     data class Available(val release: IndexRelease, val isMandatory: Boolean) : Evaluation()
-    data class Skipped(val release: IndexRelease?, val reason: SkippedReason, val condition: ConditionType? = null) : Evaluation()
+    data class Skipped(val release: IndexRelease?, val reason: SkippedReason, val conditionType: ConditionType? = null) : Evaluation()
 }
 
 /** The outcome with the verdicts behind it, newest release first; a capped index leaves them empty. */
@@ -56,10 +56,10 @@ object Evaluator {
         val newerVerdict = verdicts.firstOrNull { it.release.number > currentNumber && it.reason != SkippedReason.RELEASE_REVOKED }
         val newerEligible = eligibleVerdicts.firstOrNull { it.release.number > currentNumber }
         val olderEligible = eligibleVerdicts.firstOrNull { it.release.number < currentNumber }
-        if (!index.isPaused && newerEligible != null) return Evaluation.Available(newerEligible.release, isMandatoryTransitively(newerEligible.release, currentNumber, eligibleVerdicts))
+        if (index.pausedAt == null && newerEligible != null) return Evaluation.Available(newerEligible.release, isMandatoryTransitively(newerEligible.release, currentNumber, eligibleVerdicts))
         if (isCurrentRevoked) return Evaluation.Skipped(olderEligible?.release, SkippedReason.RELEASE_REVOKED)
-        if (index.isPaused && newerVerdict != null) return Evaluation.Skipped(newerVerdict.release, SkippedReason.CHANNEL_PAUSED)
-        if (newerVerdict?.reason != null) return Evaluation.Skipped(newerVerdict.release, newerVerdict.reason, newerVerdict.condition)
+        if (index.pausedAt != null && newerVerdict != null) return Evaluation.Skipped(newerVerdict.release, SkippedReason.CHANNEL_PAUSED)
+        if (newerVerdict?.reason != null) return Evaluation.Skipped(newerVerdict.release, newerVerdict.reason, newerVerdict.conditionType)
         return Evaluation.UpToDate(currentIndexRelease)
     }
 
@@ -72,7 +72,7 @@ object Evaluator {
             val reason = if (type == ConditionType.ATTRIBUTE || type == ConditionType.DEVICE) SkippedReason.DEVICE_NOT_TARGETED else SkippedReason.DEVICE_INCOMPATIBLE
             return ReleaseVerdict(release, false, reason, type)
         }
-        if (Hashing.rolloutBucket(device.deviceId, release.id) >= release.rolloutPercentage) return ReleaseVerdict(release, false, SkippedReason.DEVICE_NOT_IN_ROLLOUT)
+        if (Hashing.rolloutBucket(device.deviceId, release.id) >= release.rolloutPercent) return ReleaseVerdict(release, false, SkippedReason.DEVICE_NOT_IN_ROLLOUT)
         return ReleaseVerdict(release, true)
     }
 

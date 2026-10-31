@@ -266,9 +266,7 @@ class CoreTest {
         assertEquals(v2.release.release, status.currentRelease)
         assertEquals(listOf("b3"), status.failedBundleIds)
         assertEquals("b2", harness.loader.loaded.last())
-        val events = StateStore(harness.store).unsentEvents
-        assertEquals("rolled_back", events.last().type)
-        assertEquals("r1", events.last().toReleaseId)
+        assertEquals(DeviceEvent.failed("r2", RollbackReason.APP_REQUESTED.wire, "fatal"), StateStore(harness.store).unsentEvents.last())
     }
 
     @Test
@@ -1031,7 +1029,7 @@ class CoreTest {
     fun shouldResolveAChannelNameThroughTheChannelsIndex() = runBlocking {
         val harness = Harness()
         harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "5ab00000-0000-4000-8000-000000000002").put("name", "staging"))))
-        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/5ab00000-0000-4000-8000-000000000002/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "5ab00000-0000-4000-8000-000000000002", "android", false, null, emptyList(), emptyList()).toJson())
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/5ab00000-0000-4000-8000-000000000002/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "5ab00000-0000-4000-8000-000000000002", "android", null, null, emptyList(), emptyList()).toJson())
         harness.core.setChannel(ChannelChoice.Name("staging"))
         assertEquals(SyncResult.upToDate(null), harness.core.sync(SyncTrigger.MANUAL))
         assertEquals(ChannelResult("5ab00000-0000-4000-8000-000000000002", "staging", ChannelSource.RUNTIME), harness.core.channel())
@@ -1043,7 +1041,7 @@ class CoreTest {
     fun shouldAnswerNoIdForARuntimeNameBeforeASyncResolvedItAndTheIdAfter() = runBlocking {
         val harness = Harness()
         harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/v1/index.json", org.json.JSONObject().put("schema", 1).put("channels", org.json.JSONArray().put(org.json.JSONObject().put("id", "5ab00000-0000-4000-8000-000000000002").put("name", "staging"))))
-        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/5ab00000-0000-4000-8000-000000000002/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "5ab00000-0000-4000-8000-000000000002", "android", false, null, emptyList(), emptyList()).toJson())
+        harness.http.stubJson("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/5ab00000-0000-4000-8000-000000000002/android/v1/index.json", ChannelIndex(1, 1, Fixture.APP_ID, "5ab00000-0000-4000-8000-000000000002", "android", null, null, emptyList(), emptyList()).toJson())
         harness.core.setChannel(ChannelChoice.Name("staging"))
         assertEquals(ChannelResult(null, "staging", ChannelSource.RUNTIME), harness.core.channel())
         harness.core.sync(SyncTrigger.MANUAL)
@@ -1277,7 +1275,7 @@ class CoreTest {
         val events = StateStore(harness.store).unsentEvents.filter { it.type == "checked" }
         assertEquals(1, events.size)
         assertEquals(SkippedReason.DEVICE_INCOMPATIBLE.wire, events[0].reason)
-        assertEquals(ConditionType.OS, events[0].condition)
+        assertEquals(ConditionType.OS, events[0].conditionType)
     }
 
     @Test

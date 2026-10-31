@@ -9,45 +9,31 @@ import java.util.TimeZone
 data class DeviceEvent(
     val type: String,
     val releaseId: String? = null,
-    val bundleId: String? = null,
     val status: String? = null,
     val reason: String? = null,
-    val condition: ConditionType? = null,
+    val conditionType: ConditionType? = null,
     val downloadSizeBytes: Long? = null,
     val packKind: String? = null,
-    val fromReleaseId: String? = null,
-    val toReleaseId: String? = null,
     /** The app's `rollback({ reason })` on `app_requested`: printable, at most 256 characters. */
     val detail: String? = null,
 ) {
-    /**
-     * Encodes the keys of the event type as the protocol schema reads them.
-     * An optional key is left out when empty, and a nullable one is always present: `toReleaseId` is `null` for the embedded bundle.
-     */
-    fun toJson(): JSONObject {
-        val json = JSONObject()
-            .put("type", type)
-            .putIfNotNull("releaseId", releaseId)
-            .putIfNotNull("bundleId", bundleId)
-            .putIfNotNull("status", status)
-            .putIfNotNull("reason", reason)
-            .putIfNotNull("condition", condition?.wire)
-            .putIfNotNull("downloadSizeBytes", downloadSizeBytes)
-            .putIfNotNull("packKind", packKind)
-            .putIfNotNull("fromReleaseId", fromReleaseId)
-            .putIfNotNull("detail", detail)
-        if (type == ROLLED_BACK) json.put("toReleaseId", toReleaseId ?: JSONObject.NULL)
-        return json
-    }
+    /** Encodes the keys of the event type as the protocol schema reads them; an optional key is left out when empty. */
+    fun toJson(): JSONObject = JSONObject()
+        .put("type", type)
+        .putIfNotNull("releaseId", releaseId)
+        .putIfNotNull("status", status)
+        .putIfNotNull("reason", reason)
+        .putIfNotNull("conditionType", conditionType?.wire)
+        .putIfNotNull("downloadSizeBytes", downloadSizeBytes)
+        .putIfNotNull("packKind", packKind)
+        .putIfNotNull("detail", detail)
 
     companion object {
-        private const val ROLLED_BACK = "rolled_back"
+        fun checked(releaseId: String, status: SyncStatus, reason: SkippedReason? = null, conditionType: ConditionType? = null) =
+            DeviceEvent("checked", releaseId = releaseId, status = status.wire, reason = reason?.wire, conditionType = conditionType)
 
-        fun checked(releaseId: String, status: SyncStatus, reason: SkippedReason? = null, condition: ConditionType? = null) =
-            DeviceEvent("checked", releaseId = releaseId, status = status.wire, reason = reason?.wire, condition = condition)
-
-        fun downloaded(releaseId: String, bundleId: String, downloadSizeBytes: Long, packKind: PackKind) =
-            DeviceEvent("downloaded", releaseId = releaseId, bundleId = bundleId, downloadSizeBytes = downloadSizeBytes, packKind = packKind.wire)
+        fun downloaded(releaseId: String, downloadSizeBytes: Long, packKind: PackKind) =
+            DeviceEvent("downloaded", releaseId = releaseId, downloadSizeBytes = downloadSizeBytes, packKind = packKind.wire)
 
         fun applied(releaseId: String) = DeviceEvent("applied", releaseId = releaseId)
 
@@ -55,19 +41,14 @@ data class DeviceEvent(
 
         fun failed(releaseId: String, reason: String, detail: String? = null) = DeviceEvent("failed", releaseId = releaseId, reason = reason, detail = detail)
 
-        fun rolledBack(fromReleaseId: String, toReleaseId: String?) = DeviceEvent(ROLLED_BACK, fromReleaseId = fromReleaseId, toReleaseId = toReleaseId)
-
         fun fromJson(json: JSONObject) = DeviceEvent(
             type = json.getString("type"),
             releaseId = json.optNullableString("releaseId"),
-            bundleId = json.optNullableString("bundleId"),
             status = json.optNullableString("status"),
             reason = json.optNullableString("reason"),
-            condition = json.optNullableString("condition")?.let { wire -> ConditionType.entries.firstOrNull { it.wire == wire } },
+            conditionType = json.optNullableString("conditionType")?.let { wire -> ConditionType.entries.firstOrNull { it.wire == wire } },
             downloadSizeBytes = if (json.isNull("downloadSizeBytes")) null else json.optLong("downloadSizeBytes"),
             packKind = json.optNullableString("packKind"),
-            fromReleaseId = json.optNullableString("fromReleaseId"),
-            toReleaseId = json.optNullableString("toReleaseId"),
             detail = json.optNullableString("detail"),
         )
     }

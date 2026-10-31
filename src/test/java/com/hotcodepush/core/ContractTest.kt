@@ -39,7 +39,7 @@ class ContractTest {
         assertEquals(setOf("status", "release", "notes", "applyStrategy"), keys(SyncResult.downloaded(release, null, ApplyStrategy.MANUAL).toJson()))
         assertEquals(setOf("status", "release", "notes"), keys(SyncResult.applied(release, null).toJson()))
         assertEquals(setOf("status", "release", "reason"), keys(SyncResult.skipped(null, SkippedReason.CHANNEL_PAUSED).toJson()))
-        assertEquals(setOf("status", "release", "reason", "condition"), keys(SyncResult.skipped(release, SkippedReason.DEVICE_INCOMPATIBLE, ConditionType.OS).toJson()))
+        assertEquals(setOf("status", "release", "reason", "conditionType"), keys(SyncResult.skipped(release, SkippedReason.DEVICE_INCOMPATIBLE, ConditionType.OS).toJson()))
         assertEquals(setOf("status", "release", "reason", "message"), keys(SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "m").toJson()))
         assertEquals(setOf("currentRelease", "previousRelease", "isRolledBack"), keys(NotifyReadyResult(null, null, false, null).toJson()))
         assertEquals(setOf("status", "release"), keys(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, null).toJson()))

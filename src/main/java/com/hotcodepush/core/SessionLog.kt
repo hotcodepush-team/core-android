@@ -8,9 +8,9 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
     companion object {
         const val CAPACITY = 200
 
-        /** A cycle's result: the status, the reason and the condition as the code, the trigger and the release in the sentence. */
+        /** A cycle's result: the status, the reason and the condition type as the code, the trigger and the release in the sentence. */
         fun ofCycle(result: SyncResult, trigger: SyncTrigger, at: Long): LogEntry {
-            val code = listOfNotNull(result.status.wire, result.reason, result.condition?.wire).joinToString(" ")
+            val code = listOfNotNull(result.status.wire, result.reason, result.conditionType?.wire).joinToString(" ")
             return LogEntry(at, code, "${trigger.wire}: ${resolveCycleSentence(result)}")
         }
 
@@ -20,9 +20,11 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
             "applied" -> LogEntry(at, "applied", "release ${event.releaseId ?: ""} is the running release")
             "confirmed" -> LogEntry(at, "confirmed", "release ${event.releaseId ?: ""} passed the readiness gate")
             "failed" -> LogEntry(at, "failed ${event.reason ?: ""}", "release ${event.releaseId ?: ""}" + (event.detail?.let { ": $it" } ?: ""))
-            "rolled_back" -> LogEntry(at, "rolled_back", "release ${event.fromReleaseId ?: ""} rolled back to ${event.toReleaseId ?: "the embedded bundle"}")
             else -> null
         }
+
+        fun ofRollback(rollback: UpdateRolledBackEvent, at: Long): LogEntry =
+            LogEntry(at, "rolled_back", "release ${rollback.fromRelease.id} rolled back to ${rollback.toRelease?.id ?: "the embedded bundle"}")
 
         internal fun ofBatch(answer: BatchAnswer, eventCount: Int, at: Long): LogEntry = when (answer) {
             is BatchAnswer.Acknowledged -> LogEntry(at, "reported", "$eventCount events acknowledged")

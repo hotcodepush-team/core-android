@@ -382,8 +382,8 @@ class Core(
             }
             is Evaluation.Skipped -> when {
                 evaluation.reason != SkippedReason.RELEASE_REVOKED -> {
-                    evaluation.release?.let { release -> lock.withLock { recordChecked(release, index, SyncStatus.SKIPPED, evaluation.reason, evaluation.condition) } }
-                    SyncResult.skipped(evaluation.release?.release, evaluation.reason, evaluation.condition)
+                    evaluation.release?.let { release -> lock.withLock { recordChecked(release, index, SyncStatus.SKIPPED, evaluation.reason, evaluation.conditionType) } }
+                    SyncResult.skipped(evaluation.release?.release, evaluation.reason, evaluation.conditionType)
                 }
                 (evaluation.release?.bundleId ?: configuration.embeddedBundleId) == resolveRunningBundleId() -> {
                     lock.withLock { adoptInPlace(evaluation.release?.release) }
@@ -462,7 +462,7 @@ class Core(
         try {
             val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes, progressBytes, target.id)) }
             BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
-            lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, target.bundleId, outcome.bytes, outcome.packKind)) }
+            lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, outcome.bytes, outcome.packKind)) }
         } catch (failure: DownloadFailure) {
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, failure.reason.wire)) }
             return SyncResult.failed(release, failure.reason, failure.message ?: "")
@@ -743,7 +743,7 @@ class Core(
         state.pendingRollbackEvent = rollback
         hasAnnouncedRollback = false
         enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.wire, detail))
-        enqueueDeviceEvent(DeviceEvent.rolledBack(current.id, fallback?.id))
+        log.record(LogEntry.ofRollback(rollback, clock.now()))
         persistServedBundle(fallback)
     }
 
@@ -911,14 +911,14 @@ class Core(
 
     private fun deviceInfo() = DeviceInfo(state.attributes, device.binaryBuild, device.binaryVersion, configuration.builtAt, state.currentRelease, state.deviceId, state.failedBundleIds, configuration.fingerprint, device.osVersion, state.reportedAt)
 
-    private fun recordChecked(release: IndexRelease, index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = null, condition: ConditionType? = null) {
+    private fun recordChecked(release: IndexRelease, index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = null, conditionType: ConditionType? = null) {
         val checked = state.checkedReleaseIds.filter { id -> index.releases.any { it.id == id } }
         if (release.id in checked) {
             state.checkedReleaseIds = checked
             return
         }
         state.checkedReleaseIds = checked + release.id
-        enqueueDeviceEvent(DeviceEvent.checked(release.id, status, reason, condition))
+        enqueueDeviceEvent(DeviceEvent.checked(release.id, status, reason, conditionType))
     }
 
     private fun enqueueDeviceEvent(event: DeviceEvent) {

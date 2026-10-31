@@ -13,12 +13,12 @@ import java.util.Base64
 class FixtureTest {
     private val fixturesDirectory = File("node_modules/@hotcodepush/protocol/fixtures").canonicalFile
 
-    private data class Expected(val status: String, val releaseId: String?, val isMandatory: Boolean?, val reason: String?, val condition: String?) {
+    private data class Expected(val status: String, val releaseId: String?, val isMandatory: Boolean?, val reason: String?, val conditionType: String?) {
         companion object {
             fun of(evaluation: Evaluation) = when (evaluation) {
                 is Evaluation.UpToDate -> Expected(SyncStatus.UP_TO_DATE.wire, evaluation.release?.id, null, null, null)
                 is Evaluation.Available -> Expected(SyncStatus.AVAILABLE.wire, evaluation.release.id, evaluation.isMandatory, null, null)
-                is Evaluation.Skipped -> Expected(SyncStatus.SKIPPED.wire, evaluation.release?.id, null, evaluation.reason.wire, evaluation.condition?.wire)
+                is Evaluation.Skipped -> Expected(SyncStatus.SKIPPED.wire, evaluation.release?.id, null, evaluation.reason.wire, evaluation.conditionType?.wire)
             }
 
             fun fromJson(json: JSONObject) = Expected(
@@ -26,16 +26,16 @@ class FixtureTest {
                 json.optNullableString("releaseId"),
                 if (json.has("isMandatory")) json.getBoolean("isMandatory") else null,
                 json.optNullableString("reason"),
-                json.optNullableString("condition"),
+                json.optNullableString("conditionType"),
             )
         }
     }
 
-    private data class ExpectedVerdict(val releaseId: String, val isEligible: Boolean, val reason: String?, val condition: String?) {
+    private data class ExpectedVerdict(val releaseId: String, val isEligible: Boolean, val reason: String?, val conditionType: String?) {
         companion object {
-            fun of(verdict: ReleaseVerdict) = ExpectedVerdict(verdict.release.id, verdict.isEligible, verdict.reason?.wire, verdict.condition?.wire)
+            fun of(verdict: ReleaseVerdict) = ExpectedVerdict(verdict.release.id, verdict.isEligible, verdict.reason?.wire, verdict.conditionType?.wire)
 
-            fun fromJson(json: JSONObject) = ExpectedVerdict(json.getString("releaseId"), json.getBoolean("isEligible"), json.optNullableString("reason"), json.optNullableString("condition"))
+            fun fromJson(json: JSONObject) = ExpectedVerdict(json.getString("releaseId"), json.getBoolean("isEligible"), json.optNullableString("reason"), json.optNullableString("conditionType"))
         }
     }
 
@@ -290,7 +290,7 @@ class FixtureTest {
 
     @Test
     fun shouldReadAndWriteTheDeltaOfThePackEntriesFixture() {
-        val fixture = load("pack-entries.json").getJSONObject("deltaPack")
+        val fixture = load("pack-entries.json").getJSONObject("delta")
         val pack = Base64.getDecoder().decode(fixture.getString("packBase64"))
         assertEquals(fixture.getString("packSha256"), Hashing.sha256Hex(pack))
         val entries = PackReader.entries(pack)
