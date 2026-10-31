@@ -10,6 +10,6 @@
     "verify": "./gradlew lint test assembleRelease --console=plain"
   },
   "devDependencies": {
-    "@hotcodepush/protocol": "https://pkg.pr.new/hotcodepush-team/protocol/@hotcodepush/protocol@b485e58"
+    "@hotcodepush/protocol": "https://pkg.pr.new/hotcodepush-team/protocol/@hotcodepush/protocol@d873254"
   }
 }
