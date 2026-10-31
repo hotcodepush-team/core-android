@@ -18,7 +18,7 @@ class DebugReportTest {
         harness.core.sync(SyncTrigger.MANUAL)
         val snapshot = harness.core.debugSnapshot()
         val text = DebugReport.text(snapshot)
-        assertTrue(text, text.contains("Device id: ${harness.core.deviceResult().id}"))
+        assertTrue(text, text.contains("Device id: ${harness.core.getDevice().id}"))
         assertTrue(text, text.contains("Result: skipped device_incompatible binary"))
         assertTrue(text, text.contains("Published at: 2025-10-08T05:06:40.123Z"))
         assertTrue(text, text.contains("Running: the embedded bundle"))
@@ -29,8 +29,8 @@ class DebugReportTest {
     @Test
     fun shouldPrintEverySectionAsLabelsAndValues() {
         val running = Release("r2", 2, "b2", "1.2.0", true)
-        val device = DeviceResult("d1", "android", "2.4.1", "57", "14", "0.0.0", null, ChannelResult("c2", "beta", ChannelSource.RUNTIME), mapOf("plan" to "pro", "cohort" to "a"))
-        val state = StateResult(running, null, running, null, null, null, null, listOf("b0", "b1"), null)
+        val device = GetDeviceResult("d1", "android", "2.4.1", "57", "14", "0.0.0", null, GetChannelResult("c2", "beta", ChannelSource.RUNTIME), mapOf("plan" to "pro", "cohort" to "a"))
+        val state = GetStateResult(running, null, running, null, null, null, null, listOf("b0", "b1"), null)
         val log = listOf(LogEntry(Fixture.BUILT_AT, "applied", "release r2 is the running release"))
         val expected = """
             HotCodePush debug report, 2023-11-14T22:13:21.000Z

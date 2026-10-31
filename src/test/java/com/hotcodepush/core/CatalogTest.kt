@@ -24,7 +24,7 @@ class CatalogTest {
     fun shouldCarryTheCatalogsApplyStrategiesInItsOrder() = assertCatalogValues("applyStrategies", ApplyStrategy.entries.map { it.wire })
 
     @Test
-    fun shouldCarryTheCatalogsApplyUpdateStatusesInItsOrder() = assertCatalogValues("applyUpdateStatuses", ApplyStatus.entries.map { it.wire })
+    fun shouldCarryTheCatalogsApplyUpdateStatusesInItsOrder() = assertCatalogValues("applyUpdateStatuses", ApplyUpdateStatus.entries.map { it.wire })
 
     @Test
     fun shouldCarryTheCatalogsChannelSources() = assertCatalogValues("channelSources", ChannelSource.entries.map { it.wire }.sorted())

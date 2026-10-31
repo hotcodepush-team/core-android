@@ -108,7 +108,7 @@ data class DeviceEventsRequest(val deviceId: String, val events: List<DeviceEven
         .put("sdkVersion", sdkVersion)
 
     internal val isReadable: Boolean
-        get() = listOf(deviceId, sdkVersion).all(WireRule.PRINTABLE::accepts) && platform in ChannelIndex.PLATFORMS &&
+        get() = WireRule.UUID.accepts(deviceId) && WireRule.PRINTABLE.accepts(sdkVersion) && platform in ChannelIndex.PLATFORMS &&
             events.size <= MAXIMUM_EVENT_COUNT && (report?.isReadable ?: true)
 
     companion object {

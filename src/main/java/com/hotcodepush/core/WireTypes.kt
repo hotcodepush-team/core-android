@@ -139,7 +139,7 @@ sealed class Condition {
             "binary" -> Binary(json.getWireString("range", WireRule.NON_EMPTY))
             "fingerprint" -> Fingerprint(json.getWireString("fingerprint", WireRule.NON_EMPTY))
             "os" -> Os(json.getWireString("range", WireRule.NON_EMPTY))
-            "device" -> Device(json.getJSONArray("hashedIds").toWireStringList())
+            "device" -> Device(json.getJSONArray("hashedIds").toWireStringList(WireRule.SHA256))
             "attribute" -> Attribute(json.getWireString("key", WireRule.NON_EMPTY), json.getWireString("valueSha256", WireRule.SHA256))
             else -> Unknown(type)
         }
@@ -153,11 +153,11 @@ data class ChannelsIndex(val schema: Int, val channels: List<Entry>) {
     companion object {
         const val SCHEMA = 1
 
-        /** Parses the channels index. Another schema major fails it, and so does an entry id that is not a UUID. */
+        /** Parses the channels index. Another schema major fails it, and so does one entry whose id is not a UUID or whose name is empty. */
         fun fromJson(json: JSONObject): ChannelsIndex {
             val schema = json.getWireInt("schema", minimum = 0)
             if (schema != SCHEMA) throw JSONException("The channels index has schema $schema, this reader reads $SCHEMA")
-            return ChannelsIndex(schema, json.getJSONArray("channels").map { Entry(it.getWireString("id", WireRule.UUID), it.getWireString("name")) })
+            return ChannelsIndex(schema, json.getJSONArray("channels").map { Entry(it.getWireString("id", WireRule.UUID), it.getWireString("name", WireRule.NON_EMPTY)) })
         }
     }
 }

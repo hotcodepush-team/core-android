@@ -3,10 +3,10 @@ package com.hotcodepush.core
 /** Everything the debug screen shows, read from the core in one call. */
 data class DebugSnapshot(
     val takenAt: Long,
-    val device: DeviceResult,
+    val device: GetDeviceResult,
     val configuration: Configuration,
     val isDebugBuild: Boolean,
-    val state: StateResult,
+    val state: GetStateResult,
     val log: List<LogEntry>,
 )
 
@@ -129,7 +129,7 @@ object DebugReport {
         return DebugSection("Log", rows.ifEmpty { listOf(DebugRow("Entries", "none this session")) })
     }
 
-    private fun describeChannelId(channel: ChannelResult, configuration: Configuration): String = when {
+    private fun describeChannelId(channel: GetChannelResult, configuration: Configuration): String = when {
         channel.id != null -> channel.id
         channel.source == ChannelSource.RUNTIME -> "unresolved"
         configuration.embeddedBundleManifest == null -> "none: a build without an embedded bundle resolves no channel name"

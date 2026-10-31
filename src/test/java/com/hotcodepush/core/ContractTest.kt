@@ -21,7 +21,7 @@ class ContractTest {
 
     @Test
     fun shouldCarryEveryDeviceKeyWithNullsForTheEmptyOnes() = runBlocking {
-        val json = Harness(Fixture.configuration(fingerprint = null, channelId = null)).core.deviceResult().toJson()
+        val json = Harness(Fixture.configuration(fingerprint = null, channelId = null)).core.getDevice().toJson()
         assertEquals(setOf("id", "platform", "binaryVersion", "binaryBuild", "osVersion", "sdkVersion", "fingerprint", "channel", "attributes"), keys(json))
         assertTrue(json.isNull("fingerprint"))
         val channel = json.getJSONObject("channel")
@@ -42,8 +42,8 @@ class ContractTest {
         assertEquals(setOf("status", "release", "reason", "conditionType"), keys(SyncResult.skipped(release, SkippedReason.DEVICE_INCOMPATIBLE, ConditionType.OS).toJson()))
         assertEquals(setOf("status", "release", "reason", "message"), keys(SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "m").toJson()))
         assertEquals(setOf("currentRelease", "previousRelease", "isRolledBack"), keys(NotifyReadyResult(null, null, false, null).toJson()))
-        assertEquals(setOf("status", "release"), keys(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, null).toJson()))
-        assertTrue(ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, null).toJson().isNull("release"))
+        assertEquals(setOf("status", "release"), keys(ApplyUpdateResult(ApplyUpdateStatus.NOTHING_TO_APPLY, null).toJson()))
+        assertTrue(ApplyUpdateResult(ApplyUpdateStatus.NOTHING_TO_APPLY, null).toJson().isNull("release"))
         assertEquals(setOf("release", "notes", "downloadSizeBytes", "trigger"), keys(UpdateAvailableEvent(release, null, null, SyncTrigger.MANUAL).toJson()))
         assertEquals(setOf("release", "applyStrategy", "trigger"), keys(UpdateDownloadedEvent(release, ApplyStrategy.NEXT_START, SyncTrigger.START).toJson()))
         assertEquals(setOf("fromRelease", "toRelease", "reason"), keys(UpdateRolledBackEvent(release, null, RollbackReason.APP_CRASHED).toJson()))

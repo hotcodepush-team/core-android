@@ -69,10 +69,10 @@ data class SyncResult(
     }
 }
 
-enum class ApplyStatus(val wire: String) { APPLIED("applied"), NOTHING_TO_APPLY("nothing_to_apply") }
+enum class ApplyUpdateStatus(val wire: String) { APPLIED("applied"), NOTHING_TO_APPLY("nothing_to_apply") }
 
 /** What `applyUpdate()` answers: the update is the current release and the reload follows, or nothing waits. */
-data class ApplyUpdateResult(val status: ApplyStatus, val release: Release?) {
+data class ApplyUpdateResult(val status: ApplyUpdateStatus, val release: Release?) {
     fun toJson(): JSONObject = JSONObject().put("status", status.wire).put("release", release?.toJson() ?: JSONObject.NULL)
 }
 
@@ -93,7 +93,7 @@ data class LastCheck(val checkedAt: Long, val trigger: SyncTrigger, val result: 
 }
 
 /** The SDK's state, a snapshot: everything the debug screen shows. */
-data class StateResult(
+data class GetStateResult(
     val currentRelease: Release?,
     val nextRelease: Release?,
     val fallbackRelease: Release?,
@@ -119,11 +119,11 @@ data class StateResult(
 enum class ChannelSource(val wire: String) { RUNTIME("runtime"), CONFIG("config") }
 
 /** `id` is `null` while no id is known: a build without a channel, or a runtime name no sync has resolved yet. */
-data class ChannelResult(val id: String?, val name: String?, val source: ChannelSource) {
+data class GetChannelResult(val id: String?, val name: String?, val source: ChannelSource) {
     fun toJson(): JSONObject = JSONObject().put("id", id ?: JSONObject.NULL).put("name", name ?: JSONObject.NULL).put("source", source.wire)
 }
 
-data class DeviceResult(
+data class GetDeviceResult(
     val id: String,
     val platform: String,
     val binaryVersion: String,
@@ -131,7 +131,7 @@ data class DeviceResult(
     val osVersion: String,
     val sdkVersion: String,
     val fingerprint: String?,
-    val channel: ChannelResult,
+    val channel: GetChannelResult,
     val attributes: Map<String, String>,
 ) {
     fun toJson(): JSONObject = JSONObject()

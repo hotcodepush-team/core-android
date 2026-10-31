@@ -83,7 +83,7 @@ data class Configuration(
      * Whether a URL starts with the files or updates base URL and a `/`.
      * So another scheme, userinfo, a look-alike host, another port or another path is off the host.
      */
-    fun isUrlOnConfiguredHost(url: String): Boolean = listOf(filesBaseUrl, updatesBaseUrl).any { url.startsWith("$it/") }
+    fun isOnConfiguredHost(url: String): Boolean = listOf(filesBaseUrl, updatesBaseUrl).any { url.startsWith("$it/") }
 
     companion object {
         const val DEFAULT_FILES_BASE_URL = "https://files.hotcodepush.com"
@@ -97,22 +97,22 @@ data class Configuration(
         fun fromJson(json: JSONObject) = Configuration(
             appId = json.getWireString("appId", WireRule.IDENTIFIER),
             channelId = json.getNullableWireString("channelId", WireRule.NON_EMPTY),
-            checkStrategy = CheckStrategy.fromWire(json.optNullableString("checkStrategy")) ?: CheckStrategy.AUTO,
-            checkIntervalSeconds = json.getSeconds("checkIntervalSeconds", 900.0, minimum = MINIMUM_CHECK_INTERVAL_SECONDS),
-            downloadStrategy = DownloadStrategy.fromWire(json.optNullableString("downloadStrategy")) ?: DownloadStrategy.AUTO,
-            applyStrategy = ApplyStrategy.fromWire(json.optNullableString("applyStrategy")) ?: ApplyStrategy.NEXT_START,
-            mandatoryApplyStrategy = MandatoryApplyStrategy.fromWire(json.optNullableString("mandatoryApplyStrategy")) ?: MandatoryApplyStrategy.IMMEDIATE,
-            nextResumeMinimumBackgroundSeconds = json.getSeconds("nextResumeMinimumBackgroundSeconds", 300.0),
-            readySignal = ReadySignal.fromWire(json.optNullableString("readySignal")) ?: ReadySignal.RENDER,
-            readyTimeoutSeconds = json.getSeconds("readyTimeoutSeconds", 10.0, minimum = MINIMUM_READY_TIMEOUT_SECONDS),
-            isEnabledInDebugBuilds = json.optBoolean("isEnabledInDebugBuilds", true),
-            publicKeys = json.optJSONArray("publicKeys").map(DevicePublicKey::fromJson),
-            builtAt = Iso8601.parse(json.getString("builtAt")),
-            fingerprint = json.optNullableString("fingerprint"),
+            checkStrategy = json.getOption("checkStrategy", CheckStrategy.AUTO) { json.getWireEnum(it, CheckStrategy::fromWire) },
+            checkIntervalSeconds = json.getOption("checkIntervalSeconds", 900.0) { json.getSeconds(it, minimum = MINIMUM_CHECK_INTERVAL_SECONDS) },
+            downloadStrategy = json.getOption("downloadStrategy", DownloadStrategy.AUTO) { json.getWireEnum(it, DownloadStrategy::fromWire) },
+            applyStrategy = json.getOption("applyStrategy", ApplyStrategy.NEXT_START) { json.getWireEnum(it, ApplyStrategy::fromWire) },
+            mandatoryApplyStrategy = json.getOption("mandatoryApplyStrategy", MandatoryApplyStrategy.IMMEDIATE) { json.getWireEnum(it, MandatoryApplyStrategy::fromWire) },
+            nextResumeMinimumBackgroundSeconds = json.getOption("nextResumeMinimumBackgroundSeconds", 300.0) { json.getSeconds(it) },
+            readySignal = json.getOption("readySignal", ReadySignal.RENDER) { json.getWireEnum(it, ReadySignal::fromWire) },
+            readyTimeoutSeconds = json.getOption("readyTimeoutSeconds", 10.0) { json.getSeconds(it, minimum = MINIMUM_READY_TIMEOUT_SECONDS) },
+            isEnabledInDebugBuilds = json.getOption("isEnabledInDebugBuilds", true, json::getWireBoolean),
+            publicKeys = json.getOption("publicKeys", emptyList()) { json.getJSONArray(it).map(DevicePublicKey::fromJson) },
+            builtAt = json.getTimestamp("builtAt"),
+            fingerprint = json.getNullableWireString("fingerprint", WireRule.NON_EMPTY),
             embeddedBundleManifest = json.getNullableObject("embeddedBundleManifest")?.let(EmbeddedBundleManifest::fromJson),
-            embeddedBundleId = json.getOptionalWireString("embeddedBundleId", WireRule.IDENTIFIER),
-            filesBaseUrl = json.getOptionalWireString("filesBaseUrl", WireRule.URL) ?: DEFAULT_FILES_BASE_URL,
-            updatesBaseUrl = json.getOptionalWireString("updatesBaseUrl", WireRule.URL) ?: DEFAULT_UPDATES_BASE_URL,
+            embeddedBundleId = json.getNullableWireString("embeddedBundleId", WireRule.IDENTIFIER),
+            filesBaseUrl = json.getOption("filesBaseUrl", DEFAULT_FILES_BASE_URL) { json.getWireString(it, WireRule.URL) },
+            updatesBaseUrl = json.getOption("updatesBaseUrl", DEFAULT_UPDATES_BASE_URL) { json.getWireString(it, WireRule.URL) },
         )
 
         /** Reads the resource file from the app's assets, `null` when it is missing. A file the reader refuses throws. */
@@ -131,9 +131,16 @@ data class Configuration(
     }
 }
 
+// An SDK option the file leaves out takes its default; a null, a wrong type or an unknown value refuses the file.
+private fun <T> JSONObject.getOption(key: String, default: T, read: (String) -> T): T = if (has(key)) read(key) else default
+
+private fun <T> JSONObject.getWireEnum(key: String, fromWire: (String) -> T?): T {
+    val value = getWireString(key)
+    return fromWire(value) ?: throw JSONException("Not a valid $key: $value")
+}
+
 // A value below the floor refuses the file like any other schema violation, never clamped.
-private fun JSONObject.getSeconds(key: String, default: Double, minimum: Double = 0.0): Double {
-    if (isNull(key)) return default
+private fun JSONObject.getSeconds(key: String, minimum: Double = 0.0): Double {
     val seconds = (get(key) as? Number)?.toDouble() ?: throw JSONException("$key is not a number of seconds")
     if (seconds < minimum) throw JSONException("$key is below its floor of $minimum seconds: $seconds")
     return seconds
@@ -143,7 +150,6 @@ private fun JSONObject.getSeconds(key: String, default: Double, minimum: Double 
 private const val MINIMUM_CHECK_INTERVAL_SECONDS = 60.0
 
 // The readiness gate has no off switch.
-
 private const val MINIMUM_READY_TIMEOUT_SECONDS = 1.0
 
 /** Each stage's strategy for one `sync()` call, overriding the configuration. */
