@@ -51,7 +51,7 @@ class SigningTest {
         val keys = fixture.manifests.flatMap(fixture::devicePublicKeys).distinct()
         assertTrue(keys.size >= 4)
         for (key in keys) assertEquals(key.keyId, "sha256:" + Hashing.sha256Hex(Base64.getDecoder().decode(key.der)))
-        for (key in fixture.keys) assertEquals(key.getString("fingerprint"), fixture.devicePublicKey(key.getString("name")).keyId)
+        for (key in fixture.keys) assertEquals(key.getString("keyId"), fixture.devicePublicKey(key.getString("name")).keyId)
     }
 
     @Test
@@ -108,7 +108,7 @@ class SignatureFixtures {
     val keys: List<JSONObject> = document.getJSONArray("keys").map { it }
     val manifests: List<JSONObject> = document.getJSONArray("manifests").map { it }
 
-    fun devicePublicKey(name: String): DevicePublicKey = key(name).let { DevicePublicKey(it.getString("publicKey").substringAfter(':'), it.getString("fingerprint")) }
+    fun devicePublicKey(name: String): DevicePublicKey = key(name).let { DevicePublicKey(it.getString("publicKey").substringAfter(':'), it.getString("keyId")) }
 
     fun devicePublicKeys(case: JSONObject): List<DevicePublicKey> = case.getJSONObject("devicePublicKeys").getJSONArray("android").map(DevicePublicKey::fromJson)
 
@@ -123,7 +123,7 @@ class SignatureFixtures {
         val signer = java.security.Signature.getInstance("SHA256withRSA")
         signer.initSign(KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(Base64.getDecoder().decode(key.getString("privateKey")))))
         signer.update(manifest.toByteArray(Charsets.UTF_8))
-        return Signature(key.getString("fingerprint"), "${SignatureVerifier.SCHEME}:${Base64.getEncoder().encodeToString(signer.sign())}")
+        return Signature(key.getString("keyId"), "${SignatureVerifier.SCHEME}:${Base64.getEncoder().encodeToString(signer.sign())}")
     }
 
     private fun key(name: String) = keys.first { it.getString("name") == name }
