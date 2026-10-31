@@ -3,8 +3,8 @@
   <groupId>com.hotcodepush</groupId>
   <artifactId>core-android</artifactId>
   <versioning>
-    <latest>429070ec80066b8f21396434d1e608b0317d34a3</latest>
-    <release>429070ec80066b8f21396434d1e608b0317d34a3</release>
+    <latest>5bb33eb7c70f1f0801045d5bc74f7beadf83ab16</latest>
+    <release>5bb33eb7c70f1f0801045d5bc74f7beadf83ab16</release>
     <versions>
       <version>31be61880906c762ff8e61cf6bd038187f9dcc51</version>
       <version>afcec3ad7ac6d55fa223c788aa2e57fe8fa4df0b</version>
@@ -46,7 +46,8 @@
       <version>2d4b8132b8ecd9d20ac2f1b3a1d3410f8fc9d43c</version>
       <version>85278b8af77698aea36081b0d1fa4ca69cff2979</version>
       <version>429070ec80066b8f21396434d1e608b0317d34a3</version>
+      <version>5bb33eb7c70f1f0801045d5bc74f7beadf83ab16</version>
     </versions>
-    <lastUpdated>20261031173801</lastUpdated>
+    <lastUpdated>20261031174709</lastUpdated>
   </versioning>
 </metadata>
