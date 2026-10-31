@@ -5,11 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.File
 
-/**
- * The core's values against `catalog.json` of the installed `@hotcodepush/protocol` package, list for list, so a value the
- * Kotlin and the TypeScript spell apart fails here, and so does a list the catalog adds until the Kotlin covers it. Each list
- * of the catalog is alphabetical; an enum declared in another order, the lifecycle's or the wire's, is compared sorted.
- */
+// Each catalog list is alphabetical, so an enum declared in another order, such as the lifecycle's, is compared sorted.
 class CatalogTest {
     private val catalog = JSONObject(File("node_modules/@hotcodepush/protocol/catalog.json").readText())
 

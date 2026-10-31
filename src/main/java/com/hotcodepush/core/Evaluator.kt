@@ -7,7 +7,7 @@ data class DeviceInfo(
     val binaryVersion: String,
     /** The floor from the resource file: no release created before it is applied. */
     val builtAt: Long,
-    /** The running release, or `null` for the embedded bundle; only its id and number matter here. */
+    /** The running release, or `null` for the embedded bundle. */
     val currentRelease: Release?,
     val deviceId: String,
     val failedBundleIds: List<String>,
@@ -37,7 +37,7 @@ data class IndexEvaluation(val outcome: Evaluation, val verdicts: List<ReleaseVe
 object Evaluator {
     private const val EMBEDDED_RELEASE_NUMBER = 0
 
-    /** The components a binary version fills before the build: major, minor and patch. */
+    // Major, minor and patch come before the build number.
     private const val BINARY_VERSION_MIN_COMPONENTS = 3
 
     fun evaluate(index: ChannelIndex, device: DeviceInfo): Evaluation = evaluation(index, device).outcome
@@ -86,10 +86,7 @@ object Evaluator {
         is Condition.Unknown -> false
     }
 
-    /**
-     * The binary version with the build number after it, when both are numbers: a version of fewer than three components
-     * reads with zeros, so the build is always at least the fourth component and `1.0` build `57` is `1.0.0.57`.
-     */
+    // A version of fewer than three components reads with zeros, so `1.0` build `57` is `1.0.0.57`.
     internal fun resolveBinaryVersion(device: DeviceInfo): List<Long>? {
         val version = VersionRange.parseVersion(device.binaryVersion) ?: return null
         val build = VersionRange.parseVersion(device.binaryBuild)
@@ -103,10 +100,8 @@ object Evaluator {
         return reportedAt >= cappedAt
     }
 
-    /**
-     * A release is mandatory for the device when it or any release it skips over is, counting only the releases the device could
-     * take: one a condition, the floor, a revocation, an earlier failure or the rollout keeps from it never makes the move mandatory.
-     */
+    // Only releases the device could take count, so a skipped release the device is kept from never makes the move mandatory.
+
     internal fun isMandatoryTransitively(target: IndexRelease, currentNumber: Int, eligibleVerdicts: List<ReleaseVerdict>): Boolean =
         eligibleVerdicts.any { it.release.isMandatory && it.release.number > currentNumber && it.release.number <= target.number }
 

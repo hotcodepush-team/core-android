@@ -10,12 +10,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * The patch cases of the protocol's pack-entries fixture through the downloader and the native bspatch of the device's ABI:
- * each case's patch entry in a delta against the running bundle, the held files in the file store or the embedded
- * bundle, and every file of the manifest on the files host. Applied writes the file without fetching it, fallback fetches
- * it, ignored does neither.
- */
+// In the fixture, `applied` writes the file without fetching it, `fallback` fetches it, and `ignored` does neither.
 @RunWith(AndroidJUnit4::class)
 class PackEntriesOnDeviceTest {
     private val fixture = InstrumentationRegistry.getInstrumentation().context.assets.open("pack-entries.json").bufferedReader().use { JSONObject(it.readText()) }

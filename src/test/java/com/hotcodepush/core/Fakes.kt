@@ -34,11 +34,9 @@ class FakeLoader(private val root: File) : BundleLoader {
     var served: String? = null
     var isMetered = false
 
-    /** Thrown from persistServedBundle and loadServedBundle, as a framework's loader with a bug throws. */
     var persistFailure: Throwable? = null
     var loadFailure: Throwable? = null
 
-    /** Holds persistServedBundle until it opens, as a slow store would. */
     var persistLatch: CountDownLatch? = null
 
     override fun projectionDirectory(bundleId: String): File = File(File(root, "www"), bundleId)
@@ -72,7 +70,6 @@ class FakeListener : CoreListener {
     val progress = mutableListOf<DownloadProgressEvent>()
     val rollbacks = mutableListOf<UpdateRolledBackEvent>()
 
-    /** Thrown from the listener, as an SDK's listener with a bug throws. */
     var updateAvailableFailure: Throwable? = null
     var updateFailedFailure: Throwable? = null
 
@@ -102,7 +99,6 @@ class ManualScheduler : Scheduler {
 
     override fun schedule(afterSeconds: Double, block: () -> Unit): ScheduledTask = Task(afterSeconds, block).also { tasks += it }
 
-    /** Fires every pending task that is still alive, the way time would. */
     fun fire() {
         val pending = tasks.toList()
         tasks.clear()
@@ -114,7 +110,7 @@ class FixedClock(var now: Long) : Clock {
     override fun now(): Long = now
 }
 
-/** A core over fakes, in a fresh temporary directory, its tasks on `dispatcher`: a test's own runs their pauses in virtual time. */
+// A test's own `dispatcher` runs the core's pauses in virtual time.
 class Harness(configuration: Configuration = Fixture.configuration(), isDebugBuild: Boolean = false, private val device: DeviceFacts = DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", isDebugBuild), dispatcher: CoroutineDispatcher = Dispatchers.Unconfined) {
     val root: File = Files.createTempDirectory("hotcodepush-tests").toFile()
     val store = InMemoryStore()
@@ -125,23 +121,20 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     val embedded = InMemoryEmbeddedBundle().apply { files[Hashing.sha256Hex(Fixture.embeddedIndexHtml)] = Fixture.embeddedIndexHtml }
     val clock = FixedClock(Fixture.BUILT_AT + 3_600_000)
     val files = FileStore(File(root, "store"))
-    /** What escaped the core's own tasks to the scope: on a device, the process's crash. */
+    // On a device, a failure that escapes to the scope crashes the process.
     val uncaught = mutableListOf<Throwable>()
     val scope = CoroutineScope(SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, failure -> uncaught += failure })
 
-    /** What the process's importance says at the next start: `false` for one the system started without a foreground activity. */
     var isProcessInForeground = true
     var core: Core = build(configuration)
 
     private fun build(configuration: Configuration, scope: CoroutineScope = this.scope) =
         Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp")) { isProcessInForeground }
 
-    /** A second core over the same store and files: the next start of the app, its tasks on the scope given. */
     fun restart(configuration: Configuration = Fixture.configuration(), scope: CoroutineScope = this.scope) {
         core = build(configuration, scope)
     }
 
-    /** The events endpoint answering every batch with the same server time. */
     fun acknowledgeEvents(reportedAt: String = "2023-11-14T23:00:00.000Z") {
         http.stubJson(Fixture.eventsUrl(), JSONObject().put("reportedAt", reportedAt), status = 202)
     }

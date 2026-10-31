@@ -16,7 +16,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
-/** The state machine every framework shares: three named releases, a readiness gate and one cycle of three stages. */
+/** The update state machine every SDK on Android shares: the releases, the readiness gate and the update cycle. */
 class Core(
     val configuration: Configuration,
     private val device: DeviceFacts,
@@ -32,74 +32,61 @@ class Core(
     temporaryDirectory: File,
     private val processState: ProcessState = ActivityManagerProcessState,
 ) {
-    /**
-     * The call a cycle runs for, `checkForUpdate()`, `downloadUpdate()` or `sync()`: the first two are a sync with the download
-     * gate closed or open, and a call joins a running cycle of its own stage only.
-     */
     private enum class Stage { CHECK, DOWNLOAD, SYNC }
 
-    /** How the channel in effect resolved: the runtime choice, a name through the channels index, else the build's own. */
     private sealed class ChannelResolution {
         data class Id(val id: String) : ChannelResolution()
         object Offline : ChannelResolution()
         object Unknown : ChannelResolution()
 
-        /** The build carries no channel and the app set none at runtime. */
+        // The build carries no channel and the app set none at runtime.
         object Missing : ChannelResolution()
         data class Invalid(val message: String) : ChannelResolution()
     }
 
-    /** A restart held at the gate and who asked for it: the app's own is never held by `setRestartAllowed(false)`. */
     private class QueuedRestart(val isAskedByApp: Boolean, val restart: () -> Unit)
 
-    /** The cycle that runs, which a call of its stage joins and a call of another stage waits for. */
     private class RunningCycle(val stage: Stage, val result: Deferred<SyncResult>)
 
     private val state = StateStore(store)
     private val downloader = Downloader(configuration, device.platform, files, embedded, http, temporaryDirectory)
     private val lock = Mutex()
 
-    /** A cycle and the file cleanup, one at a time: a download writes files no kept release lists yet. */
+    // Keeps the file cleanup apart from a cycle, since a download writes files no kept release lists yet.
     private val cycleLock = Mutex()
     private val log = SessionLog()
 
-    /** What escapes a task the core runs on its own is logged, never thrown at the app's process. */
+    // A task the core runs on its own logs its failure and never crashes the app.
     private val failureHandler = CoroutineExceptionHandler { _, failure -> log.record(LogEntry(clock.now(), SyncStatus.FAILED.wire, "a task of the core stopped: $failure")) }
 
     private var readyTimer: ScheduledTask? = null
-
-    /** The gate runs while the app is in the background, its timer stopped until the resume starts its full window again. */
     private var isReadyTimerPaused = false
     private var intervalTimer: ScheduledTask? = null
     private var runningCycle: RunningCycle? = null
     private var isRestartAllowed = true
     private var queuedRestart: QueuedRestart? = null
 
-    /** The app is up in this run: it rendered, called `notifyReady()` or ran out of time since the start or the last reload. */
+    // The app is up in this run: it rendered, called notifyReady() or timed out since the start or the last reload.
     private var hasStartSettled = false
 
-    /** The times the core pointed the host at a bundle in this process: a readiness signal reported before one is the replaced bundle's. */
+    // A readiness signal reported before the latest bundle load belongs to the replaced bundle.
     @Volatile private var bundleLoadCount = 0
 
     private var isStartSyncPending = false
     private var isSendingDeviceEvents = false
-
-    /** The events enqueued while a batch is on its way: never part of it, so they stay in the outbox whatever the answer. */
     private var eventCountEnqueuedInFlight = 0
 
-    /** When the app went to the background, by a pause or, in a process the system started without a foreground activity, at the start; `null` in the foreground. */
+    // Also set at the start when the system started the process without a foreground activity.
     private var backgroundedAt: Long? = null
     private var resolvedChannelName: Pair<String, String>? = null
-
-    /** The stored rollback notice was announced in this process, so the app coming up next has received it. */
     private var hasAnnouncedRollback = false
 
-    /** The release a switch in this process replaced, `null` for the embedded bundle, until `notifyReady()` reads it. */
+    // The release a switch replaced, null for the embedded bundle, kept until notifyReady() reads it.
     private var switchedFromRelease: Release? = null
 
     /**
-     * The core as every SDK on Android wires it: the state in the app's default preferences, the files under the app's private
-     * files, the download's temporary files under its cache, OkHttp and the wall clock.
+     * Builds the core with the Android defaults: state in the app's default preferences, files in its private files directory,
+     * temporary download files in its cache directory, OkHttp and the wall clock.
      */
     constructor(
         context: Context,
@@ -125,23 +112,19 @@ class Core(
         temporaryDirectory = File(context.cacheDir, "hotcodepush"),
     )
 
-    // Lifecycle
-
     /**
-     * The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
-     * has not come up after and the gate. Answers the bundle the host serves, `null` for the embedded one, without awaiting the
-     * network: the start's check and the cleanup run after it returns, so a host waiting on the start never waits on them.
-     * Whatever the start throws, the stored releases of a store it cannot read among it, answers the embedded bundle and is
-     * logged, never thrown at the host.
+     * Starts a run and returns the bundle the host serves, `null` for the embedded one.
      *
-     * A reload the core did not perform serves the running bundle and is not interpreted; a `next_start` release applies at the next
-     * start or through the core's own apply.
+     * It drops a stale store, rolls back a crash of the previous run, switches to a waiting release and arms the readiness gate.
+     * It never waits for the network: the check and the file cleanup run after it returns. Any failure, an unreadable store
+     * included, is logged and answers the embedded bundle.
+     * A reload the core did not perform keeps the running bundle. A `next_start` release applies at the next start or through
+     * the core's own apply.
      *
-     * `isHeadless` says no screen will render in this run, an Android process started without an activity or an Expo background
-     * task: such a start applies no waiting release, which keeps waiting for a start that renders, so it arms no gate either, and
-     * points the host at no bundle: the host serves the answer, and the bundle persisted for the next start stays as it was.
-     * A process the system started in the background, for a push, a job or a task the host did not mark headless, is in the
-     * background from its start: the gate's timer waits for the first resume.
+     * Pass `isHeadless` when no screen will render in this run, such as a process started without an activity or an Expo
+     * background task. Such a start applies no waiting release, arms no gate and loads no bundle; the persisted bundle stays.
+     * A process the system started in the background without that flag counts as backgrounded: its readiness timer waits for
+     * the first resume.
      */
     suspend fun handleAppStart(isHeadless: Boolean = false): String? {
         val bundleId = lock.withLock {
@@ -158,9 +141,8 @@ class Core(
     }
 
     /**
-     * The start for a host that resolves its bundle in synchronous code before its WebView or JavaScript loads: `handleAppStart()`'s
-     * answer, waited for at most `START_TIMEOUT` seconds. Without an answer in time it answers the embedded bundle, and the start,
-     * once it runs, reloads the host into the bundle it resolved, as it does whenever the host serves another one.
+     * Runs `handleAppStart()` for a host that picks its bundle in synchronous code, waiting at most `START_TIMEOUT` seconds.
+     * Without an answer in time it returns the embedded bundle, and the start reloads the host into the right bundle once it runs.
      */
     fun handleAppStartBlocking(isHeadless: Boolean = false): String? = handleAppStartBlocking(isHeadless, START_TIMEOUT)
 
@@ -169,7 +151,7 @@ class Core(
         return runBlocking { withTimeoutOrNull((timeout * 1000).toLong()) { start.await() } }
     }
 
-    /** After it the current release is confirmed unless it switched, so a headless start, which never switches, arms no gate. */
+    // After this, the current release is confirmed unless it switched. A headless start never switches, so it arms no gate.
     private fun applyStartRule(isHeadless: Boolean) {
         if (state.pendingRollbackEvent == null) state.lastRollback = null
         if (state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest()) dropStoredReleases()
@@ -179,7 +161,7 @@ class Core(
         if (!isHeadless && next != null && shouldSwitchAtStart(next)) switchToNextRelease()
     }
 
-    /** A start rule that threw leaves the stored releases as a new binary does, so the state says what runs: the embedded bundle. */
+    // Dropping the stored releases, as a new binary does, keeps the state in line with the embedded bundle that now runs.
     private fun runEmbeddedBundleAfter(failure: Throwable) {
         log.record(LogEntry(clock.now(), SyncStatus.FAILED.wire, "the start runs the embedded bundle after $failure"))
         runLogged("forgetting the stored releases", ::dropStoredReleases)
@@ -197,10 +179,8 @@ class Core(
         }
     }
 
-    /** The bundle the start answers the host, `null` for the embedded one, and for a store that cannot be read. */
     private fun resolveStartBundleId(): String? = runCatching { resolveServedBundleId(state.currentRelease) }.getOrNull()
 
-    /** Runs the block and logs what it throws, for the work whose failure must not reach the host or the app's process. */
     private fun runLogged(task: String, block: () -> Unit) {
         try {
             block()
@@ -209,20 +189,17 @@ class Core(
         }
     }
 
-    /**
-     * The moment stored with the release at its download decides, so a per-call strategy holds for that release: `next_start`,
-     * and an `immediate` apply still held; one the app took over waits across starts; a bundle the WebView already serves is adopted.
-     */
+    // The moment stored at download decides, so a per-call strategy holds for that release.
+    // A held `immediate` apply switches too, and a bundle the host already serves is adopted.
     private fun shouldSwitchAtStart(next: NextRelease): Boolean =
         loader.servedBundleId() == resolveServedBundleId(next.release) || next.applyStrategy == ApplyStrategy.NEXT_START || next.applyStrategy == ApplyStrategy.IMMEDIATE
 
-    /** A release whose stored moment is `next_resume`; a mandatory one never is, so one the app took over with `manual` waits for `applyUpdate()`. */
     private fun shouldApplyAtResume(next: NextRelease): Boolean = next.applyStrategy == ApplyStrategy.NEXT_RESUME
 
     /**
-     * The first render of the run or of a reload: the readiness signal when `readySignal` is `render`, and on every setting what
-     * settles the start. A render reported before the core last pointed the host at a bundle is the replaced bundle's, the embedded
-     * one a host ran while the start took longer than its bound among them, and confirms and settles nothing.
+     * Reports the first render of the run or of a reload.
+     * It confirms the current release when `readySignal` is `render` and settles the start on every setting. A render reported
+     * before the core's latest bundle load belongs to the replaced bundle and does nothing.
      */
     suspend fun handleRendered() {
         val bundleLoadCountAtSignal = bundleLoadCount
@@ -234,9 +211,9 @@ class Core(
     }
 
     /**
-     * Ends the gate when `readySignal` is `manual`, settles the start, and tells the app whether this start follows a rollback;
-     * `previousRelease` is the release before this start when it changed, by a switch or a rollback, once. A call reported before
-     * the core last pointed the host at a bundle is the replaced bundle's: it confirms, settles and tells nothing.
+     * Reports that the app is ready: confirms the current release, settles the start and tells whether a rollback came before.
+     * `previousRelease` is the release before this start when a switch or a rollback changed it, reported once. A call made
+     * before the core's latest bundle load belongs to the replaced bundle and does nothing.
      */
     suspend fun notifyReady(): NotifyReadyResult {
         val bundleLoadCountAtSignal = bundleLoadCount
@@ -254,8 +231,8 @@ class Core(
     }
 
     /**
-     * The background: the interval timer stops, since interval checks belong to the foreground, the readiness timer stops, since an
-     * app that cannot render there proves nothing, and the moment is kept for `next_resume`.
+     * Handles the move to the background: stops the interval and readiness timers and records the moment for `next_resume`.
+     * Interval checks belong to the foreground, and an app that cannot render in the background proves nothing.
      */
     suspend fun handleAppPause() = lock.withLock {
         backgroundedAt = clock.now()
@@ -264,7 +241,11 @@ class Core(
         pauseReadyTimer()
     }
 
-    /** A resume starts a paused readiness window again, applies a `next_resume` release after enough time in the background, else checks when the interval has passed. */
+    /**
+     * Handles the return to the foreground.
+     * It restarts a paused readiness window in full, applies a `next_resume` release after enough time in the background, and
+     * otherwise checks once the interval has passed.
+     */
     suspend fun handleAppResume() = lock.withLock {
         val backgroundDuration = backgroundedAt?.let { (clock.now() - it) / 1000.0 }
         backgroundedAt = null
@@ -284,7 +265,7 @@ class Core(
         scheduleIntervalSync(configuration.checkIntervalSeconds - elapsedSeconds)
     }
 
-    /** The start's, the resume's and the interval's cycle; a device without a channel starts none, since it could only fail. */
+    // A device without a channel starts no automatic cycle, since it could only fail.
     private fun startAutomaticCycle(trigger: SyncTrigger) {
         if (!hasChannel) return
         launchTask { sync(trigger) }
@@ -294,12 +275,10 @@ class Core(
         scope.launch(failureHandler) { task() }
     }
 
-    // The three stages
-
     /**
-     * One cycle under the strategies, the same the SDK runs on its own at start, resume and interval, stopping at a `manual` gate
-     * for the app; a second call while one runs joins the running one. Each stage throws the plain error, fetching nothing, for
-     * a channel id in effect that is not a UUID.
+     * Runs one update cycle under the configured strategies, stopping at a `manual` gate.
+     * A second call while a cycle runs joins it. Throws the plain error, fetching nothing, when the channel id in effect is
+     * not a UUID.
      */
     suspend fun sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()): SyncResult {
         verifyChannelId()
@@ -307,8 +286,8 @@ class Core(
     }
 
     /**
-     * `sync()` with the download gate closed: fetch and evaluate, download nothing and apply nothing; a release that carries the
-     * running bundle is adopted, as from every stage, a revoked release's target included.
+     * Runs `sync()` with the download gate closed: fetches and evaluates, but downloads and applies nothing.
+     * A release that carries the running bundle is still adopted, as from every stage, the target of a revoked release included.
      */
     suspend fun checkForUpdate(): SyncResult {
         verifyChannelId()
@@ -316,15 +295,15 @@ class Core(
     }
 
     /**
-     * `sync()` with the download gate open, whatever `downloadStrategy` says: the index is checked again, a conditional GET, so
-     * nothing is downloaded from stale state, then the update is downloaded, verified and applied per the apply strategies.
+     * Runs `sync()` with the download gate open, whatever `downloadStrategy` says.
+     * It checks the index again with a conditional GET, so nothing downloads from stale state, then downloads, verifies and
+     * applies the update under the apply strategies.
      */
     suspend fun downloadUpdate(options: DownloadUpdateOptions = DownloadUpdateOptions()): SyncResult {
         verifyChannelId()
         return runCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions(options.applyStrategy, DownloadStrategy.AUTO, options.mandatoryApplyStrategy))
     }
 
-    /** One cycle at a time: a call joins the running cycle of its own stage, and waits for one of another stage before it starts its own. */
     private suspend fun runCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
         while (true) {
             val cycle = lock.withLock { runningCycle ?: startCycle(trigger, stage, options) }
@@ -333,7 +312,6 @@ class Core(
         }
     }
 
-    /** The cycle runs once the caller awaits it, and is forgotten however it ends, so the next call starts its own. */
     private fun startCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): RunningCycle {
         val result = scope.async(start = CoroutineStart.LAZY) {
             try {
@@ -345,7 +323,7 @@ class Core(
         return RunningCycle(stage, result).also { runningCycle = it }
     }
 
-    /** The third stage: apply the downloaded update and reload the app, now or, before the app is up in this run, once it is. */
+    /** Applies the downloaded update and reloads the app, at once or, before the app is up in this run, once it is. */
     suspend fun applyUpdate(): ApplyUpdateResult = lock.withLock {
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease ?: return ApplyUpdateResult(ApplyStatus.NOTHING_TO_APPLY, state.currentRelease)
@@ -371,7 +349,6 @@ class Core(
         return result
     }
 
-    /** A cycle answers, whatever is thrown inside it: what no stage turned into its own reason is `failed` with `index_invalid`, the cause in the message. */
     private suspend fun resolveCycleSafely(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult = try {
         resolveCycle(trigger, stage, options)
     } catch (cancellation: CancellationException) {
@@ -425,19 +402,14 @@ class Core(
         }
     }
 
-    /**
-     * A release the device qualifies for: adopted in place when it carries the running bundle, the embedded one included, else
-     * announced and taken as far as the download gate lets it. An adopted release runs already without a reload, so the cycle
-     * answers `up_to_date` with it.
-     * The apply moment is the call's own strategy, else the one a release downloaded already carries, else the configuration's,
-     * so an automatic cycle never overrides the app's choice.
-     */
     private suspend fun update(target: IndexRelease, isMandatory: Boolean, trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
         val release = resolveRelease(target, isMandatory)
+        // An adopted release already runs without a reload, so the cycle answers `up_to_date`.
         if (target.bundleId == resolveRunningBundleId()) {
             lock.withLock { adoptInPlace(release) }
             return SyncResult.upToDate(release)
         }
+        // The call's strategy wins over the downloaded release's, so an automatic cycle never overrides the app's choice.
         val requestedApplyStrategy = resolveRequestedApplyStrategy(isMandatory, options)
         val downloaded = readDownloadedRelease(target)
         if (downloaded != null) {
@@ -453,29 +425,22 @@ class Core(
         }
     }
 
-    /** The bytes this device will download for the release: none for a release of the embedded bundle, which the binary carries. */
+    // The binary already carries the embedded bundle, so a release of it downloads nothing.
     private fun resolveDownloadSizeBytes(target: IndexRelease): Long =
         if (target.bundleId == configuration.embeddedBundleId) 0 else target.sizeBytes
 
-    /**
-     * The download gate of the cycle: the call's own strategy, else the configuration's. A release of the embedded bundle downloads
-     * nothing and passes it, `unmetered` and `manual` alike, at every stage but the check, whose gate stays shut.
-     */
+    // A release of the embedded bundle downloads nothing, so it passes every gate but the check's.
     private fun resolveDownloadStrategy(target: IndexRelease, stage: Stage, options: SyncOptions): DownloadStrategy =
         if (target.bundleId == configuration.embeddedBundleId && stage != Stage.CHECK) DownloadStrategy.AUTO else options.downloadStrategy ?: configuration.downloadStrategy
 
-    /** The release as the app sees it: the index's entry with the mandatory flag the evaluation decided, transitive included. */
     private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(target.id, target.number, target.bundleId, target.bundleVersion, isMandatory)
 
-    /** The call's own strategy for this release, `null` when the call names none: a mandatory release follows `mandatoryApplyStrategy`, any other the apply strategy. */
     private fun resolveRequestedApplyStrategy(isMandatory: Boolean, options: SyncOptions): ApplyStrategy? =
         if (isMandatory) options.mandatoryApplyStrategy?.toApplyStrategy() else options.applyStrategy
 
-    /** The configuration's strategy for this release, by the same rule. */
     private fun resolveConfiguredApplyStrategy(isMandatory: Boolean): ApplyStrategy =
         if (isMandatory) configuration.mandatoryApplyStrategy.toApplyStrategy() else configuration.applyStrategy
 
-    /** The next release when it carries the target's bundle and every file it lists is on disk. */
     private fun readDownloadedRelease(target: IndexRelease): NextRelease? {
         val next = state.nextRelease ?: return null
         if (next.release.bundleId != target.bundleId) return null
@@ -483,7 +448,6 @@ class Core(
         return if (files.isComplete(manifest, embedded)) next else null
     }
 
-    /** The binary carries the embedded bundle, its manifest and its files: a release of it downloads nothing and goes straight to its apply moment. */
     private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, applyStrategy: ApplyStrategy, trigger: SyncTrigger): SyncResult {
         val release = resolveRelease(target, isMandatory)
         if (target.bundleId != configuration.embeddedBundleId) {
@@ -494,7 +458,6 @@ class Core(
         return lock.withLock { applyDownloaded(NextRelease(release, applyStrategy), target.notes) }
     }
 
-    /** Fetches, verifies and lays out the release's bundle and queues its `downloaded` event; answers the failed cycle, else `null`. */
     private suspend fun downloadBundle(target: IndexRelease, release: Release): SyncResult? {
         try {
             val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes, progressBytes, target.id)) }
@@ -506,17 +469,13 @@ class Core(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Throwable) {
-            // An OutOfMemoryError from a large file among them: the download fails, the process lives.
+            // An OutOfMemoryError on a large file fails the download, not the process.
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, FailedReason.DOWNLOAD_FAILED.wire)) }
             return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, failure.message ?: failure.toString())
         }
         return null
     }
 
-    /**
-     * Choosing and applying are two acts: the stored moment is a policy over the four functions. `applied` when the apply runs
-     * now, the reload following once the gate lets it; else `downloaded`, the apply scheduled or the app's.
-     */
     private fun applyDownloaded(next: NextRelease, notes: String?): SyncResult {
         setNextRelease(next)
         when (next.applyStrategy) {
@@ -528,8 +487,9 @@ class Core(
     }
 
     /**
-     * Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event.
-     * The embedded bundle, a release that carries it included, has nothing to roll back to, and the call does nothing.
+     * Rolls the running release back and reloads at once, even before the app is up.
+     * `detail` is the app's own cause, sent with the failure event. Does nothing while the embedded bundle runs, also through
+     * a release of it.
      */
     suspend fun rollbackUpdate(detail: String?) = lock.withLock {
         if (detail != null) AttributeRules.validate(detail)
@@ -538,7 +498,10 @@ class Core(
         reloadApp()
     }
 
-    /** Back to the embedded bundle, now or, before the app is up in this run, once it is: every downloaded update and the failed list go, the identity stays. */
+    /**
+     * Returns to the embedded bundle and deletes every downloaded update and the failed list; the device identity stays.
+     * Before the app is up in this run, the whole call waits until it is, the deletion included.
+     */
     suspend fun clearUpdates() = lock.withLock {
         restartThroughGate(isAskedByApp = true) {
             stopReadyTimer()
@@ -560,9 +523,7 @@ class Core(
         runQueuedRestart()
     }
 
-    // State
-
-    /** Everything the debug screen shows: the device, the configuration, the state and this session's log. */
+    /** Returns everything the debug screen shows: the device, the configuration, the state and this session's log. */
     fun debugSnapshot(): DebugSnapshot = DebugSnapshot(clock.now(), deviceResult(), configuration, device.isDebugBuild, getState(), log.entries())
 
     fun getState(): StateResult {
@@ -586,7 +547,10 @@ class Core(
         null -> ChannelResult(configuration.channelId, null, ChannelSource.CONFIG)
     }
 
-    /** A channel id names the index's URL, so one that is not a UUID is refused with the plain error and nothing is stored. */
+    /**
+     * Sets the channel at runtime, or clears the choice with `null`.
+     * A channel id is part of the index URL, so one that is not a UUID throws the plain error and nothing is stored.
+     */
     suspend fun setChannel(choice: ChannelChoice?) = lock.withLock {
         if (choice is ChannelChoice.Id) verifyChannelId(choice.id)
         state.channel = choice
@@ -608,20 +572,14 @@ class Core(
         state.attributes = attributes
     }
 
-    // The four functions and the gate
-
-    /** A restored phone brings the store's keys back without its files: a current or next release with no manifest names a tree that is not there. */
+    // A restored phone brings back the store's keys without the files, so a release may name a tree that is not there.
     private fun hasReleaseWithoutManifest(): Boolean = listOfNotNull(state.currentRelease, state.nextRelease?.release).any { readBundleManifest(it.bundleId) == null }
 
-    /** A bundle's manifest: the binary's for the embedded bundle, else the one its download stored. */
     private fun readBundleManifest(bundleId: String): BundleManifest? =
         if (bundleId == configuration.embeddedBundleId) configuration.embeddedBundleManifest else files.readManifest(bundleId)
 
-    /**
-     * A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded
-     * bundle runs. The kept index goes with them, its ETag inside it, so the first check fetches unconditionally and a device a
-     * far-future sequence froze heals with a store update.
-     */
+    // A new binary brings a new floor and a restored phone has no files, so the embedded bundle runs.
+    // The kept index and its ETag go too, so the first check fetches unconditionally and a frozen sequence heals.
     private fun dropStoredReleases() {
         state.cachedIndex = null
         state.currentRelease = null
@@ -638,7 +596,6 @@ class Core(
         state.nextRelease = next
     }
 
-    /** A downloaded release that has left the cached index since — revoked, or gone from it — is never applied: it is dropped and the served bundle stays the running one. */
     private fun discardNextReleaseThatLeftTheIndex() {
         val next = state.nextRelease ?: return
         val index = state.cachedIndex?.body ?: return
@@ -649,10 +606,6 @@ class Core(
 
     private fun hasLeftIndex(release: Release, index: ChannelIndex): Boolean = release.id in index.revokedReleaseIds || index.releases.none { it.id == release.id }
 
-    /**
-     * Next becomes the current release, unconfirmed, and nothing reloads. A release of the embedded bundle is confirmed as it
-     * becomes current: the embedded bundle is never gated, so no readiness timer arms for it and no rollback blocklists it.
-     */
     private fun switchToNextRelease() {
         val next = state.nextRelease?.release ?: return
         switchedFromRelease = state.currentRelease
@@ -660,26 +613,22 @@ class Core(
         state.nextRelease = null
         persistServedBundle(next)
         enqueueDeviceEvent(DeviceEvent.applied(next.id))
+        // The embedded bundle is never gated, so no readiness timer arms for it and no rollback blocklists it.
         if (next.bundleId == configuration.embeddedBundleId) confirmCurrentRelease()
     }
 
-    /**
-     * Points the host at the current bundle when it serves another, the embedded one a host served past the start's bound among them:
-     * a reload the core performs, so the start settled before it, by a render handled before the start began, is unsettled.
-     */
     private fun loadBundle() {
         if (loader.servedBundleId() == resolveServedBundleId(state.currentRelease)) return
         loadServedBundle(state.currentRelease)
+        // A render handled before the start began settled the replaced bundle.
         unsettleStart()
     }
 
-    /** The restart of the web layer: the bundle loads, then the reloaded app goes through the gate. */
     private fun reloadApp() {
         loadServedBundle(state.currentRelease)
         gateReloadedApp()
     }
 
-    /** Every load the core asks of the host: a readiness signal reported before it is the replaced bundle's and counts for nothing. */
     private fun loadServedBundle(release: Release?) {
         loader.loadServedBundle(resolveServedBundleId(release))
         bundleLoadCount += 1
@@ -689,38 +638,32 @@ class Core(
         loader.persistServedBundle(resolveServedBundleId(release))
     }
 
-    /** The bundle the host serves for a release, `null` for the embedded one: the binary serves a release of the embedded bundle, which has no tree of its own. */
+    // A release of the embedded bundle has no tree of its own: the binary serves it.
     private fun resolveServedBundleId(release: Release?): String? = release?.bundleId?.takeIf { it != configuration.embeddedBundleId }
 
-    /** The bundle that runs: the current release's, else the embedded one, `null` only in a build that names no embedded bundle. */
+    // Null only in a build that names no embedded bundle.
     private fun resolveRunningBundleId(): String? = state.currentRelease?.bundleId ?: configuration.embeddedBundleId
 
     private fun hasLoadedBundleSince(bundleLoadCountAtSignal: Int): Boolean = bundleLoadCount != bundleLoadCountAtSignal
 
-    /** The reloaded app has to come up again: a rollback it has not come up after is announced, then the gate runs. */
     private fun gateReloadedApp() {
         unsettleStart()
         announceRollback()
         if (isCurrentReleaseUnconfirmed()) startReadyTimer()
     }
 
-    /** The reloaded app has to come up again before a restart runs, and it runs what the state says, so a held restart is moot. */
     private fun unsettleStart() {
         hasStartSettled = false
+        // The reload runs what the state says, so a held restart is moot.
         queuedRestart = null
     }
 
-    /** The apply the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does. */
+    // Persisting the next bundle first lets the next start switch if this run never does.
     private fun restartIntoNextRelease() {
         state.nextRelease?.let { persistServedBundle(it.release) }
         restartThroughGate(isAskedByApp = false, ::applyNextRelease)
     }
 
-    /**
-     * The switch and the reload as the gate runs them. A release that left the index while they were held is discarded. With the
-     * release gone, discarded or dropped by a rollback or a revert whose own restart yielded to this one, the host reloads into
-     * the current bundle when it serves another, and else nothing reloads.
-     */
     private fun applyNextRelease() {
         discardNextReleaseThatLeftTheIndex()
         if (state.nextRelease == null) {
@@ -731,7 +674,7 @@ class Core(
         reloadApp()
     }
 
-    /** A restart waits until the app is up in this run, and the SDK's own also while the app holds restarts. One is held at most: the app's replaces a held one, the SDK's yields to it. */
+    // One restart is held at most: the app's replaces a held one, the core's yields to it.
     private fun restartThroughGate(isAskedByApp: Boolean, restart: () -> Unit) {
         if (isAskedByApp || queuedRestart == null) queuedRestart = QueuedRestart(isAskedByApp, restart)
         runQueuedRestart()
@@ -744,7 +687,6 @@ class Core(
         queued.restart()
     }
 
-    /** The app is up in this run: a rollback announced to it is delivered, and the restart held for it runs. */
     private fun settleStart() {
         hasStartSettled = true
         if (hasAnnouncedRollback) {
@@ -754,20 +696,17 @@ class Core(
         runQueuedRestart()
     }
 
-    /** The stored notice reaches the JavaScript that just started, once per start; it stays stored until the app is up after it. */
+    // The notice stays stored until the app is up, so JavaScript that listens late still receives it.
     private fun announceRollback() {
         val event = state.pendingRollbackEvent ?: return
         hasAnnouncedRollback = true
         listener.updateRolledBack(event)
     }
 
-    /**
-     * The adopted release runs already, `null` for the embedded bundle a revoked release of it leaves: a release waiting to apply
-     * is older and is dropped, so no start switches to it.
-     */
     private fun adoptInPlace(release: Release?) {
         val wasConfirmed = !isCurrentReleaseUnconfirmed()
         state.currentRelease = release
+        // A release waiting to apply is older, so no start may switch to it.
         state.nextRelease = null
         if (wasConfirmed) state.fallbackRelease = release
         persistServedBundle(release)
@@ -791,11 +730,7 @@ class Core(
         }
     }
 
-    /**
-     * The fallback becomes the current release and the failure is reported; the caller reloads. A rollback never waits for the app
-     * to be up: the app's own reloads at once and the crash a start finds loads the fallback as the start's bundle, while the
-     * timer's, which settles the start, waits only while the app holds restarts.
-     */
+    // The caller performs the reload.
     private fun rollbackCurrentRelease(reason: RollbackReason, detail: String?) {
         val current = state.currentRelease ?: return
         stopReadyTimer()
@@ -812,7 +747,6 @@ class Core(
         persistServedBundle(fallback)
     }
 
-    /** The release to fall back to right now: the last confirmed one while it can still run, else the embedded bundle. */
     private fun resolveFallbackRelease(): Release? {
         val fallback = state.fallbackRelease ?: return null
         if (fallback.bundleId in state.failedBundleIds) return null
@@ -829,7 +763,7 @@ class Core(
         restartThroughGate(isAskedByApp = false) { reloadApp() }
     }
 
-    /** The readiness window runs in the foreground alone: a gate armed in the background waits for the resume. */
+    // The readiness window runs only in the foreground, so a gate armed in the background waits for the resume.
     private fun startReadyTimer() {
         stopReadyTimer()
         if (backgroundedAt != null) {
@@ -851,14 +785,15 @@ class Core(
         isReadyTimerPaused = true
     }
 
-    /** The full window starts again: the time already spent in the foreground counts for nothing, as the time in the background does. */
+    // The full window starts again, and the time already spent counts for nothing.
     private fun resumeReadyTimer() {
         if (isReadyTimerPaused) startReadyTimer()
     }
 
-    /** The timer running out settles the start, so its rollback waits only while the app holds restarts; one that fires as the timer stops, paused or confirmed, is ignored. */
     internal suspend fun handleReadyTimeout() = lock.withLock {
+        // A timeout that fires as the timer stops, paused or confirmed, is ignored.
         if (readyTimer == null || !isCurrentReleaseUnconfirmed()) return
+        // Settling the start lets the rollback reload unless the app holds restarts.
         hasStartSettled = true
         rollbackCurrentRelease(RollbackReason.READINESS_TIMED_OUT, null)
         restartThroughGate(isAskedByApp = false, ::reloadApp)
@@ -870,17 +805,12 @@ class Core(
         intervalTimer = scheduler.schedule(afterSeconds) { launchTask { lock.withLock { startAutomaticCycle(SyncTrigger.INTERVAL) } } }
     }
 
-    /**
-     * Everything no kept release lists: the served tree of every other bundle first, since its links hold the bytes. Never
-     * beside a cycle, whose download writes files no kept release lists yet; only a download adds a kept release.
-     */
+    // The projections go before the files, since their links hold the bytes.
     private suspend fun deleteUnusedFiles() = cycleLock.withLock {
         val kept = lock.withLock { listOfNotNull(state.currentRelease, state.nextRelease?.release, state.fallbackRelease).map { it.bundleId }.toSet() }
         files.bundleIds().filter { it !in kept }.forEach(loader::deleteProjection)
         files.deleteUnusedFiles(kept)
     }
-
-    // The index
 
     private sealed class IndexFetch {
         data class Index(val index: ChannelIndex) : IndexFetch()
@@ -888,11 +818,10 @@ class Core(
         data class Invalid(val message: String) : IndexFetch()
         object Absent : IndexFetch()
 
-        /** The runtime channel serves no index and the build carries none to fall back to. */
+        // The runtime channel serves no index and the build carries none to fall back to.
         object NoChannel : IndexFetch()
     }
 
-    /** The runtime choice, then the configured id, which a build made without a token or offline does not carry; a name resolves through the channels index, offline being offline and not an unknown name. */
     private suspend fun resolveChannelId(): ChannelResolution = when (val choice = state.channel) {
         null -> configuration.channelId?.let { ChannelResolution.Id(it) } ?: ChannelResolution.Missing
         is ChannelChoice.Id -> ChannelResolution.Id(choice.id)
@@ -903,6 +832,7 @@ class Core(
             } else {
                 val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/channels/v1/index.json"
                 val response = runCatching { http.get(url, emptyMap()) }.getOrNull()
+                // A failed fetch means offline, never an unknown name.
                 when (response?.status) {
                     null -> ChannelResolution.Offline
                     200 -> {
@@ -926,7 +856,6 @@ class Core(
         }
     }
 
-    /** The channel id a cycle would fetch by, the runtime one or the build's, is a UUID; any other is a programming mistake, refused before anything is fetched. */
     private fun verifyChannelId() {
         channel().id?.let(::verifyChannelId)
     }
@@ -935,11 +864,9 @@ class Core(
         if (!WireRule.UUID.accepts(id)) throw PlainException("A channel id is a UUID: $id")
     }
 
-    /** The SDK checks on its own at start, on resume and at the interval; under `manual` every cycle is the app's `sync()`. */
     private val isCheckAutomatic: Boolean
         get() = configuration.checkStrategy == CheckStrategy.AUTO
 
-    /** A device has a channel when the app set one at runtime or the build carries one. */
     private val hasChannel: Boolean
         get() = state.channel != null || configuration.channelId != null
 
@@ -971,24 +898,18 @@ class Core(
         }
     }
 
-    /**
-     * The never-backwards rule: a fetched index below the kept one's sequence is ignored while the kept index is younger than
-     * `CACHED_INDEX_MAX_AGE`; an older kept index counts as absent, so a far-future sequence cannot freeze the device for good.
-     */
+    // An older kept index counts as absent, so a forged far-future sequence freezes the device for a day at most.
     private fun isBehindCachedIndex(index: ChannelIndex, cached: CachedIndex): Boolean =
         index.sequence < cached.body.sequence && clock.now() - cached.fetchedAt < (CACHED_INDEX_MAX_AGE * 1000).toLong()
 
-    /** The index the device asked for: its app, the channel it fetched by and its platform, so another index at that URL serves nothing. */
     private fun isIndexForDevice(index: ChannelIndex, channelId: String): Boolean =
         index.appId == configuration.appId && index.channelId == channelId && index.platform == device.platform
 
-    /** OTA updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `build_debug`. */
+    // A React Native or Expo debug build bundles no JavaScript, so it carries no embedded manifest.
     private val isDisabledInThisBuild: Boolean
         get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
 
     private fun deviceInfo() = DeviceInfo(state.attributes, device.binaryBuild, device.binaryVersion, configuration.builtAt, state.currentRelease, state.deviceId, state.failedBundleIds, configuration.fingerprint, device.osVersion, state.reportedAt)
-
-    // Events
 
     private fun recordChecked(release: IndexRelease, index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = null, condition: ConditionType? = null) {
         val checked = state.checkedReleaseIds.filter { id -> index.releases.any { it.id == id } }
@@ -1006,11 +927,6 @@ class Core(
         LogEntry.ofDeviceEvent(event, clock.now())?.let(log::record)
     }
 
-    /**
-     * One batch to the events endpoint, the outbox as it stands and the report when it changed and the endpoint reads it: a
-     * readable 202 takes both, a refusal drops the events and leaves the report unacknowledged, anything else keeps both for the
-     * next sync. A batch the endpoint would refuse whole is not sent, and its events stay in the outbox.
-     */
     private suspend fun sendDeviceEvents() {
         val request = lock.withLock {
             if (isSendingDeviceEvents || isDisabledInThisBuild) return
@@ -1047,20 +963,14 @@ class Core(
         }
     }
 
-    /**
-     * The batch's events leave the outbox: what stays is exactly what was enqueued while the batch was on its way, the newest 200 of it,
-     * also when the outbox's cap dropped events of the batch meanwhile.
-     */
+    // Only the events enqueued while the batch was in flight stay, even when the outbox cap dropped some of the batch meanwhile.
     private fun dropBatchEvents() {
         state.unsentEvents = state.unsentEvents.takeLast(eventCountEnqueuedInFlight)
     }
 
-    /**
-     * The facts the server should hold: the report when they differ from the acknowledged ones or the month began, else nothing.
-     * A device without a channel id — a runtime name not yet resolved, a build that carries none — reports nothing: a row for it would mislead.
-     */
     private fun buildDeviceReport(): DeviceReport? {
         val channel = channel()
+        // A device without a channel id reports nothing, since a row for it would mislead.
         val channelId = channel.id ?: return null
         val report = DeviceReport(state.attributes, device.binaryBuild, device.binaryVersion, channelId, channel.source, configuration.embeddedBundleId, configuration.fingerprint, device.osVersion, state.currentRelease?.id)
         val reportedAt = state.reportedAt
@@ -1069,16 +979,16 @@ class Core(
     }
 
     companion object {
-        /** The longest `handleAppStartBlocking()` waits for the start's answer, in seconds, before it answers the embedded bundle. */
+        /** The longest `handleAppStartBlocking()` waits for the start, in seconds, before it answers the embedded bundle. */
         const val START_TIMEOUT = 2.0
 
-        /** How long the never-backwards rule trusts the kept index's sequence, in seconds, counted from its `fetchedAt`. */
+        // In seconds, counted from the kept index's fetchedAt.
         private const val CACHED_INDEX_MAX_AGE = 86_400.0
 
-        /** The session log's code for a report or a batch the events endpoint would refuse, which the device does not send. */
         private const val REPORT_UNREADABLE = "report_unreadable"
 
-        /** What a build without a channel answers, without a request: it can never update until the app sets a channel at runtime. */
+        /** The message a build without a channel answers with, without sending a request. */
+
         const val MISSING_CHANNEL_MESSAGE = "The build carries no channel: it was built without a token or offline, so the channel's name was never resolved. Build it with a token to receive updates."
     }
 }

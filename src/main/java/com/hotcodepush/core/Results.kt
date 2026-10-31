@@ -24,9 +24,9 @@ enum class RollbackReason(val wire: String) { APP_CRASHED("app_crashed"), APP_RE
 enum class PackKind(val wire: String) { FULL("full"), DELTA("delta"), STREAMED("streamed"), FILES("files") }
 
 /**
- * One shape for `SyncResult`, `CheckForUpdateResult` and `DownloadUpdateResult`: the status says which fields are set.
- * `downloaded` carries `applyStrategy`, the moment the apply runs or `manual` for the app's `applyUpdate()`; `applied` says the
- * apply happened and the reload follows the result.
+ * One shape for `SyncResult`, `CheckForUpdateResult` and `DownloadUpdateResult`; the status says which fields are set.
+ * `downloaded` carries `applyStrategy`, the moment the apply runs, or `manual` for the app's `applyUpdate()`. `applied` means
+ * the apply happened and the reload follows.
  */
 data class SyncResult(
     val status: SyncStatus,
@@ -102,7 +102,7 @@ data class StateResult(
     val indexSequence: Long?,
     val indexFetchedAt: Long?,
     val failedBundleIds: List<String>,
-    /** The server time of the month's first acknowledged device report, the stamp the spending cap is compared with. */
+    /** The server time of the first acknowledged device report in the latest UTC month that has one; the spending cap is compared with it. */
     val reportedAt: Long?,
 ) {
     fun toJson(): JSONObject = JSONObject()
@@ -146,8 +146,6 @@ data class DeviceResult(
         .put("attributes", JSONObject(attributes))
 }
 
-// Events — what the SDK did on its own; results answer what the app called.
-
 /** A check found a release the device qualifies for. */
 data class UpdateAvailableEvent(val release: Release, val notes: String?, val downloadSizeBytes: Long?, val trigger: SyncTrigger) {
     fun toJson(): JSONObject = JSONObject()
@@ -182,7 +180,8 @@ data class DownloadProgressEvent(val downloadSizeBytes: Long, val progressBytes:
         .put("releaseId", releaseId)
 }
 
-/** At each start that follows a rollback until the app is up after one, before the readiness gate; `toRelease` is `null` for the embedded bundle. */
+/** Fired at each start after a rollback, before the readiness gate, until the app is up; `toRelease` is `null` for the embedded bundle. */
+
 data class UpdateRolledBackEvent(val fromRelease: Release, val toRelease: Release?, val reason: RollbackReason) {
     fun toJson(): JSONObject = JSONObject().put("fromRelease", fromRelease.toJson()).put("toRelease", toRelease?.toJson() ?: JSONObject.NULL).put("reason", reason.wire)
 

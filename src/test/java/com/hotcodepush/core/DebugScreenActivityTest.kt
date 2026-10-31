@@ -18,7 +18,6 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.time.Duration
 
-/** The screen itself, on the JVM through Robolectric: what it shows, what the check adds and what the share sheet receives. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class DebugScreenActivityTest {
@@ -51,7 +50,7 @@ class DebugScreenActivityTest {
         assertTrue(shared?.getStringExtra(Intent.EXTRA_TEXT)?.contains("Result: failed device_offline") == true)
     }
 
-    /** The check runs off the main thread and renders back on it: the main looper runs until the screen shows the answer, ten seconds at most. */
+    // The check runs off the main thread and renders back on it, so the main looper must run until the answer shows.
     private fun idleMainLooperUntil(condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 10_000
         while (!condition()) {

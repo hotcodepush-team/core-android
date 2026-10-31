@@ -6,7 +6,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Every result carries every key of the typed contract, `null` when empty, never an absent key. */
 class ContractTest {
     private fun keys(json: JSONObject): Set<String> = json.keys().asSequence().toSet()
 

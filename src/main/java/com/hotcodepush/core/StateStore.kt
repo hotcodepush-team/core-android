@@ -28,8 +28,8 @@ data class CachedIndex(val etag: String?, val fetchedAt: Long, val body: Channel
 }
 
 /**
- * The downloaded release waiting for its apply and the moment decided for it at the download, from the strategy in force for
- * that cycle, a per-call override included: the start and the resume read it here, never the configuration.
+ * The downloaded release waiting to apply, with the moment decided at its download, a per-call override included.
+ * The start and the resume read that moment, never the configuration.
  */
 data class NextRelease(val release: Release, val applyStrategy: ApplyStrategy) {
     fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("applyStrategy", applyStrategy.wire)
@@ -111,7 +111,7 @@ class StateStore(private val store: KeyValueStore) {
         get() = readObject("lastRollback", UpdateRolledBackEvent::fromJson)
         set(value) = writeObject("lastRollback", value?.toJson())
 
-    /** The `updateRolledBack` event the app has not come up after yet: announced at every start until it does. */
+    /** The `updateRolledBack` event, announced at every start until the app is up after it. */
     var pendingRollbackEvent: UpdateRolledBackEvent?
         get() = readObject("pendingRollbackEvent", UpdateRolledBackEvent::fromJson)
         set(value) = writeObject("pendingRollbackEvent", value?.toJson())
@@ -130,10 +130,9 @@ class StateStore(private val store: KeyValueStore) {
 
     private fun <T> readArray(key: String, decode: (JSONArray) -> T): T? = readValue(key) { decode(JSONArray(it)) }
 
-    /**
-     * The stored value, decoded: one that does not decode, whatever the reason — not JSON, a field missing, a value an older or
-     * newer SDK wrote under the same `stateVersion` — drops the cache with it, or the identity key alone, and reads as absent.
-     */
+    // A value that does not decode, such as one another SDK version wrote under the same `stateVersion`, reads as absent.
+    // It drops the cache with it, or the identity key alone.
+
     private fun <T> readValue(key: String, decode: (String) -> T): T? {
         val raw = getRaw(key) ?: return null
         return try {

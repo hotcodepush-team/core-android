@@ -5,7 +5,6 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import java.io.File
 
-/** The files host and the updates host as a test stubs them; the fakes of this file are shared by the JVM tests and the on-device tests. */
 class FakeHttpClient : HttpClient {
     data class Stub(val status: Int, val headers: Map<String, String>, val body: ByteArray)
 
@@ -15,13 +14,10 @@ class FakeHttpClient : HttpClient {
     val posts = mutableListOf<Triple<String, Map<String, String>, ByteArray>>()
     var isOffline = false
 
-    /** Thrown by the next fetches of a URL, one each in order, as a dropped connection or a large file's OutOfMemoryError is. */
     private val fetchFailures = mutableMapOf<String, ArrayDeque<Throwable>>()
 
-    /** Holds every download until it completes: a download that is still on its way. */
     var downloadGate: CompletableDeferred<Unit>? = null
 
-    /** Runs once inside the next post, before it answers: what the app does while a batch is on its way. */
     var whilePosting: (suspend () -> Unit)? = null
 
     fun failNextFetches(url: String, vararg failures: Throwable) {
@@ -79,7 +75,6 @@ class InMemoryEmbeddedBundle : EmbeddedBundle {
     }
 }
 
-/** One app, one channel, the fixtures every test starts from. */
 object Fixture {
     const val APP_ID = "a0000000-0000-4000-8000-000000000001"
     const val CHANNEL_ID = "c0000000-0000-4000-8000-000000000001"
@@ -134,7 +129,6 @@ object Fixture {
         ChannelIndex(ChannelIndex.SCHEMA, sequence, APP_ID, CHANNEL_ID, "android", isPaused, cappedAt, revoked, releases)
 }
 
-/** A downloader over fakes, in a fresh temporary directory. */
 class DownloaderHarness(configuration: Configuration = Fixture.configuration()) {
     data class Bundle(val manifest: BundleManifest, val pack: ByteArray)
 
@@ -144,7 +138,6 @@ class DownloaderHarness(configuration: Configuration = Fixture.configuration()) 
     val embedded = InMemoryEmbeddedBundle()
     val downloader = Downloader(configuration, "android", files, embedded, http, File(root, "tmp"))
 
-    /** Serves the envelope, its pack when given and its deltas by base, where the index entry says they are and returns that entry. */
     fun publish(manifest: BundleManifest, pack: ByteArray? = null, packUrl: String = PACK_URL, packSizeBytes: Long? = null, bundleId: String = BUNDLE_ID, manifestUrl: String = MANIFEST_URL, deltas: Map<String, ByteArray> = emptyMap()): IndexRelease {
         val json = manifest.toJson().toString()
         val deltaEntries = deltas.map { (baseBundleId, delta) -> ManifestEnvelope.Delta(baseBundleId, "$PACK_URL-from-$baseBundleId", delta.size.toLong()) }
@@ -171,7 +164,6 @@ class DownloaderHarness(configuration: Configuration = Fixture.configuration()) 
         const val MANIFEST_URL = "${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/bundles/$BUNDLE_ID/manifest.json"
         const val PACK_URL = "${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/bundles/$BUNDLE_ID/pack"
 
-        /** The manifest of these files and the pack that carries them, each entry the gzip bytes the bucket serves. */
         fun bundle(files: Map<String, ByteArray>): Bundle {
             val sorted = files.toSortedMap()
             val pack = PackWriter.pack(sorted.values.map { PackedEntry.file(Hashing.sha256Hex(it), Gzip.compress(it)) })

@@ -41,7 +41,6 @@ enum class MandatoryApplyStrategy(val wire: String) {
     }
 }
 
-/** A mandatory strategy in the apply strategies' vocabulary, which holds both of its values. */
 internal fun MandatoryApplyStrategy.toApplyStrategy(): ApplyStrategy = when (this) {
     MandatoryApplyStrategy.IMMEDIATE -> ApplyStrategy.IMMEDIATE
     MandatoryApplyStrategy.MANUAL -> ApplyStrategy.MANUAL
@@ -59,7 +58,7 @@ enum class ReadySignal(val wire: String) {
 /** The resource file: the project's `hotcodepush.json` with the channel resolved to its id, plus what only the embed step knows. */
 data class Configuration(
     val appId: String,
-    /** The channel the build follows; `null` in a build whose build step ran without a token or offline and never resolved the channel's name. */
+    /** The channel the build follows; `null` when the build step ran without a token or offline. */
     val channelId: String?,
     val checkStrategy: CheckStrategy,
     val checkIntervalSeconds: Double,
@@ -74,15 +73,15 @@ data class Configuration(
     val publicKeys: List<DevicePublicKey>,
     val builtAt: Long,
     val fingerprint: String?,
-    /** The embedded bundle's files; `null` in a build that bundled no JavaScript, which embeds no bundle and never updates. */
+    /** The embedded bundle's files; `null` in a build that bundled no JavaScript, which never updates. */
     val embeddedBundleManifest: EmbeddedBundleManifest?,
     val embeddedBundleId: String?,
     val filesBaseUrl: String,
     val updatesBaseUrl: String,
 ) {
     /**
-     * Whether a manifest, pack or delta URL lies under the files or the updates host: it starts with the base URL and a `/`,
-     * so another scheme, userinfo, a look-alike host, another port or another path is off the host.
+     * Whether a URL starts with the files or updates base URL and a `/`.
+     * So another scheme, userinfo, a look-alike host, another port or another path is off the host.
      */
     fun isUrlOnConfiguredHost(url: String): Boolean = listOf(filesBaseUrl, updatesBaseUrl).any { url.startsWith("$it/") }
 
@@ -90,7 +89,7 @@ data class Configuration(
         const val DEFAULT_FILES_BASE_URL = "https://files.hotcodepush.com"
         const val DEFAULT_UPDATES_BASE_URL = "https://updates.hotcodepush.com"
 
-        /** Why an SDK runs without a core when the app's assets lack the resource file. */
+        /** The message for an SDK that runs without a core because the assets lack the resource file. */
         const val MISSING_MESSAGE = "HotCodePush is not configured: hotcodepush.json is missing from the app's assets. Run `npx hotcodepush init` and build the app once."
 
         fun decode(text: String): Configuration = fromJson(JSONObject(text))
@@ -116,7 +115,7 @@ data class Configuration(
             updatesBaseUrl = json.getOptionalWireString("updatesBaseUrl", WireRule.URL) ?: DEFAULT_UPDATES_BASE_URL,
         )
 
-        /** The resource file the build wrote into the app's assets, `null` when they lack it; a file the reader refuses throws its error. */
+        /** Reads the resource file from the app's assets, `null` when it is missing. A file the reader refuses throws. */
         fun read(context: Context, assetPath: String = "hotcodepush.json"): Configuration? {
             val text = try {
                 context.assets.open(assetPath).bufferedReader().use { it.readText() }
@@ -126,16 +125,13 @@ data class Configuration(
             return decode(text)
         }
 
-        /** Why an SDK runs without a core when the reader refused the resource file: the reader's own message and what to do. */
+        /** The message for an SDK that runs without a core because the reader refused the resource file. */
         fun resolveRefusedMessage(refusal: Exception): String =
             "HotCodePush is not configured: the app's hotcodepush.json was refused: ${refusal.message}. Check the project's hotcodepush.json and build the app again."
     }
 }
 
-/**
- * A duration in seconds, the default when the file leaves it out: a number, never a string read as one, and at least its
- * floor, else the file is refused like any other schema violation, never clamped.
- */
+// A value below the floor refuses the file like any other schema violation, never clamped.
 private fun JSONObject.getSeconds(key: String, default: Double, minimum: Double = 0.0): Double {
     if (isNull(key)) return default
     val seconds = (get(key) as? Number)?.toDouble() ?: throw JSONException("$key is not a number of seconds")
@@ -143,10 +139,11 @@ private fun JSONObject.getSeconds(key: String, default: Double, minimum: Double 
     return seconds
 }
 
-/** The floor of `checkIntervalSeconds`: a zero made the core check in a tight loop. */
+// A zero made the core check in a tight loop.
 private const val MINIMUM_CHECK_INTERVAL_SECONDS = 60.0
 
-/** The floor of `readyTimeoutSeconds`: the gate has no off switch. */
+// The readiness gate has no off switch.
+
 private const val MINIMUM_READY_TIMEOUT_SECONDS = 1.0
 
 /** Each stage's strategy for one `sync()` call, overriding the configuration. */

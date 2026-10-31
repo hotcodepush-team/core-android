@@ -14,12 +14,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 
-/** The start as a host sees it: the bundle it serves and a start that fails open or never answers in time. */
 class StartTest {
     private val v2Content = "<html>v2</html>".toByteArray()
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    /** A core whose store holds `v2` downloaded and waiting for the next start, and that start's core. */
     private fun harnessWithAWaitingRelease(configuration: Configuration = Fixture.configuration()): Pair<Harness, Fixture.Published> {
         val harness = Harness(configuration)
         val v2 = Fixture.release(1, "b2", v2Content)
@@ -43,7 +41,6 @@ class StartTest {
         assertEquals(1, harness.scheduler.tasks.size)
     }
 
-    /** The next start on threads of its own, held at its first write until the latch it answers opens, as a slow store holds it. */
     private fun holdTheNextStart(harness: Harness): CountDownLatch {
         val latch = CountDownLatch(1)
         harness.loader.persistLatch = latch

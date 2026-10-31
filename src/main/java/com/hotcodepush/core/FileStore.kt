@@ -21,8 +21,8 @@ class FileStore(val rootDirectory: File) {
     fun hasFile(sha256: String): Boolean = file(sha256).isFile
 
     /**
-     * Streams the content into a temporary file while hashing it, then renames it into place once it hashes to `sha256`, so a
-     * file that exists is the file; the content is never held whole in memory, and the caller closes it.
+     * Streams the content to a temporary file while hashing it and moves it into place only when it hashes to `sha256`.
+     * So a file that exists is complete. The caller closes the stream.
      */
     fun writeFile(content: InputStream, sha256: String) {
         filesDirectory.mkdirs()
@@ -56,7 +56,8 @@ class FileStore(val rootDirectory: File) {
         File(bundlesDirectory, bundleId).deleteRecursively()
     }
 
-    /** Everything no kept bundle lists: the cleanup after a start, no setting. */
+    /** Deletes every file and manifest no kept bundle lists. */
+
     fun deleteUnusedFiles(keptBundleIds: Set<String>) {
         bundleIds().filter { it !in keptBundleIds }.forEach(::deleteBundle)
         val referenced = keptBundleIds.mapNotNull(::readManifest).flatMap { manifest -> manifest.files.map { it.sha256 } }.toSet()

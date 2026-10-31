@@ -2193,7 +2193,6 @@ class CoreTest {
         assertEquals("r1", harness.core.getState().currentRelease?.id)
     }
 
-    /** A batch the endpoint refuses loses its events and leaves the report unacknowledged, so the next sync sends the report alone. */
     private suspend fun assertBatchRefused(status: Int) {
         val harness = Harness()
         harness.http.stub(Fixture.eventsUrl(), status = status, body = ByteArray(0))
@@ -2211,7 +2210,6 @@ class CoreTest {
         assertTrue(!next.isNull("report"))
     }
 
-    /** The first run of a fresh device, up, whose first sync finds a release of the embedded bundle the device runs. */
     private suspend fun syncToEmbeddedReleaseOnFreshDevice(harness: Harness): SyncResult {
         harness.publish(listOf(embeddedRelease), 1)
         harness.core.handleAppStart()
@@ -2219,7 +2217,6 @@ class CoreTest {
         return harness.core.sync(SyncTrigger.MANUAL)
     }
 
-    /** A run that applies v2 at once after the first render and has not confirmed it: its readiness timer is the one scheduled. */
     private suspend fun startOnUnconfirmedRelease(): Harness {
         val harness = Harness(immediateApply)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
@@ -2231,7 +2228,6 @@ class CoreTest {
         return harness
     }
 
-    /** The third run of an app whose second run confirmed v2: its start finds nothing to switch and nothing to roll back. */
     private suspend fun startOnConfirmedRelease(configuration: Configuration): Harness {
         val harness = Harness()
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
@@ -2246,7 +2242,6 @@ class CoreTest {
         return harness
     }
 
-    /** The next start of the process, after a run that may never have come up: the host serves the bundle the loader persisted. Answers the start's bundle. */
     private suspend fun startAgain(harness: Harness, configuration: Configuration): String? {
         harness.loader.served = harness.loader.persisted
         harness.restart(configuration)

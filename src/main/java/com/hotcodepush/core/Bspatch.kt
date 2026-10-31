@@ -4,19 +4,17 @@ import java.io.File
 
 internal class BspatchException(val failure: Bspatch.Failure) : Exception("The patch did not apply: $failure")
 
-/** FreeBSD's bspatch, the native library built from `src/main/cpp`: a BSDIFF40 patch turns an old file into a new one. */
+// FreeBSD's bspatch, the native library built from `src/main/cpp`.
 internal object Bspatch {
-    /** The statuses of `hotcodepush_bspatch()` other than success. */
     enum class Failure { CORRUPT_PATCH, IO_ERROR, OUT_OF_MEMORY }
 
     init {
         System.loadLibrary("hotcodepush_bspatch")
     }
 
-    /**
-     * Writes the new file, never larger than `maximumBytes`, or throws and leaves no file. A control triple that reaches
-     * outside the old file adds nothing there, as bsdiff 4.3 defined it, so only the result's hash says the patch was the right one.
-     */
+    // A control triple that reaches outside the old file adds nothing there, as bsdiff 4.3 defined it.
+    // So only the hash of the result proves the patch was the right one.
+
     fun apply(patch: File, old: File, new: File, maximumBytes: Long) {
         when (applyPatch(old.path, new.path, patch.path, maximumBytes)) {
             0 -> return

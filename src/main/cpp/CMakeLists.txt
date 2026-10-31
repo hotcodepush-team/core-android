@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(hotcodepush_bspatch C)
 
-# FreeBSD's bspatch behind one JNI function, and bzip2 1.0.8's decompression: blocksort.c and compress.c stay out, and with
-# every symbol but the JNI function hidden the linker drops bzlib.c's compression functions that would call them.
+# bzip2's blocksort.c and compress.c stay out. With every symbol but the JNI function hidden,
+# the linker drops the compression functions in bzlib.c that would call them.
 add_library(hotcodepush_bspatch SHARED
     bspatch/bspatch.c
     bspatch_jni.c

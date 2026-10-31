@@ -19,7 +19,7 @@ data class DeviceFacts(
     val isDebugBuild: Boolean,
 ) {
     companion object {
-        /** The running binary's facts: its version and build from the package manager, the OS version, and a debug build when the app is debuggable. */
+        /** Reads the running binary's facts: version and build from the package manager, the OS version, and whether the app is debuggable. */
         fun current(context: Context, sdkVersion: String): DeviceFacts {
             val info = context.packageManager.getPackageInfo(context.packageName, 0)
             val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
@@ -129,6 +129,7 @@ object AttributeRules {
 
     fun isValidKey(key: String): Boolean = keyPattern.matches(key)
 
-    /** At most 256 code points, counted neither in UTF-16 units nor in the characters a reader sees, and no control character, Unicode's `Cc`. */
+    /** At most 256 code points, not UTF-16 units or visible characters, and no control character. */
+
     fun isValidValue(value: String): Boolean = value.codePointCount(0, value.length) <= VALUE_MAX_CODE_POINTS && value.none { it.isControlCharacter() }
 }

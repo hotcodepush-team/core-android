@@ -10,10 +10,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
-/**
- * A build whose build step ran without a token or offline carries no channel: it checks nothing on its own, answers an explicit
- * call `failed` with `channel_unknown`, requests nothing and reports nothing until a channel is set at runtime.
- */
 class MissingChannelTest {
     private val v2Content = "<html>v2</html>".toByteArray()
     private val failed = SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, Core.MISSING_CHANNEL_MESSAGE)
@@ -21,7 +17,7 @@ class MissingChannelTest {
         List(cases.length()) { cases.getJSONObject(it) }
     }
 
-    /** Automatic checks on, so a failure a test sees is the explicit call's own. */
+    // Automatic checks are on, so a failure a test sees proves the explicit call alone failed.
     private fun harness() = Harness(Fixture.configuration(channelId = null, checkStrategy = CheckStrategy.AUTO))
 
     @Test
@@ -235,20 +231,17 @@ class MissingChannelTest {
         assertTrue(DebugReport.text(harness.core.debugSnapshot()).contains("Channel\n  Channel id: ${Fixture.CHANNEL_ID}\n  Name: none\n  Source: runtime\n"))
     }
 
-    /** A build without a channel whose events endpoint acknowledges, and a release on the channel it does not know. */
     private fun harnessWithARelease() = harness().apply {
         acknowledgeEvents()
         publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
     }
 
-    /** The explicit call's failure is the only one: one `updateFailed` with the manual trigger and today's message, and no request. */
     private fun assertFailedExplicitly(harness: Harness) {
         assertEquals(listOf(UpdateFailedEvent(null, FailedReason.CHANNEL_UNKNOWN, Core.MISSING_CHANNEL_MESSAGE, SyncTrigger.MANUAL)), harness.listener.failed)
         assertTrue(harness.http.requests.isEmpty())
         assertTrue(harness.http.posts.isEmpty())
     }
 
-    /** A cycle that is not started leaves no trace: no check, no log entry, no event, no request and no interval timer. */
     private fun assertNoCheckStarted(harness: Harness) {
         val state = StateStore(harness.store)
         assertNull(state.lastCheck)

@@ -32,7 +32,6 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.nio.file.Files
 
-/** What every SDK on Android reads from the app's context through the core: the device facts, the resource file, the store, the embedded bundle and the network. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ContextWiringTest {
@@ -144,7 +143,6 @@ class ContextWiringTest {
         scope.cancel()
     }
 
-    /** The app's package as the package manager reports it: version 2.4.1, build 57, debuggable or not. */
     private fun contextWithPackage(isDebuggable: Boolean): Context {
         val packageInfo = PackageInfo().apply {
             versionName = "2.4.1"
@@ -159,7 +157,6 @@ class ContextWiringTest {
         }
     }
 
-    /** The APK's assets holding exactly these files; any other path is missing, as `AssetManager.open` reports it. */
     private fun contextWithAssets(files: Map<String, ByteArray>): Context {
         val assets = mock(AssetManager::class.java)
         `when`(assets.open(anyString())).thenAnswer { call -> files[call.getArgument(0)]?.inputStream() ?: throw FileNotFoundException(call.getArgument(0)) }

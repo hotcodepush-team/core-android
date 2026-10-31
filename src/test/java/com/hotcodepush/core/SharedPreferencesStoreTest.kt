@@ -7,10 +7,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.mock
 
-/**
- * The core's state as the store writes it: committed before the put returns, so a crash right after it finds the value on disk.
- * Over a recorded editor, since Robolectric's own `apply()` waits for the disk and so cannot tell the two writes apart.
- */
+// Robolectric's `apply()` waits for the disk like `commit()`, so a recorded editor tells the two writes apart.
 class SharedPreferencesStoreTest {
     private val editor = mock(SharedPreferences.Editor::class.java, RETURNS_SELF)
     private val store = SharedPreferencesStore(mock(SharedPreferences::class.java).also { `when`(it.edit()).thenReturn(editor) })

@@ -8,10 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * The signature fixtures against a device's own `java.security` providers, which the JVM tests cannot stand in for:
- * every Android version imports the SPKI key a resource file carries and verifies the suite case for case.
- */
+// Each Android version brings its own `java.security` providers, which the JVM tests cannot stand in for.
 @RunWith(AndroidJUnit4::class)
 class SignaturesOnDeviceTest {
     private val manifests: List<JSONObject> = InstrumentationRegistry.getInstrumentation().context.assets.open("signatures.json").bufferedReader().use { reader ->
