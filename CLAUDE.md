@@ -3,7 +3,7 @@
 `com.hotcodepush:core-android`, the HotCodePush update-protocol client for Android: the wire types, the evaluator, the downloader, the signature check, the patch application, the file store, the `SharedPreferences` state store, the main-looper scheduler, the state machine and the debug screen every HotCodePush SDK on Android runs, held to the fixture suite of `@hotcodepush/protocol`.
 `@hotcodepush/protocol` (`protocol`) and the Swift package `HotCodePushCore` (`core-ios`) implement the same functions and types; a change to one is a change to the other two.
 The SDKs consume it at a pinned commit until its publish decision — `com.hotcodepush:core-android:<full sha>` from this repository's `maven` branch, `https://raw.githubusercontent.com/hotcodepush-team/core-android/maven/`; it is not the supported API, apps use the SDK for their framework.
-Stack: Kotlin 2.2 on the Android Gradle plugin, minSdk 23, OkHttp with Okio and coroutines, C for bspatch and bzip2's decompression (bzip2 1.0.8, unmodified), JUnit 4, Robolectric and Mockito on the JVM, Java 21, Node 24 for the fixtures.
+Stack: Kotlin 2.2 on the Android Gradle plugin, minSdk 23, OkHttp with Okio and coroutines, C for bspatch and bzip2's decompression (bzip2 1.0.8, unmodified), JUnit 4, Robolectric and Mockito on the JVM, ktlint in the `android_studio` style, Java 21, Node 24 for the fixtures.
 CMake builds the C with the plugin's default NDK for its four ABIs, the two 64-bit ones aligned for 16 KB pages.
 
 The plan is the private `handbook` repo, checked out beside this one: `../handbook/docs/`.
@@ -21,7 +21,8 @@ src/test/java/com/hotcodepush/core       JUnit on the JVM; FixtureTest and Signi
 src/sharedTest/java                      the download fakes and the pack writer the JVM tests and the on-device tests share
 src/androidTest/java/com/hotcodepush/core   the tests that need a device: the signature fixtures against the device's own `java.security` providers, bspatch on its hostile patches and the fixtures' patch cases through the native library of the device's ABI, the fixtures packaged as assets
 src/androidTest/assets/bspatch           what BspatchTest reads: the committed inputs old.bin, new.bin and valid.patch, the patch written once by bsdiff 4.3, and the hostile patches src/androidTest/make-bspatch-fixtures.sh writes with bash, xxd and bzip2
-build.gradle                             the library module and its Maven publication, versioned by the commit's full sha
+build.gradle                             the library module and its Maven publication, versioned by the commit's full sha, and the pinned ktlint
+.editorconfig                            ktlint's code style, `android_studio`
 THIRD-PARTY-NOTICES                      the notices of bspatch, BSD 2-clause, and of bzip2, under its own licence
 package.json                             private, only the pinned @hotcodepush/protocol the fixtures come from
 ```
@@ -31,6 +32,7 @@ package.json                             private, only the pinned @hotcodepush/p
 | Command                               | Does                                                               |
 | ------------------------------------- | ------------------------------------------------------------------ |
 | `npm ci`                              | installs the protocol package the fixtures are read from           |
+| `npm run fmt`                         | `./gradlew ktlintFormat`                                           |
 | `npm run lint`                        | `./gradlew lint`                                                   |
 | `npm test`                            | `./gradlew test`                                                   |
 | `npm run verify`                      | the lint, the tests and the release build                          |

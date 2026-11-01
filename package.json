@@ -5,6 +5,7 @@
   "description": "The protocol fixtures the Android library's tests read; nothing of this file ships",
   "license": "MIT",
   "scripts": {
+    "fmt": "./gradlew ktlintFormat --console=plain",
     "lint": "./gradlew lint --console=plain",
     "test": "./gradlew test --console=plain",
     "verify": "./gradlew lint test assembleRelease --console=plain"

@@ -47,6 +47,7 @@ nvm use
 npm ci                                 # the protocol fixtures the tests read
 npm test                               # ./gradlew test
 npm run lint                           # ./gradlew lint
+npm run fmt                            # ./gradlew ktlintFormat
 npm run verify                         # lint, test and the release build
 ./gradlew connectedDebugAndroidTest    # the on-device tests, on a running emulator
 ./gradlew publishToMavenLocal          # the publication, versioned by the full sha of HEAD
