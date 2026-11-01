@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "create-pr": {
+      "source": "hotcodepush-team/.github",
+      "sourceType": "github",
+      "skillPath": "skills/create-pr/SKILL.md",
+      "computedHash": "fed3f0f55b22c0a232d58202da7a3d676ae443eac2d4645fe8f872984ba9d97a"
+    },
+    "resolve-issue": {
+      "source": "hotcodepush-team/.github",
+      "sourceType": "github",
+      "skillPath": "skills/resolve-issue/SKILL.md",
+      "computedHash": "3b89ea0022b76677fde3c57157c431ea4068a4ff3add1f2e83206647c9d6489d"
+    },
+    "review-pr": {
+      "source": "hotcodepush-team/.github",
+      "sourceType": "github",
+      "skillPath": "skills/review-pr/SKILL.md",
+      "computedHash": "2994585ab0416265d72d33a411882106ac94c7466b7b7fc6ef17cf0615b7322e"
+    },
+    "triage-issue": {
+      "source": "hotcodepush-team/.github",
+      "sourceType": "github",
+      "skillPath": "skills/triage-issue/SKILL.md",
+      "computedHash": "c01bbdf5d2b3c06d37327222622c4d15cc8afa2152ef1fdcd192ba82cab62949"
+    },
+    "validate-issue": {
+      "source": "hotcodepush-team/.github",
+      "sourceType": "github",
+      "skillPath": "skills/validate-issue/SKILL.md",
+      "computedHash": "d130ba4e40d5e00523b5c099d15d71170a6923a1d5bb6bb5233a9747a81b9667"
+    }
+  }
+}
