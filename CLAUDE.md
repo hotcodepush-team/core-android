@@ -91,6 +91,8 @@ The fixtures and `catalog.json` move with `package.json`'s pin: a protocol chang
 - One thing per function, its name saying which; never a function that both decides something and phrases the message about it.
 - Booleans carry `is` or `has`; a state with a moment is a timestamp such as `pausedAt`, never a boolean.
 - Test titles read `should <verb> …`, lowercase, conditions starting with `when`.
+- A test earns its place by catching a bug nothing else catches, at the lowest layer that can prove it; one test per branch, never per value, and nothing for what the types, the framework or a library guarantee.
+- A new test names the behaviour or the bug it proves; if deleting the production code would not fail it, it does not get in.
 - Fixtures and examples carry invented data only.
 - Prose names the feature over-the-air (OTA) updates: "over-the-air (OTA) update" on the first mention of a surface, "OTA update" after it, and the appositive "HotCodePush, the over-the-air (OTA) update platform for React Native, Expo, Capacitor and Cordova". "Live update" is the Capacitor community's word: it stays in the `capacitor-live-updates` package name and in a list of alternative names for search, never as HotCodePush's own term.
 - Wherever the supported frameworks are listed, the order is React Native, Expo, Capacitor and Cordova, the larger communities first.
