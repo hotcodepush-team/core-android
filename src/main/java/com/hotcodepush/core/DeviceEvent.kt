@@ -46,7 +46,7 @@ data class DeviceEvent(
             releaseId = json.optNullableString("releaseId"),
             status = json.optNullableString("status"),
             reason = json.optNullableString("reason"),
-            conditionType = json.optNullableString("conditionType")?.let { wire -> ConditionType.entries.firstOrNull { it.wire == wire } },
+            conditionType = ConditionType.fromWire(json.optNullableString("conditionType")),
             downloadSizeBytes = if (json.isNull("downloadSizeBytes")) null else json.optLong("downloadSizeBytes"),
             packKind = json.optNullableString("packKind"),
             detail = json.optNullableString("detail"),
@@ -89,7 +89,7 @@ data class DeviceReport(
             binaryBuild = json.getString("binaryBuild"),
             binaryVersion = json.getString("binaryVersion"),
             channelId = json.getString("channelId"),
-            channelSource = ChannelSource.entries.first { it.wire == json.getString("channelSource") },
+            channelSource = json.getWireEnum("channelSource", ChannelSource),
             embeddedBundleId = json.optNullableString("embeddedBundleId"),
             fingerprint = json.optNullableString("fingerprint"),
             osVersion = json.getString("osVersion"),
@@ -149,7 +149,7 @@ internal sealed class BatchAnswer {
     companion object {
         fun of(response: HttpResponse?): BatchAnswer = when (val status = response?.status) {
             null -> Failed(null)
-            202 -> runCatching { DeviceEventsResponse.fromJson(JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()?.let { Acknowledged(it.reportedAt) } ?: Failed(status)
+            202 -> runCatching { DeviceEventsResponse.fromJson(parseJsonObject(response.body)) }.getOrNull()?.let { Acknowledged(it.reportedAt) } ?: Failed(status)
             408, 429 -> Failed(status)
             in 400..499 -> Refused(status)
             else -> Failed(status)

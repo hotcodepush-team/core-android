@@ -25,7 +25,7 @@ class MissingEmbeddedBundleTest {
     }
 
     @Test
-    fun shouldReadAResourceFileWhoseEmbeddedBundleManifestIsNullAndRefuseOneWithoutTheKey() {
+    fun shouldReadAResourceFileWithANullEmbeddedBundleManifestAndRefuseOneWithoutTheKey() {
         val resourceFile = withoutEmbeddedBundle.getJSONObject("resourceFile")
         val configuration = Configuration.fromJson(resourceFile)
         assertNull(configuration.embeddedBundleManifest)

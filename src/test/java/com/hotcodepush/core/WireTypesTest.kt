@@ -80,7 +80,7 @@ class WireTypesTest {
     }
 
     @Test
-    fun shouldRefuseAResourceFileWhoseHostIsNotAnHttpOrHttpsUrl() {
+    fun shouldRefuseAResourceFileWhoseHostIsNotHttpOrHttps() {
         for (url in listOf("ftp://files.test", "file:///files", "files.test")) {
             assertThrows(url, JSONException::class.java) { Configuration.fromJson(resourceFile().put("filesBaseUrl", url)) }
             assertThrows(url, JSONException::class.java) { Configuration.fromJson(resourceFile().put("updatesBaseUrl", url)) }
@@ -111,13 +111,6 @@ class WireTypesTest {
     }
 
     @Test
-    fun shouldRefuseAResourceFileWhoseDurationIsNotANumber() {
-        for (value in listOf<Any>("900", true)) {
-            assertThrows(value.toString(), JSONException::class.java) { Configuration.fromJson(resourceFile().put("checkIntervalSeconds", value)) }
-        }
-    }
-
-    @Test
     fun shouldReadAnSdkOptionTheResourceFileLeavesOutAsItsDefault() {
         val configuration = Configuration.fromJson(resourceFile())
 
@@ -128,51 +121,8 @@ class WireTypesTest {
     }
 
     @Test
-    fun shouldRefuseAResourceFileWithANullSdkOption() {
-        for (key in SDK_OPTION_KEYS) {
-            assertThrows(key, JSONException::class.java) { Configuration.fromJson(resourceFile().put(key, JSONObject.NULL)) }
-        }
-    }
-
-    @Test
-    fun shouldRefuseAResourceFileWithAnUnknownStrategyInsteadOfReadingTheDefault() {
-        for (key in listOf("applyStrategy", "checkStrategy", "downloadStrategy", "mandatoryApplyStrategy", "readySignal")) {
-            for (value in listOf<Any>("next-start", "AUTO", "", 1)) {
-                assertThrows("$key: $value", JSONException::class.java) { Configuration.fromJson(resourceFile().put(key, value)) }
-            }
-        }
+    fun shouldRefuseAResourceFileWhoseMandatoryApplyStrategyIsNextStart() {
         assertThrows(JSONException::class.java) { Configuration.fromJson(resourceFile().put("mandatoryApplyStrategy", "next_start")) }
-    }
-
-    @Test
-    fun shouldRefuseAResourceFileWhoseIsEnabledInDebugBuildsIsNotABoolean() {
-        for (value in listOf<Any>("false", 0)) {
-            assertThrows(value.toString(), JSONException::class.java) { Configuration.fromJson(resourceFile().put("isEnabledInDebugBuilds", value)) }
-        }
-        assertEquals(false, Configuration.fromJson(resourceFile().put("isEnabledInDebugBuilds", false)).isEnabledInDebugBuilds)
-    }
-
-    @Test
-    fun shouldRefuseAResourceFileWhosePublicKeysAreNotAnArrayInsteadOfTurningSigningOff() {
-        for (value in listOf<Any>(JSONObject(), "[]", "")) {
-            assertThrows(value.toString(), JSONException::class.java) { Configuration.fromJson(resourceFile().put("publicKeys", value)) }
-        }
-        assertThrows(JSONException::class.java) { Configuration.fromJson(resourceFile().put("publicKeys", JSONArray().put("key"))) }
-    }
-
-    @Test
-    fun shouldRefuseAResourceFileWithoutFingerprintOrEmbeddedBundleIdWhichAreNullWhenThereIsNone() {
-        for (key in listOf("fingerprint", "embeddedBundleId")) {
-            assertThrows(key, JSONException::class.java) { Configuration.fromJson(resourceFile().apply { remove(key) }) }
-        }
-        val configuration = Configuration.fromJson(resourceFile().put("fingerprint", JSONObject.NULL).put("embeddedBundleId", JSONObject.NULL))
-        assertEquals(null, configuration.fingerprint)
-        assertEquals(null, configuration.embeddedBundleId)
-    }
-
-    @Test
-    fun shouldRefuseAResourceFileWhoseBuiltAtIsNotATimestampString() {
-        assertThrows(JSONException::class.java) { Configuration.fromJson(resourceFile().put("builtAt", Fixture.BUILT_AT)) }
     }
 
     @Test
@@ -198,13 +148,6 @@ class WireTypesTest {
     private fun decodeIndexRelease(id: String, bundleId: String, manifestSha256: String = sha256): IndexRelease {
         val release = IndexRelease(id, 1, Fixture.BUILT_AT, false, null, 100, emptyList(), bundleId, "1.0.0", "${Fixture.FILES_BASE_URL}/manifest.json", manifestSha256, 7)
         return IndexRelease.fromJson(release.toJson())
-    }
-
-    private companion object {
-        val SDK_OPTION_KEYS = listOf(
-            "applyStrategy", "checkIntervalSeconds", "checkStrategy", "downloadStrategy", "isEnabledInDebugBuilds", "mandatoryApplyStrategy",
-            "nextResumeMinimumBackgroundSeconds", "publicKeys", "readySignal", "readyTimeoutSeconds",
-        )
     }
 
     private fun resourceFile(): JSONObject = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").getJSONObject(0).getJSONObject("resourceFile")

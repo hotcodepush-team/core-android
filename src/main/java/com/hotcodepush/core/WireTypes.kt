@@ -102,8 +102,10 @@ data class IndexRelease(
     }
 }
 
-enum class ConditionType(val wire: String) {
-    BINARY("binary"), FINGERPRINT("fingerprint"), OS("os"), ATTRIBUTE("attribute"), DEVICE("device")
+enum class ConditionType(override val wire: String) : WireEnum {
+    BINARY("binary"), FINGERPRINT("fingerprint"), OS("os"), ATTRIBUTE("attribute"), DEVICE("device");
+
+    companion object : WireEnumCompanion<ConditionType>({ entries })
 }
 
 /** A condition of an index entry; a type this SDK does not know is kept and fails closed. */
@@ -162,7 +164,7 @@ data class ChannelsIndex(val schema: Int, val channels: List<Entry>) {
     }
 }
 
-/** A signature as the envelope carries it: the signing key's fingerprint and the self-describing `<scheme>:<base64>` value. */
+/** A signature as the envelope carries it: the key id of the signing key and the self-describing `<scheme>:<base64>` value. */
 data class Signature(val keyId: String, val value: String) {
     fun toJson(): JSONObject = JSONObject().put("keyId", keyId).put("value", value)
 
@@ -235,7 +237,7 @@ data class BundleManifest(
     val bundleVersion: String,
     val files: List<File>,
     val fingerprint: String? = null,
-    /** The fingerprint of the key that signed the manifest, `null` when unsigned. */
+    /** The key id of the signing key, `null` when unsigned. */
     val keyId: String? = null,
     val platforms: List<String>,
 ) {
@@ -327,14 +329,29 @@ internal fun JSONObject.getWireString(key: String, rule: WireRule? = null): Stri
     return value
 }
 
+internal fun parseJsonObject(body: ByteArray): JSONObject = JSONObject(String(body, Charsets.UTF_8))
+
+/** An enum whose values the wire spells as `wire`. */
+interface WireEnum {
+    val wire: String
+}
+
+/** The companion of a [WireEnum]: it reads a value from its wire spelling. */
+abstract class WireEnumCompanion<T : WireEnum>(private val entries: () -> List<T>) {
+    /** `null` for a spelling this SDK does not know. */
+    fun fromWire(value: String?): T? = entries().firstOrNull { it.wire == value }
+}
+
+internal fun <T : WireEnum> JSONObject.getWireEnum(key: String, companion: WireEnumCompanion<T>): T {
+    val value = getWireString(key)
+    return companion.fromWire(value) ?: throw JSONException("Not a valid $key: $value")
+}
+
 // The wire carries every field, so an absent key is a broken document, never an empty value.
 internal fun JSONObject.getNullableWireString(key: String, rule: WireRule? = null): String? {
     if (!has(key)) throw JSONException("$key is absent; the wire carries it as null when there is none")
     return if (isNull(key)) null else getWireString(key, rule)
 }
-
-// For a key the format may leave out, such as the resource file's hosts in a production build.
-internal fun JSONObject.getOptionalWireString(key: String, rule: WireRule? = null): String? = if (isNull(key)) null else getWireString(key, rule)
 
 internal fun JSONObject.getNullableObject(key: String): JSONObject? {
     if (!has(key)) throw JSONException("$key is absent; the wire carries it as null when there is none")
@@ -362,8 +379,6 @@ internal fun JSONObject.getNullableTimestamp(key: String): Long? = getNullableWi
 private fun parseTimestamp(value: String): Long = runCatching { Iso8601.parse(value) }.getOrElse { throw JSONException("Not an ISO 8601 timestamp in UTC: $value") }
 
 internal fun JSONObject.optNullableString(key: String): String? = if (isNull(key)) null else optString(key)
-
-internal fun JSONArray?.toStringList(): List<String> = this?.let { array -> List(array.length()) { array.getString(it) } } ?: emptyList()
 
 internal fun JSONArray.toWireStringList(rule: WireRule? = null): List<String> = List(length()) { index ->
     val value = get(index) as? String ?: throw JSONException("An entry is not a string")

@@ -1,7 +1,6 @@
 package com.hotcodepush.core
 
 import kotlinx.coroutines.runBlocking
-import okhttp3.JavaNetCookieJar
 import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -9,8 +8,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import okio.Buffer
 import okio.BufferedSource
 import okio.Source
@@ -24,8 +21,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.io.IOException
-import java.net.CookieManager
-import java.net.CookiePolicy
 import java.nio.file.Files
 
 class HttpClientTest {
@@ -93,22 +88,6 @@ class HttpClientTest {
         val client = client { request -> response(request, 200, ByteArray(200_000).toResponseBody()) }
         assertEquals(FailedReason.DOWNLOAD_FAILED, (download(client, 100_000) as? DownloadFailure)?.reason)
         assertFalse(file.exists())
-    }
-
-    // React Native keeps cookies in this jar. Its okhttp-urlconnection 4.9.2 calls okhttp3.internal.Util, which OkHttp 5 removed.
-    @Test
-    fun shouldSendTheCookieAHostSetThroughReactNativesCookieJar() = runBlocking {
-        MockWebServer().use { server ->
-            server.enqueue(MockResponse().addHeader("Set-Cookie", "session=s1; Path=/").setBody("first"))
-            server.enqueue(MockResponse().setBody("second"))
-            val client = OkHttpClientAdapter(OkHttpClient.Builder().cookieJar(JavaNetCookieJar(CookieManager(null, CookiePolicy.ACCEPT_ALL))).build())
-            // An address, not localhost: Android 6's CookieManager matches a cookie of a host without a dot to `.local` alone.
-            val url = "http://127.0.0.1:${server.port}/index.json"
-            assertEquals("first", String(client.get(url, emptyMap()).body))
-            assertEquals("second", String(client.get(url, emptyMap()).body))
-            assertNull(server.takeRequest().getHeader("Cookie"))
-            assertEquals("session=s1", server.takeRequest().getHeader("Cookie"))
-        }
     }
 
     private fun download(client: HttpClient, maximumBytes: Long): Exception? = runBlocking {

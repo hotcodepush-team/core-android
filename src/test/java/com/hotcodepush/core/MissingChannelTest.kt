@@ -36,7 +36,7 @@ class MissingChannelTest {
     }
 
     @Test
-    fun shouldFailAnExplicitSyncWithUnknownChannelRequestNothingAndFireUpdateFailedWithTheManualTriggerWhenTheDeviceHasNoChannel() = runBlocking {
+    fun shouldFailASyncWithUnknownChannelAndRequestNothingWhenTheBuildCarriesNoChannel() = runBlocking {
         val harness = harnessWithARelease()
         harness.core.handleAppStart()
         assertEquals(failed, harness.core.sync(SyncTrigger.MANUAL))
@@ -45,7 +45,7 @@ class MissingChannelTest {
     }
 
     @Test
-    fun shouldFailAnExplicitCheckWithUnknownChannelRequestNothingAndFireUpdateFailedWithTheManualTriggerWhenTheDeviceHasNoChannel() = runBlocking {
+    fun shouldFailACheckWithUnknownChannelAndRequestNothingWhenTheBuildCarriesNoChannel() = runBlocking {
         val harness = harnessWithARelease()
         harness.core.handleAppStart()
         assertEquals(failed, harness.core.checkForUpdate())
@@ -146,7 +146,7 @@ class MissingChannelTest {
     }
 
     @Test
-    fun shouldSyncOnAChannelSetAtRuntimeByIdAndReportIt() = runBlocking {
+    fun shouldUpdateAndReportOnceAChannelIsSetAtRuntimeOnABuildWithoutOne() = runBlocking {
         val harness = harness()
         harness.acknowledgeEvents()
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
@@ -170,7 +170,7 @@ class MissingChannelTest {
     }
 
     @Test
-    fun shouldAnswerUnknownChannelAgainOnceTheRuntimeChoiceIsCleared() = runBlocking {
+    fun shouldAnswerUnknownChannelAgainWhenTheRuntimeChoiceIsCleared() = runBlocking {
         val harness = harness()
         harness.publish(emptyList(), 1)
         harness.core.handleAppStart()
@@ -220,7 +220,7 @@ class MissingChannelTest {
     }
 
     @Test
-    fun shouldSayInTheDebugReportThatTheBuildHasNoChannelAndWhy() = runBlocking {
+    fun shouldSayOnTheDebugScreenThatTheBuildHasNoChannelAndWhy() = runBlocking {
         val harness = harness()
         harness.core.handleAppStart()
         harness.core.checkForUpdate()

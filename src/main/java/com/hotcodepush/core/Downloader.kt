@@ -78,7 +78,7 @@ class Downloader(
         } catch (exception: Exception) {
             throw DownloadFailure.DownloadFailed("The manifest could not be fetched: ${exception.message}")
         }
-        val envelope = runCatching { ManifestEnvelope.fromJson(org.json.JSONObject(String(body, Charsets.UTF_8))) }.getOrNull()
+        val envelope = runCatching { ManifestEnvelope.fromJson(parseJsonObject(body)) }.getOrNull()
         val manifest = envelope?.let { runCatching { it.decodeManifest() }.getOrNull() } ?: throw DownloadFailure.ManifestInvalid("The manifest could not be parsed")
         verifyManifestSignature(envelope, target.manifestSha256)
         if (envelope.bundleId != target.bundleId) throw DownloadFailure.ManifestInvalid("The manifest names another bundle")
@@ -96,15 +96,16 @@ class Downloader(
         if (Hashing.sha256Hex(envelope.manifest) != expectedSha256) throw DownloadFailure.ManifestInvalid("The manifest's hash does not match the index")
         if (configuration.publicKeys.isEmpty()) return
         val refusal = SignatureVerifier.verifyManifestSignature(envelope.manifest, envelope.signature, configuration.publicKeys) ?: return
-        throw DownloadFailure.SignatureInvalid(resolveSignatureRefusalMessage(refusal, envelope.signature))
+        throw DownloadFailure.SignatureInvalid(resolveSignatureRefusalMessage(refusal, keyId = envelope.signature?.keyId.orEmpty()))
     }
 
-    private fun resolveSignatureRefusalMessage(refusal: SignatureRefusal, signature: Signature?): String = when (refusal) {
+    private fun resolveSignatureRefusalMessage(refusal: SignatureRefusal, keyId: String): String = when (refusal) {
         SignatureRefusal.UNSIGNED -> "The manifest is unsigned and the app accepts only signed manifests"
-        SignatureRefusal.UNKNOWN_SCHEME -> "The signature's scheme is not ${SignatureVerifier.SCHEME}, the one this SDK accepts"
-        SignatureRefusal.UNKNOWN_KEY -> "The signature names the key ${signature?.keyId}, which the app does not hold"
-        SignatureRefusal.UNUSABLE_KEY -> "The key ${signature?.keyId} the app holds is not an RSA key of ${SignatureVerifier.KEY_BITS_MINIMUM} bits or more"
-        SignatureRefusal.INVALID -> "The manifest's signature does not verify under the key it names"
+        SignatureRefusal.UNKNOWN_SCHEME -> "The manifest's signature is not of the scheme ${SignatureVerifier.SCHEME}"
+        SignatureRefusal.UNLISTED_KEY -> "The manifest is signed by a key the app does not list: $keyId"
+        SignatureRefusal.UNIMPORTABLE_KEY -> "The app's configuration is wrong: the system cannot import the public key $keyId of the resource file as an RSA key"
+        SignatureRefusal.WEAK_KEY -> "The public key $keyId is smaller than ${SignatureVerifier.MINIMUM_KEY_BITS} bits"
+        SignatureRefusal.MISMATCH -> "The manifest's signature does not verify under the public key $keyId"
     }
 
     internal fun resolveMissingFiles(manifest: BundleManifest): List<BundleManifest.File> = manifest.files.filter { !files.hasFile(it.sha256) && !embedded.has(it.sha256) }
@@ -214,7 +215,7 @@ class Downloader(
     }
 
     internal fun resolvePinnedUrl(url: String): String {
-        if (!configuration.isOnConfiguredHost(url)) throw DownloadFailure.ManifestInvalid("$url is not on a configured host")
+        if (!configuration.isUrlOnConfiguredHost(url)) throw DownloadFailure.ManifestInvalid("$url is not on a configured host")
         return url
     }
 

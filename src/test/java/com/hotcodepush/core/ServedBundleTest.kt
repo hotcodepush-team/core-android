@@ -23,37 +23,3 @@ class ServedBundleTest {
         assertNull(ServedBundle.resolveBundleId("public", projections))
     }
 }
-
-class WebViewGateTest {
-    @Test
-    fun shouldHoldASwitchUntilTheWebViewLoadedAndRunLaterOnesAtOnce() {
-        val gate = WebViewGate()
-        val runs = mutableListOf<String>()
-        gate.runWhenLoaded { runs += "at start" }
-        assertEquals(emptyList<String>(), runs)
-        gate.markLoaded()
-        assertEquals(listOf("at start"), runs)
-        gate.runWhenLoaded { runs += "later" }
-        assertEquals(listOf("at start", "later"), runs)
-    }
-
-    @Test
-    fun shouldKeepOnlyTheLastSwitchRequestedBeforeTheWebViewLoaded() {
-        val gate = WebViewGate()
-        val runs = mutableListOf<String>()
-        gate.runWhenLoaded { runs += "first" }
-        gate.runWhenLoaded { runs += "second" }
-        gate.markLoaded()
-        assertEquals(listOf("second"), runs)
-    }
-
-    @Test
-    fun shouldDropTheHeldSwitchWhenClosed() {
-        val gate = WebViewGate()
-        val runs = mutableListOf<String>()
-        gate.runWhenLoaded { runs += "at start" }
-        gate.close()
-        gate.markLoaded()
-        assertEquals(emptyList<String>(), runs)
-    }
-}

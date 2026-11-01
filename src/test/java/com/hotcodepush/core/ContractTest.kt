@@ -52,7 +52,7 @@ class ContractTest {
     }
 
     @Test
-    fun shouldCarryTheShareOfThePackThatArrivedAsProgress() {
+    fun shouldCarryTheShareOfTheBytesThatArrivedAsTheDownloadsProgress() {
         val json = DownloadProgressEvent(downloadSizeBytes = 4, progressBytes = 1, releaseId = "r1").toJson()
         assertEquals(4L, json.getLong("downloadSizeBytes"))
         assertEquals(0.25, json.getDouble("progress"), 0.0)

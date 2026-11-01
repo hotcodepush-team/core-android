@@ -16,7 +16,6 @@ interface KeyValueStore {
  * Commits every write before it returns. `apply()` reaches the disk about 100 ms later, and a crash in that window would lose
  * the state the next start rolls back from.
  */
-
 @SuppressLint("ApplySharedPref")
 class SharedPreferencesStore(private val preferences: SharedPreferences) : KeyValueStore {
     /** The app's default `SharedPreferences`, the file `PreferenceManager.getDefaultSharedPreferences` names, without the dependency. */

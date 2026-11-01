@@ -55,7 +55,7 @@ class DownloaderTest {
     }
 
     @Test
-    fun shouldRefuseAManifestOfAnotherAppBeforeAByteOfThePackArrives() {
+    fun shouldRefuseAManifestOfAnotherAppBeforeItFetchesItsPack() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
         assertEquals(FailedReason.MANIFEST_INVALID, harness.downloadFailure(harness.publish(bundle.manifest.copy(appId = "another-app"), bundle.pack))?.reason)
@@ -63,7 +63,7 @@ class DownloaderTest {
     }
 
     @Test
-    fun shouldRefuseAManifestThatLeavesOutTheDevicesPlatformBeforeAByteOfThePackArrives() {
+    fun shouldRefuseAManifestThatLeavesOutTheDevicesPlatform() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
         assertEquals(FailedReason.MANIFEST_INVALID, harness.downloadFailure(harness.publish(bundle.manifest.copy(platforms = listOf("ios")), bundle.pack))?.reason)
@@ -191,7 +191,7 @@ class DeltaTest {
     }
 
     @Test
-    fun shouldFailTheDownloadWhenTheDeltaTheEnvelopeListsRedirects() {
+    fun shouldFailTheDownloadWhenTheDeltaTheEnvelopeListsAnswersARedirect() {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to bundle.pack))
         harness.http.stub(listedUrl, status = 302, headers = mapOf("Location" to DownloaderHarness.PACK_URL), body = ByteArray(0))
@@ -238,7 +238,7 @@ class DeltaTest {
     }
 
     @Test
-    fun shouldTakeTheFullPackWithoutABaseWhenASingleFileIsMissing() {
+    fun shouldTakeTheFullPackWhenTheDeviceHoldsNoBaseAndLacksASingleFile() {
         val harness = DownloaderHarness()
         val single = DownloaderHarness.bundle(mapOf("index.html" to indexHtml))
         assertEquals(PackKind.FULL, harness.download(harness.publish(single.manifest, single.pack), null).packKind)
@@ -252,7 +252,7 @@ class FetchRetryTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun shouldProceedWithTheDownloadWhenTheManifestDropsTwiceAndArrivesOnTheThirdAttempt() = runTest {
+    fun shouldDownloadWhenTheManifestFetchDropsTwiceAndTheThirdAttemptArrives() = runTest {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, bundle.pack)
         harness.http.failNextFetches(DownloaderHarness.MANIFEST_URL, IOException("connection reset"), IOException("connection reset"))
@@ -262,7 +262,7 @@ class FetchRetryTest {
     }
 
     @Test
-    fun shouldStoreAFileThatDropsTwiceAndArrivesOnTheThirdAttempt() = runTest {
+    fun shouldStoreASingleFileWhenItsDownloadDropsTwiceAndTheThirdAttemptArrives() = runTest {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, PackWriter.pack(emptyList()))
         val sha256 = Hashing.sha256Hex(indexHtml)

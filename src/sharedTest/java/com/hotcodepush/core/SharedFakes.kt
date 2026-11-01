@@ -2,6 +2,7 @@ package com.hotcodepush.core
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
@@ -100,7 +101,7 @@ object Fixture {
             .put("readySignal", readySignal.wire)
             .put("readyTimeoutSeconds", 10)
             .put("isEnabledInDebugBuilds", isEnabledInDebugBuilds)
-            .put("publicKeys", org.json.JSONArray(publicKeys.map { JSONObject().put("der", it.der).put("keyId", it.keyId) }))
+            .put("publicKeys", JSONArray(publicKeys.map { JSONObject().put("der", it.der).put("keyId", it.keyId) }))
             .put("builtAt", Iso8601.format(builtAt))
             .put("fingerprint", fingerprint ?: JSONObject.NULL)
             .put("embeddedBundleManifest", if (hasEmbeddedBundle) embeddedManifest().toJson() else JSONObject.NULL)
@@ -176,3 +177,5 @@ class DownloaderHarness(configuration: Configuration = Fixture.configuration()) 
         fun manifest(files: List<BundleManifest.File>) = BundleManifest(appId = Fixture.APP_ID, bundleVersion = "1.2.0", files = files, platforms = listOf("android"))
     }
 }
+
+fun JSONArray?.toStringList(): List<String> = this?.let { array -> List(array.length()) { array.getString(it) } } ?: emptyList()

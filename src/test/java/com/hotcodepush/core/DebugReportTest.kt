@@ -100,7 +100,7 @@ class DebugReportTest {
     }
 
     @Test
-    fun shouldLogTheMomentADownloadedUpdateIsAppliedAtOrThatItWaitsForApplyUpdate() = runBlocking {
+    fun shouldLogTheMomentADownloadedReleaseWaitsFor() = runBlocking {
         for ((applyStrategy, sentence) in listOf(ApplyStrategy.NEXT_START to "applies at next_start", ApplyStrategy.MANUAL to "waits for applyUpdate()")) {
             val harness = Harness(Fixture.configuration(applyStrategy = applyStrategy))
             harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)

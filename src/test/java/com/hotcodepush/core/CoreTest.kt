@@ -79,7 +79,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAnswerTheReleaseBeforeTheStartAsPreviousReleaseOnceAfterASwitchAtTheStart() = runBlocking {
+    fun shouldNameTheReleaseASwitchReplacedAsPreviousReleaseOnce() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
@@ -137,7 +137,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldTakeTheFetchedIndexAfterANewBinaryWhenTheCachedIndexHasAFarFutureSequence() = runBlocking {
+    fun shouldTakeTheFetchedIndexWhenTheBinaryChangedUnderAFarFutureSequence() = runBlocking {
         val harness = Harness()
         harness.publish(emptyList(), 9_999_999_999_999)
         harness.core.handleAppStart()
@@ -285,7 +285,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldIgnoreAnOlderSequenceWhenTheCachedIndexIsYoungerThanADay() = runBlocking {
+    fun shouldIgnoreAnOlderSequenceWhenTheKeptIndexIsYoungerThanADay() = runBlocking {
         val harness = Harness()
         harness.publish(emptyList(), 5)
         harness.core.handleAppStart()
@@ -297,7 +297,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldTakeAnOlderSequenceWhenTheCachedIndexIsOlderThanADay() = runBlocking {
+    fun shouldTakeAnOlderSequenceWhenTheKeptIndexIsOlderThanADay() = runBlocking {
         val harness = Harness()
         harness.publish(emptyList(), 5)
         harness.core.handleAppStart()
@@ -310,7 +310,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldKeepASequenceOfMillisecondsAndIgnoreOneMillisecondOlder() = runBlocking {
+    fun shouldKeepAMillisecondSequenceThroughTheStoreAndCompareIt() = runBlocking {
         val harness = Harness()
         harness.publish(emptyList(), 1_759_900_000_000)
         harness.core.handleAppStart()
@@ -334,7 +334,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAnswerNoReleaseWhenOfflineWithoutACachedIndexWhileAReleaseRuns() = runBlocking {
+    fun shouldAnswerNoReleaseWithDeviceOfflineWhenTheChannelIndexCannotBeFetchedWhileAReleaseRuns() = runBlocking {
         val harness = startOnConfirmedRelease(Fixture.configuration())
         harness.core.setChannel(ChannelChoice.Id("5ab00000-0000-4000-8000-000000000002"))
         harness.http.isOffline = true
@@ -353,7 +353,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAnswerNoReleaseWhenTheChannelIsUnknownWhileAReleaseRuns() = runBlocking {
+    fun shouldAnswerNoReleaseWithChannelUnknownWhenTheChannelsIndexLacksTheNameWhileAReleaseRuns() = runBlocking {
         val harness = startOnConfirmedRelease(Fixture.configuration())
         harness.core.setChannel(ChannelChoice.Name("nowhere"))
         assertEquals(SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, "The channel set at runtime is not in the app's channels index"), harness.core.sync(SyncTrigger.MANUAL))
@@ -384,7 +384,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRefuseATamperedManifestAsInvalid() = runBlocking {
+    fun shouldRefuseATamperedManifest() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -416,7 +416,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRefuseAManifestSignedByAKeyTheAppDoesNotHold() = runBlocking {
+    fun shouldRefuseAManifestSignedByAKeyTheAppDoesNotList() = runBlocking {
         val fixture = SignatureFixtures()
         val harness = Harness(Fixture.configuration(publicKeys = listOf(fixture.devicePublicKey("rsa-4096-b"))))
         val v2 = Fixture.release(1, "b2", v2Content)
@@ -425,12 +425,12 @@ class CoreTest {
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(FailedReason.SIGNATURE_INVALID.wire, result.reason)
-        assertTrue(result.message?.contains("does not hold") == true)
+        assertTrue(result.message?.contains("does not list") == true)
         assertEquals(FailedReason.SIGNATURE_INVALID, harness.listener.failed.single().reason)
     }
 
     @Test
-    fun shouldAdoptAReleaseCarryingTheRunningBundleWithoutAReloadAndAnswerUpToDate() = runBlocking {
+    fun shouldAdoptAReleaseCarryingTheRunningBundleAndAnswerUpToDateWithoutAReload() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -463,7 +463,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAnswerUpToDateWhenACheckAdoptsAReleaseCarryingTheRunningBundle() = runBlocking {
+    fun shouldAdoptAReleaseOfTheEmbeddedBundleInPlaceAndAnswerUpToDateWhenAFreshDeviceChecks() = runBlocking {
         val harness = Harness()
         harness.publish(listOf(embeddedRelease), 1)
         harness.core.handleAppStart()
@@ -473,7 +473,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldDropAWaitingReleaseAndSwitchNothingAtTheNextStartWhenAReleaseCarryingTheRunningBundleIsAdopted() = runBlocking {
+    fun shouldServeTheAdoptedReleaseAndSwitchNothingAtTheNextStartWhenAReleaseOfTheRunningBundleIsAdoptedOverAWaitingRelease() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -491,7 +491,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAdoptAReleaseOfTheEmbeddedBundleInPlaceWhenTheDeviceIsFresh() = runBlocking {
+    fun shouldAdoptAReleaseOfTheEmbeddedBundleInPlaceWithoutADownloadAReloadOrTheGateWhenTheDeviceRunsNoRelease() = runBlocking {
         val harness = Harness(immediateApply)
         assertEquals(SyncResult.upToDate(embeddedRelease.release.release), syncToEmbeddedReleaseOnFreshDevice(harness))
         assertTrue(harness.http.requests.none { it.first == embeddedRelease.release.manifestUrl })
@@ -505,7 +505,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAdoptAReleaseOfTheEmbeddedBundleInPlaceWhenTheDeviceRevertedToIt() = runBlocking {
+    fun shouldAdoptAReleaseOfTheEmbeddedBundleInPlaceWithoutADownloadAReloadOrTheGateWhenTheDeviceRevertedToTheEmbeddedBundle() = runBlocking {
         val harness = Harness(immediateApply)
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -531,7 +531,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldStartOnTheEmbeddedBundleWithoutTheGateWhenTheCurrentReleaseCarriesIt() = runBlocking {
+    fun shouldStartOnTheEmbeddedBundleWithoutAReloadOrTheGateWhenTheCurrentReleaseCarriesIt() = runBlocking {
         val harness = Harness()
         syncToEmbeddedReleaseOnFreshDevice(harness)
         harness.restart()
@@ -566,7 +566,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldSwitchToAReleaseOfTheEmbeddedBundleOnTheBinaryWithoutTheGateWhenAnotherBundleRuns() = runBlocking {
+    fun shouldSwitchWithoutTheGateAndBlocklistNothingWhenAnImmediateReleaseCarriesTheEmbeddedBundleWhileAnotherBundleRuns() = runBlocking {
         val harness = Harness(immediateApply)
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -594,7 +594,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldSwitchToAReleaseOfTheEmbeddedBundleWithoutTheGateAtTheNextStartWhenAnotherBundleRuns() = runBlocking {
+    fun shouldSwitchWithoutTheGateAndBlocklistNothingAtTheNextStartWhenANextStartReleaseCarriesTheEmbeddedBundleWhileAnotherBundleRuns() = runBlocking {
         val harness = startOnConfirmedRelease(Fixture.configuration())
         val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content), reverted), 2, etag = "\"e2\"")
@@ -620,7 +620,7 @@ class CoreTest {
     fun shouldSwitchToAReleaseOfTheEmbeddedBundleOnAMeteredConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val configuration = Fixture.configuration(downloadStrategy = DownloadStrategy.UNMETERED)
         val harness = startOnConfirmedRelease(configuration)
-        harness.isConnectionMetered = true
+        harness.network.isMetered = true
         val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content), reverted), 2, etag = "\"e2\"")
         assertEquals(SyncResult.downloaded(reverted.release.release, "notes 2", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
@@ -659,7 +659,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldGateAReleaseOfAThirdBundleWhenAnotherBundleRuns() = runBlocking {
+    fun shouldGateAndBlocklistAReleaseOfAThirdBundleThatNeverRendersWhileAnotherBundleRuns() = runBlocking {
         val harness = startOnConfirmedRelease(immediateApply)
         harness.core.handleRendered()
         val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
@@ -674,7 +674,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRollNothingBackWhenTheCurrentReleaseCarriesTheEmbeddedBundle() = runBlocking {
+    fun shouldRollBackNothingWhenTheCurrentReleaseCarriesTheEmbeddedBundle() = runBlocking {
         val harness = Harness()
         syncToEmbeddedReleaseOnFreshDevice(harness)
         harness.core.rollbackUpdate("fatal")
@@ -686,7 +686,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldDiscardAHeldApplyWhoseReleaseWasRevokedWhileItWaitedAndReloadNothing() = runBlocking {
+    fun shouldDropAHeldApplyWhoseReleaseWasRevokedWhileItWaited() = runBlocking {
         val harness = Harness(immediateApply)
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -702,7 +702,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldDiscardAHeldApplyUpdateWhoseReleaseWasRevokedWhileItWaitedAndReloadNothing() = runBlocking {
+    fun shouldDropAHeldApplyUpdateWhoseReleaseWasRevokedWhileItWaited() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -733,7 +733,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAdoptTheEmbeddedBundleInPlaceWhenTheAdoptedReleaseOfItIsRevoked() = runBlocking {
+    fun shouldAdoptTheEmbeddedBundleInPlaceWithoutAReloadWhenAnAdoptedReleaseOfItIsRevoked() = runBlocking {
         val harness = Harness()
         syncToEmbeddedReleaseOnFreshDevice(harness)
         harness.publish(listOf(embeddedRelease), 2, revoked = listOf("r1"), etag = "\"e2\"")
@@ -749,7 +749,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAdoptTheOlderReleaseInPlaceWhenTheRunningReleaseIsRevokedAndTheOlderOneCarriesItsBundle() = runBlocking {
+    fun shouldAdoptAnOlderReleaseOfTheRunningBundleInPlaceWithoutADownloadOrAReloadWhenTheRunningReleaseIsRevoked() = runBlocking {
         val harness = startOnConfirmedRelease(immediateApply)
         harness.core.handleRendered()
         val older = Fixture.release(1, "b2", v2Content)
@@ -769,7 +769,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAdoptTheRevokeTargetThatCarriesTheRunningBundleAtACheck() = runBlocking {
+    fun shouldAdoptAnOlderReleaseOfTheRunningBundleInPlaceAtACheckWhenTheRunningReleaseIsRevoked() = runBlocking {
         val harness = startOnConfirmedRelease(immediateApply)
         harness.core.handleRendered()
         val older = Fixture.release(1, "b2", v2Content)
@@ -880,7 +880,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldApplyANextResumeReleaseAfterNextResumeMinimumBackgroundSeconds() = runBlocking {
+    fun shouldApplyANextResumeReleaseAfterApplyOnResumeAfterSeconds() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_RESUME))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -915,7 +915,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldKeepAMandatoryReleaseTheAppTookOverWaitingAtAResumeUnderNextResume() = runBlocking {
+    fun shouldNeverApplyOnResumeAMandatoryReleaseTheAppTookOverWhenTheStrategyIsNextResume() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_RESUME, mandatoryApplyStrategy = MandatoryApplyStrategy.MANUAL))
         val v2 = Fixture.release(1, "b2", v2Content, isMandatory = true)
         harness.publish(listOf(v2), 1)
@@ -946,7 +946,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldApplyAReleaseDownloadedUnderACallsNextResumeAtTheResumeAndNotAtTheNextStart() = runBlocking {
+    fun shouldApplyAReleaseDownloadedUnderAPerCallNextResumeOnResumeAndNotAtTheNextStart() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -963,7 +963,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldKeepTheMomentDecidedAtTheDownloadWhenAnAutomaticCycleFindsTheReleaseDownloaded() = runBlocking {
+    fun shouldKeepTheMomentOfADownloadedReleaseWhenACycleWithoutAStrategyFindsIt() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -976,7 +976,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldDecideTheMomentAgainWhenACallWithItsOwnStrategyFindsTheReleaseDownloaded() = runBlocking {
+    fun shouldApplyADownloadedReleaseAtOnceWhenTheCallAsksForImmediate() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1002,7 +1002,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldCheckTheIndexAgainBeforeADownloadAndDownloadNothingRevokedSinceTheCheck() = runBlocking {
+    fun shouldRecheckTheIndexAndDownloadNothingWhenTheReleaseACheckFoundLeftItBeforeTheDownload() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1018,7 +1018,7 @@ class CoreTest {
     @Test
     fun shouldSkipOnAMeteredConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val harness = Harness()
-        harness.isConnectionMetered = true
+        harness.network.isMetered = true
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1049,7 +1049,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRefuseARuntimeChannelIdThatIsNotAUuidAndKeepTheChannel() = runBlocking {
+    fun shouldRefuseAChannelIdThatIsNotAUuidAndRequestOnlyTheConfiguredChannel() = runBlocking {
         val harness = Harness()
         for (id in listOf("../../other-app/channels/${Fixture.CHANNEL_ID}", "c1", "${Fixture.CHANNEL_ID}?x=1", "")) {
             val error = runCatching { harness.core.setChannel(ChannelChoice.Id(id)) }.exceptionOrNull()
@@ -1060,7 +1060,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRefuseEveryCallAndFetchNothingWhenTheConfiguredChannelIdIsNotAUuid() = runBlocking {
+    fun shouldRefuseEveryStageWithAPlainErrorAndFetchNothingWhenTheConfiguredChannelIdIsNotAUuid() = runBlocking {
         val harness = Harness(Fixture.configuration(channelId = "../../other-app/channels/${Fixture.CHANNEL_ID}"))
         harness.core.handleAppStart()
         assertTrue(runCatching { harness.core.sync(SyncTrigger.MANUAL) }.exceptionOrNull() is PlainException)
@@ -1132,7 +1132,7 @@ class CoreTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun shouldDownloadWithoutAFailedEventWhenThePackDropsTwiceAndArrivesOnTheThirdAttempt() = runTest {
+    fun shouldDownloadWithNoFailedEventWhenThePackFetchFailsTwiceAndTheThirdAttemptArrives() = runTest {
         val harness = Harness(dispatcher = UnconfinedTestDispatcher(testScheduler))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1145,7 +1145,7 @@ class CoreTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun shouldReportDownloadFailedOnceAfterTheThirdAttemptPausingOneSecondAndThenThreeWhenThePackAnswers503EachTime() = runTest {
+    fun shouldReportDownloadFailedOnceAfterTheThirdAttemptWhenThePackAnswers5xxThreeTimes() = runTest {
         val harness = Harness(dispatcher = StandardTestDispatcher(testScheduler))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1183,7 +1183,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldDownloadOnceWhenASyncASecondDownloadAndACheckAreAskedWhileADownloadRuns() = runBlocking {
+    fun shouldDownloadOnceWhenTwoDownloadsAndASyncRunAtOnce() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1205,7 +1205,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldSendTheEventsWithoutTheReportAndLogItWhenAStoredAttributeIsOneTheEventsEndpointRefuses() = runBlocking {
+    fun shouldSendTheEventsWithoutTheReportWhenAStoredAttributeIsOneTheEventsEndpointRefuses() = runBlocking {
         val harness = Harness()
         harness.acknowledgeEvents()
         StateStore(harness.store).attributes = mapOf("plan" to "beta\u0085")
@@ -1417,7 +1417,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldKeepTheReportedAtWhenABatchOfEventsAloneIsAcknowledgedLaterInTheMonth() = runBlocking {
+    fun shouldKeepTheMonthsFirstReportStampWhenALaterBatchOfEventsAloneIsAcknowledged() = runBlocking {
         val harness = Harness()
         harness.acknowledgeEvents("2023-11-14T23:00:00.000Z")
         harness.publish(emptyList(), 1)
@@ -1431,7 +1431,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldKeepTheReportedAtWhenAReportWithAChangedFactIsAcknowledgedLaterInTheMonth() = runBlocking {
+    fun shouldKeepTheMonthsFirstReportStampWhenAReportWithAChangedFactIsAcknowledgedLaterInTheMonth() = runBlocking {
         val harness = Harness()
         harness.acknowledgeEvents("2023-11-14T23:00:00.000Z")
         harness.publish(emptyList(), 1)
@@ -1445,7 +1445,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldTakeTheReportedAtOfTheFirstReportAcknowledgedInALaterMonth() = runBlocking {
+    fun shouldTakeTheStampOfTheFirstReportAcknowledgedInALaterMonth() = runBlocking {
         val harness = Harness()
         harness.acknowledgeEvents("2023-11-14T23:00:00.000Z")
         harness.publish(emptyList(), 1)
@@ -1468,7 +1468,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAnswerNoReleaseWhenOtaUpdatesAreOffInADebugBuildWhileAReleaseRuns() = runBlocking {
+    fun shouldAnswerNoReleaseWithDebugBuildWhileAReleaseRuns() = runBlocking {
         val harness = Harness(isDebugBuild = true)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
@@ -1602,7 +1602,7 @@ class CoreTest {
     @Test
     fun shouldDownloadOnCallWhateverTheConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val harness = Harness(Fixture.configuration(downloadStrategy = DownloadStrategy.UNMETERED))
-        harness.isConnectionMetered = true
+        harness.network.isMetered = true
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1612,7 +1612,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldAnswerAppliedFromADownloadUnderTheImmediateStrategyAndReloadAtTheFirstRender() = runBlocking {
+    fun shouldAnswerAppliedAndReloadWhenADownloadOnCallIsAppliedImmediately() = runBlocking {
         val harness = Harness(immediateApply)
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1940,7 +1940,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldBeginTheStartSyncAtTheConfirmationWhenTheReleaseIsNew() = runBlocking {
+    fun shouldBeginTheStartSyncAtTheConfirmationNotTheFirstRenderWhenTheRunningReleaseIsNew() = runBlocking {
         val harness = Harness()
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
@@ -1955,7 +1955,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldReloadAnImmediateApplyAtTheFirstRenderAndNotBefore() = runBlocking {
+    fun shouldReloadAnImmediateApplyAtTheFirstRenderAndNotBeforeWhenItIsReadyBeforeIt() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1970,7 +1970,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldReloadAMandatoryReleaseAtTheFirstRenderAndNotBefore() = runBlocking {
+    fun shouldReloadAMandatoryReleaseAtTheFirstRenderAndNotBeforeWhenItIsReadyBeforeIt() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.NEXT_START))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content, isMandatory = true)), 1)
         harness.core.handleAppStart()
@@ -1981,7 +1981,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRunARestartHeldByTheAppAndTheStartOnceWhenTheAppAllowsRestartsLast() = runBlocking {
+    fun shouldRunARestartHeldByTheAppAndTheStartOnceWhenTheAppAllowsRestartsAfterTheFirstRender() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
@@ -1997,7 +1997,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRunARestartHeldByTheAppAndTheStartOnceWhenTheStartSettlesLast() = runBlocking {
+    fun shouldRunARestartHeldByTheAppAndTheStartOnceWhenTheFirstRenderComesAfterTheAppAllowsRestarts() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
@@ -2071,7 +2071,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldHoldTheNextRestartUntilTheReloadedAppRenders() = runBlocking {
+    fun shouldHoldTheNextRestartUntilTheReloadedAppRendersWhenTheCoreReloaded() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -2117,7 +2117,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldReloadAnImmediateApplyAtNotifyReadyAndNotBefore() = runBlocking {
+    fun shouldReloadAnImmediateApplyAtNotifyReadyAndNotBeforeWhenItIsReadyBeforeIt() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE, readySignal = ReadySignal.MANUAL))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
@@ -2128,7 +2128,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldReloadAMandatoryReleaseAtNotifyReadyAndNotBefore() = runBlocking {
+    fun shouldReloadAMandatoryReleaseAtNotifyReadyAndNotBeforeWhenItIsReadyBeforeIt() = runBlocking {
         val harness = Harness(Fixture.configuration(readySignal = ReadySignal.MANUAL))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content, isMandatory = true)), 1)
         harness.core.handleAppStart()

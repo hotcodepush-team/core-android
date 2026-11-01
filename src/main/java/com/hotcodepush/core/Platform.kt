@@ -161,6 +161,5 @@ object AttributeRules {
     fun isValidKey(key: String): Boolean = keyPattern.matches(key)
 
     /** At most 256 code points, not UTF-16 units or visible characters, and no control character. */
-
     fun isValidValue(value: String): Boolean = value.codePointCount(0, value.length) <= VALUE_MAX_CODE_POINTS && value.none { it.isControlCharacter() }
 }

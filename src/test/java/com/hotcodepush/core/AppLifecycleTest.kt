@@ -19,7 +19,7 @@ class AppLifecycleTest {
 
     private fun startedHarness(isProcessInForeground: Boolean = true): Harness {
         val harness = Harness(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
-        harness.isProcessInForeground = isProcessInForeground
+        harness.processState.isInTheForeground = isProcessInForeground
         harness.publish(emptyList(), 1)
         runBlocking { harness.core.handleAppStart() }
         return harness

@@ -86,7 +86,6 @@ class DebugScreenActivity : Activity() {
     }
 
     // Only the check runs, so nothing downloads or reloads behind the screen. Android refuses the network on the main thread.
-
     private fun checkNow(core: Core, button: Button) {
         button.isEnabled = false
         scope.launch {

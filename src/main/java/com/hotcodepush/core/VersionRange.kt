@@ -81,7 +81,6 @@ object VersionRange {
     }
 
     // `1.2` and `1.2.x` are `>=1.2 <1.3`, and `x` is everything.
-
     private fun intervalComparators(fixed: List<Long>): List<Comparator> {
         if (fixed.isEmpty()) return emptyList()
         val upper = fixed.toMutableList().also { it[it.size - 1] += 1 }
