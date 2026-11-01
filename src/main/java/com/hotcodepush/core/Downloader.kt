@@ -136,6 +136,8 @@ class Downloader(
         if (availableBytes < requiredBytes) throw DownloadFailure.DownloadFailed("The download needs $requiredBytes bytes and $availableBytes are free")
     }
 
+    // Three arguments and the trailing progress callback, as HttpClient.download takes.
+    @Suppress("LongParameterList")
     internal suspend fun downloadPack(source: PackSource, envelope: ManifestEnvelope, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): PackOutcome = try {
         PackOutcome(downloadPackEntries(source, envelope.bundleId, wanted, progress), source.kind)
     } catch (refusal: HttpStatusException) {
@@ -143,10 +145,23 @@ class Downloader(
         downloadPack(fallback, envelope, wanted, progress)
     }
 
+    // Three arguments and the trailing progress callback, as HttpClient.download takes.
+    @Suppress("LongParameterList")
     internal suspend fun downloadPackEntries(source: PackSource, bundleId: String, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): Long {
-        val pinnedUrl = resolvePinnedUrl(source.url)
         // A name stable per URL lets a later attempt resume the pack.
         val file = File(temporaryDirectory, "$bundleId-${Hashing.sha256Hex(source.url).take(16)}.pack")
+        downloadPackFile(source, file, progress)
+        try {
+            if (source.sizeBytes != null && file.length() != source.sizeBytes) throw DownloadFailure.ContentMismatched("The pack holds ${file.length()} of its ${source.sizeBytes} bytes")
+            writePackEntries(file, wanted)
+            return file.length()
+        } finally {
+            file.delete()
+        }
+    }
+
+    private suspend fun downloadPackFile(source: PackSource, file: File, progress: (Long, Long) -> Unit) {
+        val pinnedUrl = resolvePinnedUrl(source.url)
         try {
             retryTransientFailures { http.download(pinnedUrl, file, source.packBytesLimit, progress) }
         } catch (cancellation: CancellationException) {
@@ -158,8 +173,10 @@ class Downloader(
         } catch (exception: Exception) {
             throw DownloadFailure.DownloadFailed("The pack could not be downloaded: ${exception.message}")
         }
+    }
+
+    private fun writePackEntries(file: File, wanted: Map<String, Long>) {
         try {
-            if (source.sizeBytes != null && file.length() != source.sizeBytes) throw DownloadFailure.ContentMismatched("The pack holds ${file.length()} of its ${source.sizeBytes} bytes")
             file.inputStream().buffered().use { input ->
                 PackReader.forEachEntry(input, file.length()) { entry, body ->
                     when (entry) {
@@ -174,13 +191,10 @@ class Downloader(
                     }
                 }
             }
-            return file.length()
         } catch (failure: DownloadFailure) {
             throw failure
         } catch (exception: Exception) {
             throw DownloadFailure.ContentMismatched("The pack did not verify: ${exception.message}")
-        } finally {
-            file.delete()
         }
     }
 
@@ -201,7 +215,7 @@ class Downloader(
             val base = preparePatchBase(entry.fromSha256, directory)
             val patch = File(directory, "patch").apply { outputStream().use { body.copyTo(it) } }
             val patched = File(directory, "patched")
-            Bspatch.apply(patch, base, patched, maximumBytes)
+            Bspatch.apply(patch = patch, old = base, new = patched, maximumBytes = maximumBytes)
             patched.inputStream().use { content -> files.writeFile(content, entry.toSha256) }
         } finally {
             directory.deleteRecursively()

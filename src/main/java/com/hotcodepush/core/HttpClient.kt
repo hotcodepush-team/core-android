@@ -3,6 +3,7 @@ package com.hotcodepush.core
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -23,6 +24,8 @@ interface HttpClient {
      * Past `maximumBytes` it stops and deletes the file. On a status other than 200 or 206, a redirect included, it deletes
      * the file and throws `HttpStatusException`.
      */
+    // Public API: three arguments and the trailing progress callback, as core-ios's download(_:to:maximumBytes:progress:).
+    @Suppress("LongParameterList")
     suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit)
 }
 
@@ -45,10 +48,7 @@ class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : Htt
         val existing = if (file.isFile) file.length() else 0L
         val request = Request.Builder().url(url).apply { if (existing > 0) header("Range", "bytes=$existing-") }.build()
         downloadClient.newCall(request).execute().use { response ->
-            if (response.code != 200 && response.code != 206) {
-                file.delete()
-                throw HttpStatusException(response.code)
-            }
+            verifyDownloadStatus(response, file)
             file.parentFile?.mkdirs()
             val append = response.code == 206 && existing > 0
             var written = if (append) existing else 0L
@@ -69,6 +69,12 @@ class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : Htt
                 }
             }
         }
+    }
+
+    private fun verifyDownloadStatus(response: Response, file: File) {
+        if (response.code == 200 || response.code == 206) return
+        file.delete()
+        throw HttpStatusException(response.code)
     }
 
     // A download follows no redirect, so it stays on the URL the core pinned.

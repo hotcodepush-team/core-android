@@ -14,7 +14,9 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
             return LogEntry(at, code, "${trigger.wire}: ${resolveCycleSentence(result)}")
         }
 
+        // A case table: one line per event type.
         /** An outcome event as it enters the outbox; a check event is the cycle's line already. */
+        @Suppress("CyclomaticComplexMethod")
         fun ofDeviceEvent(event: DeviceEvent, at: Long): LogEntry? = when (event.type) {
             "downloaded" -> LogEntry(at, "downloaded", "release ${event.releaseId ?: ""}: ${event.downloadSizeBytes ?: 0} bytes as ${event.packKind ?: ""} pack")
             "applied" -> LogEntry(at, "applied", "release ${event.releaseId ?: ""} is the running release")
@@ -35,6 +37,8 @@ data class LogEntry(val at: Long, val code: String, val message: String) {
             }
         }
 
+        // A case table: one sentence per status.
+        @Suppress("CyclomaticComplexMethod")
         private fun resolveCycleSentence(result: SyncResult): String {
             val release = result.release?.let { "release #${it.number} (${it.bundleVersion})" }
             return when (result.status) {

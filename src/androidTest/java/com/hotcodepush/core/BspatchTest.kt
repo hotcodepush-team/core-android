@@ -116,7 +116,7 @@ class BspatchTest {
 
     private fun apply(patch: ByteArray, maximumBytes: Long = 1_000_000) {
         val patchFile = File(directory, "patch").apply { writeBytes(patch) }
-        Bspatch.apply(patchFile, old, new, maximumBytes)
+        Bspatch.apply(patch = patchFile, old = old, new = new, maximumBytes = maximumBytes)
     }
 
     private fun assertRefused(patch: ByteArray, expected: Bspatch.Failure, maximumBytes: Long = 1_000_000) {

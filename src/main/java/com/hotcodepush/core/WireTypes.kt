@@ -300,6 +300,8 @@ internal enum class WireRule {
     // Base64 in its one canonical spelling: padded, with no unused bits set.
     BASE64;
 
+    // A case table: one check per rule.
+    @Suppress("CyclomaticComplexMethod")
     fun accepts(value: String): Boolean = when (this) {
         IDENTIFIER -> identifierPattern.matches(value)
         UUID -> uuidPattern.matches(value)

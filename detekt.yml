@@ -1,0 +1,18 @@
+config:
+  validation: true
+
+complexity:
+  active: true
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 11
+    ignoreNestingFunctions: true
+  LongMethod:
+    active: true
+    threshold: 41
+    excludes: ['**/test/**', '**/sharedTest/**', '**/androidTest/**']
+  LongParameterList:
+    active: true
+    functionThreshold: 4
+    constructorThreshold: 100
+    ignoreDefaultParameters: true
