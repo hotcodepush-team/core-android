@@ -1,7 +1,6 @@
 package com.hotcodepush.core
 
 import org.json.JSONArray
-import org.json.JSONException
 import org.json.JSONObject
 import java.util.UUID
 
@@ -35,10 +34,7 @@ data class NextRelease(val release: Release, val applyStrategy: ApplyStrategy) {
     fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("applyStrategy", applyStrategy.wire)
 
     companion object {
-        fun fromJson(json: JSONObject): NextRelease {
-            val applyStrategy = json.getWireString("applyStrategy")
-            return NextRelease(Release.fromJson(json.getJSONObject("release")), ApplyStrategy.fromWire(applyStrategy) ?: throw JSONException("Not an apply strategy: $applyStrategy"))
-        }
+        fun fromJson(json: JSONObject) = NextRelease(Release.fromJson(json.getJSONObject("release")), json.getWireEnum("applyStrategy", ApplyStrategy))
     }
 }
 
@@ -132,7 +128,6 @@ class StateStore(private val store: KeyValueStore) {
 
     // A value that does not decode, such as one another SDK version wrote under the same `stateVersion`, reads as absent.
     // It drops the cache with it, or the identity key alone.
-
     private fun <T> readValue(key: String, decode: (String) -> T): T? {
         val raw = getRaw(key) ?: return null
         return try {

@@ -3,9 +3,17 @@ package com.hotcodepush.core
 import org.json.JSONArray
 import org.json.JSONObject
 
-enum class SyncTrigger(val wire: String) { START("start"), RESUME("resume"), INTERVAL("interval"), MANUAL("manual") }
+enum class SyncTrigger(override val wire: String) : WireEnum {
+    START("start"), RESUME("resume"), INTERVAL("interval"), MANUAL("manual");
 
-enum class SyncStatus(val wire: String) { UP_TO_DATE("up_to_date"), AVAILABLE("available"), DOWNLOADED("downloaded"), APPLIED("applied"), SKIPPED("skipped"), FAILED("failed") }
+    companion object : WireEnumCompanion<SyncTrigger>({ entries })
+}
+
+enum class SyncStatus(override val wire: String) : WireEnum {
+    UP_TO_DATE("up_to_date"), AVAILABLE("available"), DOWNLOADED("downloaded"), APPLIED("applied"), SKIPPED("skipped"), FAILED("failed");
+
+    companion object : WireEnumCompanion<SyncStatus>({ entries })
+}
 
 enum class SkippedReason(val wire: String) {
     BUILD_DEBUG("build_debug"), BUNDLE_FAILED_BEFORE("bundle_failed_before"), CHANNEL_PAUSED("channel_paused"),
@@ -14,12 +22,18 @@ enum class SkippedReason(val wire: String) {
     RELEASE_REVOKED("release_revoked"), SPENDING_CAP_REACHED("spending_cap_reached")
 }
 
-enum class FailedReason(val wire: String) {
+enum class FailedReason(override val wire: String) : WireEnum {
     CHANNEL_UNKNOWN("channel_unknown"), CONTENT_MISMATCHED("content_mismatched"), DEVICE_OFFLINE("device_offline"), DOWNLOAD_FAILED("download_failed"),
-    INDEX_INVALID("index_invalid"), MANIFEST_INVALID("manifest_invalid"), SIGNATURE_INVALID("signature_invalid")
+    INDEX_INVALID("index_invalid"), MANIFEST_INVALID("manifest_invalid"), SIGNATURE_INVALID("signature_invalid");
+
+    companion object : WireEnumCompanion<FailedReason>({ entries })
 }
 
-enum class RollbackReason(val wire: String) { APP_CRASHED("app_crashed"), APP_REQUESTED("app_requested"), READINESS_TIMED_OUT("readiness_timed_out") }
+enum class RollbackReason(override val wire: String) : WireEnum {
+    APP_CRASHED("app_crashed"), APP_REQUESTED("app_requested"), READINESS_TIMED_OUT("readiness_timed_out");
+
+    companion object : WireEnumCompanion<RollbackReason>({ entries })
+}
 
 enum class PackKind(val wire: String) { FULL("full"), DELTA("delta"), STREAMED("streamed"), FILES("files") }
 
@@ -38,15 +52,19 @@ data class SyncResult(
     val downloadSizeBytes: Long? = null,
     val message: String? = null,
 ) {
-    fun toJson(): JSONObject = JSONObject()
-        .put("status", status.wire)
-        .put("release", release?.toJson() ?: JSONObject.NULL)
-        .putIfNotNull("reason", reason)
-        .putIfNotNull("conditionType", conditionType?.wire)
-        .putIfNotNull("notes", notes, nullWhenStatus = status == SyncStatus.APPLIED || status == SyncStatus.AVAILABLE || status == SyncStatus.DOWNLOADED)
-        .putIfNotNull("applyStrategy", applyStrategy?.wire)
-        .putIfNotNull("downloadSizeBytes", downloadSizeBytes, nullWhenStatus = status == SyncStatus.AVAILABLE)
-        .putIfNotNull("message", message)
+    /** Writes the keys of its status only: a nullable field as an explicit `null`, an optional one left out. */
+    fun toJson(): JSONObject {
+        val json = JSONObject().put("status", status.wire).put("release", release?.toJson() ?: JSONObject.NULL)
+        when (status) {
+            SyncStatus.UP_TO_DATE -> Unit
+            SyncStatus.AVAILABLE -> json.put("notes", notes ?: JSONObject.NULL).put("downloadSizeBytes", downloadSizeBytes ?: JSONObject.NULL)
+            SyncStatus.DOWNLOADED -> json.put("notes", notes ?: JSONObject.NULL).put("applyStrategy", applyStrategy?.wire ?: JSONObject.NULL)
+            SyncStatus.APPLIED -> json.put("notes", notes ?: JSONObject.NULL)
+            SyncStatus.SKIPPED -> json.put("reason", reason ?: JSONObject.NULL).putIfNotNull("conditionType", conditionType?.wire)
+            SyncStatus.FAILED -> json.put("reason", reason ?: JSONObject.NULL).put("message", message ?: JSONObject.NULL)
+        }
+        return json
+    }
 
     companion object {
         fun upToDate(release: Release?) = SyncResult(SyncStatus.UP_TO_DATE, release)
@@ -57,12 +75,12 @@ data class SyncResult(
         fun failed(release: Release?, reason: FailedReason, message: String) = SyncResult(SyncStatus.FAILED, release, reason = reason.wire, message = message)
 
         fun fromJson(json: JSONObject) = SyncResult(
-            status = SyncStatus.entries.first { it.wire == json.getString("status") },
+            status = json.getWireEnum("status", SyncStatus),
             release = json.optJSONObject("release")?.let(Release::fromJson),
             reason = json.optNullableString("reason"),
-            conditionType = json.optNullableString("conditionType")?.let { wire -> ConditionType.entries.firstOrNull { it.wire == wire } },
+            conditionType = ConditionType.fromWire(json.optNullableString("conditionType")),
             notes = json.optNullableString("notes"),
-            applyStrategy = json.optNullableString("applyStrategy")?.let(ApplyStrategy::fromWire),
+            applyStrategy = ApplyStrategy.fromWire(json.optNullableString("applyStrategy")),
             downloadSizeBytes = if (json.isNull("downloadSizeBytes")) null else json.optLong("downloadSizeBytes"),
             message = json.optNullableString("message"),
         )
@@ -88,7 +106,7 @@ data class LastCheck(val checkedAt: Long, val trigger: SyncTrigger, val result: 
     fun toJson(): JSONObject = JSONObject().put("checkedAt", Iso8601.format(checkedAt)).put("trigger", trigger.wire).put("result", result.toJson())
 
     companion object {
-        fun fromJson(json: JSONObject) = LastCheck(Iso8601.parse(json.getString("checkedAt")), SyncTrigger.entries.first { it.wire == json.getString("trigger") }, SyncResult.fromJson(json.getJSONObject("result")))
+        fun fromJson(json: JSONObject) = LastCheck(Iso8601.parse(json.getString("checkedAt")), json.getWireEnum("trigger", SyncTrigger), SyncResult.fromJson(json.getJSONObject("result")))
     }
 }
 
@@ -116,7 +134,11 @@ data class GetStateResult(
         .put("reportedAt", reportedAt?.let(Iso8601::format) ?: JSONObject.NULL)
 }
 
-enum class ChannelSource(val wire: String) { RUNTIME("runtime"), CONFIG("config") }
+enum class ChannelSource(override val wire: String) : WireEnum {
+    RUNTIME("runtime"), CONFIG("config");
+
+    companion object : WireEnumCompanion<ChannelSource>({ entries })
+}
 
 /** `id` is `null` while no id is known: a build without a channel, or a runtime name no sync has resolved yet. */
 data class GetChannelResult(val id: String?, val name: String?, val source: ChannelSource) {
@@ -181,16 +203,15 @@ data class DownloadProgressEvent(val downloadSizeBytes: Long, val progressBytes:
 }
 
 /** Fired at each start after a rollback, before the readiness gate, until the app is up; `toRelease` is `null` for the embedded bundle. */
-
 data class UpdateRolledBackEvent(val fromRelease: Release, val toRelease: Release?, val reason: RollbackReason) {
     fun toJson(): JSONObject = JSONObject().put("fromRelease", fromRelease.toJson()).put("toRelease", toRelease?.toJson() ?: JSONObject.NULL).put("reason", reason.wire)
 
     companion object {
-        fun fromJson(json: JSONObject) = UpdateRolledBackEvent(Release.fromJson(json.getJSONObject("fromRelease")), json.optJSONObject("toRelease")?.let(Release::fromJson), RollbackReason.entries.first { it.wire == json.getString("reason") })
+        fun fromJson(json: JSONObject) = UpdateRolledBackEvent(Release.fromJson(json.getJSONObject("fromRelease")), json.optJSONObject("toRelease")?.let(Release::fromJson), json.getWireEnum("reason", RollbackReason))
     }
 }
 
-internal fun JSONObject.putIfNotNull(key: String, value: Any?, nullWhenStatus: Boolean = false): JSONObject {
-    if (value != null) put(key, value) else if (nullWhenStatus) put(key, JSONObject.NULL)
+internal fun JSONObject.putIfNotNull(key: String, value: Any?): JSONObject {
+    if (value != null) put(key, value)
     return this
 }

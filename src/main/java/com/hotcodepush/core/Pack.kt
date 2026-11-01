@@ -140,7 +140,6 @@ object Gzip {
      * Inflates the gzip body into a stream that stops past `maximumBytes`, the file size.
      * A few bytes that would inflate to gigabytes are refused on the way. An empty body is an empty file.
      */
-
     fun inflate(body: InputStream, maximumBytes: Long): InputStream {
         val input = PushbackInputStream(body, 1)
         val first = input.read()

@@ -76,7 +76,6 @@ class OkHttpClientAdapter(private val client: OkHttpClient = sharedClient) : Htt
 
     companion object {
         // OkHttp asks for one client per process, since its pools and threads outlive every activity.
-
         private val sharedClient: OkHttpClient by lazy { OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build() }
     }
 }

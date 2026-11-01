@@ -361,7 +361,7 @@ class Core(
         }
         log.record(LogEntry.ofCycle(result, trigger, clock.now()))
         if (result.status == SyncStatus.FAILED) {
-            val reason = result.reason?.let { wire -> FailedReason.entries.firstOrNull { it.wire == wire } }
+            val reason = FailedReason.fromWire(result.reason)
             if (reason != null) listener.updateFailed(UpdateFailedEvent(result.release, reason, result.message ?: "", trigger))
         }
         launchTask { sendDeviceEvents() }
@@ -392,7 +392,7 @@ class Core(
             is IndexFetch.Invalid -> return SyncResult.failed(null, FailedReason.INDEX_INVALID, fetch.message)
             IndexFetch.Missing -> return SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, resolveMissingIndexMessage(channelId))
         }
-        return when (val evaluation = Evaluator.evaluate(index, deviceInfo())) {
+        return when (val evaluation = Evaluator.evaluation(index, deviceInfo()).outcome) {
             is Evaluation.UpToDate -> SyncResult.upToDate(current)
             is Evaluation.Available -> {
                 lock.withLock { recordChecked(evaluation.release, index, SyncStatus.AVAILABLE) }
@@ -445,11 +445,11 @@ class Core(
 
     // The binary already carries the embedded bundle, so a release of it downloads nothing.
     private fun resolveDownloadSizeBytes(target: IndexRelease): Long =
-        if (target.bundleId == configuration.embeddedBundleId) 0 else target.sizeBytes
+        if (isCarryingEmbeddedBundle(target.bundleId)) 0 else target.sizeBytes
 
     // A release of the embedded bundle downloads nothing, so it passes every gate but the check's.
     private fun resolveDownloadStrategy(target: IndexRelease, stage: Stage, options: SyncOptions): DownloadStrategy =
-        if (target.bundleId == configuration.embeddedBundleId && stage != Stage.CHECK) DownloadStrategy.AUTO else options.downloadStrategy ?: configuration.downloadStrategy
+        if (isCarryingEmbeddedBundle(target.bundleId) && stage != Stage.CHECK) DownloadStrategy.AUTO else options.downloadStrategy ?: configuration.downloadStrategy
 
     private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(target.id, target.number, target.bundleId, target.bundleVersion, isMandatory)
 
@@ -468,7 +468,7 @@ class Core(
 
     private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, applyStrategy: ApplyStrategy, trigger: SyncTrigger): SyncResult {
         val release = resolveRelease(target, isMandatory)
-        if (target.bundleId != configuration.embeddedBundleId) {
+        if (!isCarryingEmbeddedBundle(target.bundleId)) {
             val failure = downloadBundle(target, release)
             if (failure != null) return failure
         }
@@ -495,7 +495,7 @@ class Core(
     }
 
     private fun applyDownloaded(next: NextRelease, notes: String?): SyncResult {
-        setNextRelease(next)
+        state.nextRelease = next
         when (next.applyStrategy) {
             ApplyStrategy.IMMEDIATE -> restartIntoNextRelease()
             ApplyStrategy.NEXT_START -> persistServedBundle(next.release)
@@ -594,7 +594,7 @@ class Core(
     private fun hasReleaseWithoutManifest(): Boolean = listOfNotNull(state.currentRelease, state.nextRelease?.release).any { readBundleManifest(it.bundleId) == null }
 
     private fun readBundleManifest(bundleId: String): BundleManifest? =
-        if (bundleId == configuration.embeddedBundleId) configuration.embeddedBundleManifest else files.readManifest(bundleId)
+        if (isCarryingEmbeddedBundle(bundleId)) configuration.embeddedBundleManifest else files.readManifest(bundleId)
 
     // A new binary brings a new floor and a restored phone has no files, so the embedded bundle runs.
     // The kept index and its ETag go too, so the first check fetches unconditionally and a frozen sequence heals.
@@ -608,10 +608,6 @@ class Core(
         state.pendingRollbackEvent = null
         state.lastBuiltAt = configuration.builtAt
         persistServedBundle(null)
-    }
-
-    private fun setNextRelease(next: NextRelease) {
-        state.nextRelease = next
     }
 
     private fun discardNextReleaseThatLeftTheIndex() {
@@ -632,7 +628,7 @@ class Core(
         persistServedBundle(next)
         enqueueDeviceEvent(DeviceEvent.applied(next.id))
         // The embedded bundle is never gated, so no readiness timer arms for it and no rollback blocklists it.
-        if (next.bundleId == configuration.embeddedBundleId) confirmCurrentRelease()
+        if (isCarryingEmbeddedBundle(next.bundleId)) confirmCurrentRelease()
     }
 
     private fun loadBundle() {
@@ -657,9 +653,11 @@ class Core(
     }
 
     // A release of the embedded bundle has no tree of its own: the binary serves it.
-    private fun resolveServedBundleId(release: Release?): String? = release?.bundleId?.takeIf { it != configuration.embeddedBundleId }
+    private fun resolveServedBundleId(release: Release?): String? = release?.bundleId?.takeIf { !isCarryingEmbeddedBundle(it) }
 
     // Null only in a build that names no embedded bundle.
+    private fun isCarryingEmbeddedBundle(bundleId: String): Boolean = bundleId == configuration.embeddedBundleId
+
     private fun resolveRunningBundleId(): String? = state.currentRelease?.bundleId ?: configuration.embeddedBundleId
 
     private fun hasLoadedBundleSince(bundleLoadCountAtSignal: Int): Boolean = bundleLoadCount != bundleLoadCountAtSignal
@@ -851,7 +849,7 @@ class Core(
                 when (response?.status) {
                     null -> ChannelResolution.Offline
                     200 -> {
-                        val index = runCatching { ChannelsIndex.fromJson(org.json.JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()
+                        val index = runCatching { ChannelsIndex.fromJson(parseJsonObject(response.body)) }.getOrNull()
                         if (index == null) {
                             ChannelResolution.Invalid("The channels index could not be parsed")
                         } else {
@@ -900,7 +898,7 @@ class Core(
                 IndexFetch.Index(cached.body)
             }
             200 -> {
-                val index = runCatching { ChannelIndex.fromJson(org.json.JSONObject(String(response.body, Charsets.UTF_8))) }.getOrNull()
+                val index = runCatching { ChannelIndex.fromJson(parseJsonObject(response.body)) }.getOrNull()
                     ?: return IndexFetch.Invalid("The channel index could not be parsed")
                 if (!isIndexForDevice(index, channelId)) return IndexFetch.Invalid("The channel index names another app, channel or platform")
                 if (cached != null && isBehindCachedIndex(index, cached)) return IndexFetch.Index(cached.body)
@@ -1002,7 +1000,6 @@ class Core(
         private const val REPORT_UNREADABLE = "report_unreadable"
 
         /** The message a build without a channel answers with, without sending a request. */
-
         const val MISSING_CHANNEL_MESSAGE = "The build carries no channel: it was built without a token or offline, so the channel's name was never resolved. Build it with a token to receive updates."
     }
 }

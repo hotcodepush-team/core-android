@@ -103,6 +103,19 @@ class ManualScheduler : Scheduler {
     }
 }
 
+class FakeNetworkState : NetworkState {
+    var isMetered = false
+
+    override fun isConnectionMetered(): Boolean = isMetered
+}
+
+// The interface's `isInForeground()` takes the property's getter name on the JVM.
+class FakeProcessState : ProcessState {
+    var isInTheForeground = true
+
+    override fun isInForeground(): Boolean = isInTheForeground
+}
+
 class FixedClock(var now: Long) : Clock {
     override fun now(): Long = now
 }
@@ -122,12 +135,12 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     val uncaught = mutableListOf<Throwable>()
     val scope = CoroutineScope(SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, failure -> uncaught += failure })
 
-    var isConnectionMetered = false
-    var isProcessInForeground = true
+    val network = FakeNetworkState()
+    val processState = FakeProcessState()
     var core: Core = build(configuration)
 
     private fun build(configuration: Configuration, scope: CoroutineScope = this.scope) =
-        Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"), { isConnectionMetered }) { isProcessInForeground }
+        Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"), networkState = network, processState = processState)
 
     fun restart(configuration: Configuration = Fixture.configuration(), scope: CoroutineScope = this.scope) {
         core = build(configuration, scope)

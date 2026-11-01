@@ -14,7 +14,6 @@ internal object Bspatch {
 
     // A control triple that reaches outside the old file adds nothing there, as bsdiff 4.3 defined it.
     // So only the hash of the result proves the patch was the right one.
-
     fun apply(patch: File, old: File, new: File, maximumBytes: Long) {
         when (applyPatch(old.path, new.path, patch.path, maximumBytes)) {
             0 -> return

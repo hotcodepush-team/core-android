@@ -27,13 +27,16 @@ enum class SignatureRefusal {
     UNKNOWN_SCHEME,
 
     /** No configured key carries the key id the signature names. */
-    UNKNOWN_KEY,
+    UNLISTED_KEY,
 
-    /** The configured key the signature names is no RSA key the platform imports, or is under the minimum size. */
-    UNUSABLE_KEY,
+    /** The platform refused to import the configured key as an RSA key: the resource file is wrong, not the manifest. */
+    UNIMPORTABLE_KEY,
+
+    /** The configured key is smaller than the minimum. */
+    WEAK_KEY,
 
     /** The signature does not verify over the manifest's bytes under the key it names. */
-    INVALID,
+    MISMATCH,
 }
 
 /**
@@ -45,21 +48,22 @@ object SignatureVerifier {
     const val SCHEME = "rsa-v1_5-sha256"
 
     /** A key under this size verifies nothing; the size is read from the key the platform imported, never from its bytes. */
-    const val KEY_BITS_MINIMUM = 2048
+    const val MINIMUM_KEY_BITS = 2048
 
     /** Returns `null` when the signature covers the manifest under the configured key it names, else the reason it does not. */
     fun verifyManifestSignature(manifest: String, signature: Signature?, publicKeys: List<DevicePublicKey>): SignatureRefusal? {
         if (signature == null) return SignatureRefusal.UNSIGNED
         val signatureBytes = resolveSignatureBytes(signature.value) ?: return SignatureRefusal.UNKNOWN_SCHEME
-        val publicKey = publicKeys.firstOrNull { it.keyId == signature.keyId } ?: return SignatureRefusal.UNKNOWN_KEY
-        val importedKey = resolveImportedKey(publicKey) ?: return SignatureRefusal.UNUSABLE_KEY
+        val publicKey = publicKeys.firstOrNull { it.keyId == signature.keyId } ?: return SignatureRefusal.UNLISTED_KEY
+        val importedKey = resolveImportedKey(publicKey) ?: return SignatureRefusal.UNIMPORTABLE_KEY
+        if (importedKey.modulus.bitLength() < MINIMUM_KEY_BITS) return SignatureRefusal.WEAK_KEY
         return try {
             val verifier = PlatformSignature.getInstance("SHA256withRSA")
             verifier.initVerify(importedKey)
             verifier.update(manifest.toByteArray(Charsets.UTF_8))
-            if (verifier.verify(signatureBytes)) null else SignatureRefusal.INVALID
+            if (verifier.verify(signatureBytes)) null else SignatureRefusal.MISMATCH
         } catch (exception: GeneralSecurityException) {
-            SignatureRefusal.INVALID
+            SignatureRefusal.MISMATCH
         }
     }
 
@@ -67,15 +71,13 @@ object SignatureVerifier {
 
     private fun resolveImportedKey(publicKey: DevicePublicKey): RSAPublicKey? {
         val der = decodeCanonicalBase64(publicKey.der) ?: return null
-        val importedKey = try {
+        return try {
             KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(der)) as? RSAPublicKey
         } catch (exception: GeneralSecurityException) {
             null
         }
-        return importedKey?.takeIf { it.modulus.bitLength() >= KEY_BITS_MINIMUM }
     }
 
     // Only the padded spelling with no unused bits set passes, so one value has exactly one form.
-
     internal fun decodeCanonicalBase64(text: String): ByteArray? = text.decodeBase64()?.takeIf { it.base64() == text }?.toByteArray()
 }

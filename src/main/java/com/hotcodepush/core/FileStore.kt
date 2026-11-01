@@ -57,7 +57,6 @@ class FileStore(val rootDirectory: File) {
     }
 
     /** Deletes every file and manifest no kept bundle lists. */
-
     fun deleteUnusedFiles(keptBundleIds: Set<String>) {
         bundleIds().filter { it !in keptBundleIds }.forEach(::deleteBundle)
         val referenced = keptBundleIds.mapNotNull(::readManifest).flatMap { manifest -> manifest.files.map { it.sha256 } }.toSet()

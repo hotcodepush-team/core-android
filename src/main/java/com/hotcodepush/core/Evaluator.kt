@@ -40,8 +40,6 @@ object Evaluator {
     // Major, minor and patch come before the build number.
     private const val BINARY_VERSION_MIN_COMPONENTS = 3
 
-    fun evaluate(index: ChannelIndex, device: DeviceInfo): Evaluation = evaluation(index, device).outcome
-
     fun evaluation(index: ChannelIndex, device: DeviceInfo): IndexEvaluation {
         val currentIndexRelease = device.currentRelease?.let { current -> index.releases.firstOrNull { it.id == current.id } }
         if (isDeviceBeyondCap(index, device)) return IndexEvaluation(Evaluation.Skipped(null, SkippedReason.SPENDING_CAP_REACHED), emptyList())
@@ -101,7 +99,6 @@ object Evaluator {
     }
 
     // Only releases the device could take count, so a skipped release the device is kept from never makes the move mandatory.
-
     internal fun isMandatoryTransitively(target: IndexRelease, currentNumber: Int, eligibleVerdicts: List<ReleaseVerdict>): Boolean =
         eligibleVerdicts.any { it.release.isMandatory && it.release.number > currentNumber && it.release.number <= target.number }
 

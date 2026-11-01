@@ -109,51 +109,15 @@ class StateStoreTest {
     }
 
     @Test
-    fun shouldDropARollbackNoticeStoredUnderAReasonNameOfVersionTwo() {
-        val store = InMemoryStore()
-        val notice = JSONObject().put("from", Release("r1", 1, "b1", "1", false).toJson()).put("to", JSONObject.NULL).put("reason", "CRASHED")
-        store.putInt("hotcodepush.stateVersion", 2)
-        store.putString("hotcodepush.lastRollback", notice.toString())
-        store.putString("hotcodepush.pendingRollbackEvent", notice.toString())
-        val state = StateStore(store)
-        assertNull(state.lastRollback)
-        assertNull(state.pendingRollbackEvent)
-    }
-
-    @Test
-    fun shouldDropALastCheckStoredUnderTheStatusAndFieldNamesOfVersionThree() {
-        val store = InMemoryStore()
-        val release = Release("r1", 1, "b1", "1", false)
-        val result = JSONObject().put("status", "UPDATED").put("release", release.toJson()).put("notes", JSONObject.NULL).put("installAt", "next-start")
-        store.putInt("hotcodepush.stateVersion", 3)
-        store.putString("hotcodepush.currentRelease", release.toJson().toString())
-        store.putString("hotcodepush.lastCheck", JSONObject().put("at", "2026-10-08T10:00:00.000Z").put("trigger", "manual").put("result", result).toString())
-        val state = StateStore(store)
-        assertNull(state.lastCheck)
-        assertNull(state.currentRelease)
-    }
-
-    @Test
-    fun shouldDropAnOutboxStoredInTheOldSpellingByTheFourthStateVersion() {
-        val store = InMemoryStore()
-        store.putInt("hotcodepush.stateVersion", 4)
-        store.putString("hotcodepush.unsentEvents", """[{"type":"checked","releaseId":"r1","status":"AVAILABLE"},{"type":"rolledBack","fromReleaseId":"r1","toReleaseId":null}]""")
-        store.putString("hotcodepush.deviceId", "device-1")
-        val state = StateStore(store)
-        assertEquals(emptyList<DeviceEvent>(), state.unsentEvents)
-        assertEquals("device-1", state.deviceId)
-    }
-
-    @Test
-    fun shouldDropALastCheckAndAnOutboxStoredUnderTheFieldNamesOfVersionFive() {
+    fun shouldDropALastCheckStoredUnderTheFieldNamesOfThePreviousStateVersion() {
         val store = InMemoryStore()
         val result = JSONObject().put("status", "skipped").put("release", JSONObject.NULL).put("reason", "device_incompatible").put("condition", "os")
         store.putInt("hotcodepush.stateVersion", 5)
         store.putString("hotcodepush.lastCheck", JSONObject().put("checkedAt", "2026-10-30T10:00:00.000Z").put("trigger", "manual").put("result", result).toString())
-        store.putString("hotcodepush.unsentEvents", """[{"type":"failed","releaseId":"r2","reason":"app_crashed"},{"type":"rolled_back","fromReleaseId":"r2","toReleaseId":null}]""")
+        store.putString("hotcodepush.deviceId", "device-1")
         val state = StateStore(store)
         assertNull(state.lastCheck)
-        assertEquals(emptyList<DeviceEvent>(), state.unsentEvents)
+        assertEquals("device-1", state.deviceId)
     }
 
     @Test

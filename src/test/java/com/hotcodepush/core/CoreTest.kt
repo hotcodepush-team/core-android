@@ -416,7 +416,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRefuseAManifestSignedByAKeyTheAppDoesNotHold() = runBlocking {
+    fun shouldRefuseAManifestSignedByAKeyTheAppDoesNotList() = runBlocking {
         val fixture = SignatureFixtures()
         val harness = Harness(Fixture.configuration(publicKeys = listOf(fixture.devicePublicKey("rsa-4096-b"))))
         val v2 = Fixture.release(1, "b2", v2Content)
@@ -425,7 +425,7 @@ class CoreTest {
         harness.core.handleAppStart()
         val result = harness.core.sync(SyncTrigger.MANUAL)
         assertEquals(FailedReason.SIGNATURE_INVALID.wire, result.reason)
-        assertTrue(result.message?.contains("does not hold") == true)
+        assertTrue(result.message?.contains("does not list") == true)
         assertEquals(FailedReason.SIGNATURE_INVALID, harness.listener.failed.single().reason)
     }
 
@@ -620,7 +620,7 @@ class CoreTest {
     fun shouldSwitchToAReleaseOfTheEmbeddedBundleOnAMeteredConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val configuration = Fixture.configuration(downloadStrategy = DownloadStrategy.UNMETERED)
         val harness = startOnConfirmedRelease(configuration)
-        harness.isConnectionMetered = true
+        harness.network.isMetered = true
         val reverted = Fixture.release(2, "embedded", Fixture.embeddedIndexHtml)
         harness.publish(listOf(Fixture.release(1, "b2", v2Content), reverted), 2, etag = "\"e2\"")
         assertEquals(SyncResult.downloaded(reverted.release.release, "notes 2", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
@@ -1018,7 +1018,7 @@ class CoreTest {
     @Test
     fun shouldSkipOnAMeteredConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val harness = Harness()
-        harness.isConnectionMetered = true
+        harness.network.isMetered = true
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()
@@ -1602,7 +1602,7 @@ class CoreTest {
     @Test
     fun shouldDownloadOnCallWhateverTheConnectionUnderTheUnmeteredStrategy() = runBlocking {
         val harness = Harness(Fixture.configuration(downloadStrategy = DownloadStrategy.UNMETERED))
-        harness.isConnectionMetered = true
+        harness.network.isMetered = true
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.core.handleAppStart()

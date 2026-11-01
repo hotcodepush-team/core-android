@@ -218,7 +218,7 @@ class StartTest {
     @Test
     fun shouldStartTheGatePausedWhenTheProcessStartsInTheBackgroundAndStartItsFullWindowAtTheFirstResume() = runBlocking {
         val (harness, v2) = harnessWithAWaitingRelease()
-        harness.isProcessInForeground = false
+        harness.processState.isInTheForeground = false
         harness.core.handleAppStart()
         assertEquals(v2.release.release, harness.core.getState().currentRelease)
         assertTrue(harness.scheduler.tasks.isEmpty())

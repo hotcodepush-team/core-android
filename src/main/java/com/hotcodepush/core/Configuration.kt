@@ -6,39 +6,31 @@ import org.json.JSONObject
 import java.io.FileNotFoundException
 
 /** When a downloaded update is applied. */
-enum class ApplyStrategy(val wire: String) {
+enum class ApplyStrategy(override val wire: String) : WireEnum {
     IMMEDIATE("immediate"), MANUAL("manual"), NEXT_RESUME("next_resume"), NEXT_START("next_start");
 
-    companion object {
-        fun fromWire(value: String?): ApplyStrategy? = entries.firstOrNull { it.wire == value }
-    }
+    companion object : WireEnumCompanion<ApplyStrategy>({ entries })
 }
 
 /** Whether the SDK checks on its own, at start, on resume and at the interval; `manual` leaves every cycle to the app's `sync()`. */
-enum class CheckStrategy(val wire: String) {
+enum class CheckStrategy(override val wire: String) : WireEnum {
     AUTO("auto"), MANUAL("manual");
 
-    companion object {
-        fun fromWire(value: String?): CheckStrategy? = entries.firstOrNull { it.wire == value }
-    }
+    companion object : WireEnumCompanion<CheckStrategy>({ entries })
 }
 
 /** When an update the check found is downloaded; `manual` stops the cycle after the check. */
-enum class DownloadStrategy(val wire: String) {
+enum class DownloadStrategy(override val wire: String) : WireEnum {
     AUTO("auto"), MANUAL("manual"), UNMETERED("unmetered");
 
-    companion object {
-        fun fromWire(value: String?): DownloadStrategy? = entries.firstOrNull { it.wire == value }
-    }
+    companion object : WireEnumCompanion<DownloadStrategy>({ entries })
 }
 
 /** When a mandatory update is applied; `next_start` is excluded, since it would make the flag mean nothing. */
-enum class MandatoryApplyStrategy(val wire: String) {
+enum class MandatoryApplyStrategy(override val wire: String) : WireEnum {
     IMMEDIATE("immediate"), MANUAL("manual");
 
-    companion object {
-        fun fromWire(value: String?): MandatoryApplyStrategy? = entries.firstOrNull { it.wire == value }
-    }
+    companion object : WireEnumCompanion<MandatoryApplyStrategy>({ entries })
 }
 
 internal fun MandatoryApplyStrategy.toApplyStrategy(): ApplyStrategy = when (this) {
@@ -47,12 +39,10 @@ internal fun MandatoryApplyStrategy.toApplyStrategy(): ApplyStrategy = when (thi
 }
 
 /** What ends the readiness gate: the first render, or an explicit `notifyReady()`. */
-enum class ReadySignal(val wire: String) {
+enum class ReadySignal(override val wire: String) : WireEnum {
     MANUAL("manual"), RENDER("render");
 
-    companion object {
-        fun fromWire(value: String?): ReadySignal? = entries.firstOrNull { it.wire == value }
-    }
+    companion object : WireEnumCompanion<ReadySignal>({ entries })
 }
 
 /** The resource file: the project's `hotcodepush.json` with the channel resolved to its id, plus what only the embed step knows. */
@@ -83,7 +73,7 @@ data class Configuration(
      * Whether a URL starts with the files or updates base URL and a `/`.
      * So another scheme, userinfo, a look-alike host, another port or another path is off the host.
      */
-    fun isOnConfiguredHost(url: String): Boolean = listOf(filesBaseUrl, updatesBaseUrl).any { url.startsWith("$it/") }
+    fun isUrlOnConfiguredHost(url: String): Boolean = listOf(filesBaseUrl, updatesBaseUrl).any { url.startsWith("$it/") }
 
     companion object {
         const val DEFAULT_FILES_BASE_URL = "https://files.hotcodepush.com"
@@ -97,13 +87,13 @@ data class Configuration(
         fun fromJson(json: JSONObject) = Configuration(
             appId = json.getWireString("appId", WireRule.IDENTIFIER),
             channelId = json.getNullableWireString("channelId", WireRule.NON_EMPTY),
-            checkStrategy = json.getOption("checkStrategy", CheckStrategy.AUTO) { json.getWireEnum(it, CheckStrategy::fromWire) },
+            checkStrategy = json.getOption("checkStrategy", CheckStrategy.AUTO) { json.getWireEnum(it, CheckStrategy) },
             checkIntervalSeconds = json.getOption("checkIntervalSeconds", 900.0) { json.getSeconds(it, minimum = MINIMUM_CHECK_INTERVAL_SECONDS) },
-            downloadStrategy = json.getOption("downloadStrategy", DownloadStrategy.AUTO) { json.getWireEnum(it, DownloadStrategy::fromWire) },
-            applyStrategy = json.getOption("applyStrategy", ApplyStrategy.NEXT_START) { json.getWireEnum(it, ApplyStrategy::fromWire) },
-            mandatoryApplyStrategy = json.getOption("mandatoryApplyStrategy", MandatoryApplyStrategy.IMMEDIATE) { json.getWireEnum(it, MandatoryApplyStrategy::fromWire) },
+            downloadStrategy = json.getOption("downloadStrategy", DownloadStrategy.AUTO) { json.getWireEnum(it, DownloadStrategy) },
+            applyStrategy = json.getOption("applyStrategy", ApplyStrategy.NEXT_START) { json.getWireEnum(it, ApplyStrategy) },
+            mandatoryApplyStrategy = json.getOption("mandatoryApplyStrategy", MandatoryApplyStrategy.IMMEDIATE) { json.getWireEnum(it, MandatoryApplyStrategy) },
             nextResumeMinimumBackgroundSeconds = json.getOption("nextResumeMinimumBackgroundSeconds", 300.0) { json.getSeconds(it) },
-            readySignal = json.getOption("readySignal", ReadySignal.RENDER) { json.getWireEnum(it, ReadySignal::fromWire) },
+            readySignal = json.getOption("readySignal", ReadySignal.RENDER) { json.getWireEnum(it, ReadySignal) },
             readyTimeoutSeconds = json.getOption("readyTimeoutSeconds", 10.0) { json.getSeconds(it, minimum = MINIMUM_READY_TIMEOUT_SECONDS) },
             isEnabledInDebugBuilds = json.getOption("isEnabledInDebugBuilds", true, json::getWireBoolean),
             publicKeys = json.getOption("publicKeys", emptyList()) { json.getJSONArray(it).map(DevicePublicKey::fromJson) },
@@ -133,11 +123,6 @@ data class Configuration(
 
 // An SDK option the file leaves out takes its default; a null, a wrong type or an unknown value refuses the file.
 private fun <T> JSONObject.getOption(key: String, default: T, read: (String) -> T): T = if (has(key)) read(key) else default
-
-private fun <T> JSONObject.getWireEnum(key: String, fromWire: (String) -> T?): T {
-    val value = getWireString(key)
-    return fromWire(value) ?: throw JSONException("Not a valid $key: $value")
-}
 
 // A value below the floor refuses the file like any other schema violation, never clamped.
 private fun JSONObject.getSeconds(key: String, minimum: Double = 0.0): Double {

@@ -1,8 +1,11 @@
 package com.hotcodepush.core
 
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -192,21 +195,47 @@ class FixtureTest {
     }
 
     @Test
-    fun shouldMatchEveryAttributeValueFixture() {
+    fun shouldMatchEveryAttributeValuesFixture() {
         for (case in cases("attribute-values.json", "cases")) {
             assertEquals(case.getString("name"), case.getBoolean("isValid"), AttributeRules.isValidValue(case.getString("value")))
         }
     }
 
     @Test
-    fun shouldMatchEveryConfiguredHostFixture() {
+    fun shouldMatchEveryConfiguredHostsFixture() {
         for (case in cases("configured-hosts.json", "cases")) {
-            assertEquals(case.getString("name"), case.getBoolean("isOnConfiguredHost"), configuration(case).isOnConfiguredHost(case.getString("url")))
+            assertEquals(case.getString("name"), case.getBoolean("isOnConfiguredHost"), configuration(case).isUrlOnConfiguredHost(case.getString("url")))
         }
     }
 
     @Test
-    fun shouldKeepTheReportedAtOfEveryAcknowledgementFixture() {
+    fun shouldEncodeEveryAcceptedBatchOfTheDeviceEventsFixture() {
+        for (case in cases("device-events.json", "acceptedBatches")) {
+            val batch = case.getJSONObject("batch")
+            val skipped = case.getJSONArray("skippedEventIndexes").let { array -> List(array.length()) { array.getInt(it) } }
+            val events = batch.getJSONArray("events").map { it }.filterIndexed { index, _ -> index !in skipped }
+            val report = batch.getNullableObject("report")
+            val written = DeviceEventsRequest(batch.getString("deviceId"), events.map(DeviceEvent::fromJson), batch.getString("platform"), report?.let(DeviceReport::fromJson), batch.getString("sdkVersion")).toJson()
+            val expected = retainKeys(batch, BATCH_KEYS)
+                .put("events", JSONArray(events.map { retainKeys(it, EVENT_KEYS) }))
+                .put("report", report?.let { retainKeys(it, REPORT_KEYS) } ?: JSONObject.NULL)
+            assertEquals(case.getString("name"), resolveComparable(expected), resolveComparable(written))
+        }
+    }
+
+    @Test
+    fun shouldEncodeNoRefusedBatchOfTheDeviceEventsFixture() {
+        for (case in cases("device-events.json", "refusedBatches")) {
+            val batch = case.getJSONObject("batch")
+            val request = runCatching {
+                DeviceEventsRequest(batch.getString("deviceId"), batch.getJSONArray("events").map(DeviceEvent::fromJson), batch.getString("platform"), batch.getNullableObject("report")?.let(DeviceReport::fromJson), batch.getString("sdkVersion"))
+            }.getOrNull() ?: continue
+            if (request.isReadable) assertFalse(case.getString("name"), resolveComparable(request.toJson()) == resolveComparable(batch))
+        }
+    }
+
+    @Test
+    fun shouldMatchEveryAcknowledgementOfTheDeviceEventsFixture() {
         for (case in cases("device-events.json", "acknowledgements")) {
             val reportedAt = case.optNullableString("reportedAt")?.let(Iso8601::parse)
             val keptReportedAt = case.optNullableString("keptReportedAt")?.let(Iso8601::parse)
@@ -235,7 +264,7 @@ class FixtureTest {
     )
 
     @Test
-    fun shouldRequestThePacksOfEveryPackSourceFixture() {
+    fun shouldMatchEveryPackSourcesFixture() {
         for (case in cases("pack-sources.json", "cases")) {
             val name = case.getString("name")
             val configuration = configuration(case, case.getString("appId"))
@@ -248,8 +277,21 @@ class FixtureTest {
                 statuses,
             )
             assertEquals(name, PackDownloadOutcome(case.optNullableString("packKind"), case.getJSONArray("requests").map(::packSource)), outcome)
-            for (request in outcome.requests) assertTrue(name, configuration.isOnConfiguredHost(request.url))
+            for (request in outcome.requests) assertTrue(name, configuration.isUrlOnConfiguredHost(request.url))
         }
+    }
+
+    @Test
+    fun shouldNameTheRefusalOfEverySignatureFixture() = SignatureFixtures().assertTheRefusalOfEveryManifest()
+
+    @Test
+    fun shouldVerifyUnderTheKeysOfTheAndroidResourceFileFixture() {
+        val fixture = SignatureFixtures()
+        val manifest = Fixture.release(1, "b2", "<html>v2</html>".toByteArray()).envelope.manifest
+        val androidBuild = cases("resource-files.json", "cases").single { it.getString("name").contains("Android build") }
+        val publicKeys = Configuration.fromJson(androidBuild.getJSONObject("resourceFile")).publicKeys
+        assertEquals(listOf("rsa-4096-a", "rsa-4096-b").map { fixture.devicePublicKey(it) }, publicKeys)
+        assertNull(SignatureVerifier.verifyManifestSignature(manifest, fixture.sign(manifest, "rsa-4096-b"), publicKeys))
     }
 
     @Test
@@ -323,5 +365,21 @@ class FixtureTest {
             val pack = Base64.getDecoder().decode(case.getString("packBase64"))
             assertThrows(case.getString("name"), PackFormatException::class.java) { PackReader.entries(pack) }
         }
+    }
+
+    private fun retainKeys(json: JSONObject, keys: Set<String>): JSONObject = JSONObject(json.toString()).apply { json.keys().asSequence().filter { it !in keys }.toList().forEach(::remove) }
+
+    // org.json holds a whole number as an Int or a Long, so both compare as a Long.
+    private fun resolveComparable(value: Any?): Any? = when (value) {
+        is JSONObject -> value.keys().asSequence().associateWith { resolveComparable(value.get(it)) }
+        is JSONArray -> List(value.length()) { resolveComparable(value.get(it)) }
+        is Int -> value.toLong()
+        else -> value
+    }
+
+    private companion object {
+        val BATCH_KEYS = setOf("deviceId", "events", "platform", "report", "sdkVersion")
+        val EVENT_KEYS = setOf("type", "releaseId", "status", "reason", "conditionType", "downloadSizeBytes", "packKind", "detail")
+        val REPORT_KEYS = setOf("attributes", "binaryBuild", "binaryVersion", "channelId", "channelSource", "embeddedBundleId", "fingerprint", "osVersion", "releaseId")
     }
 }
