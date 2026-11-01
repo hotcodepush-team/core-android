@@ -41,13 +41,12 @@ object Evaluator {
     private const val BINARY_VERSION_MIN_COMPONENTS = 3
 
     fun evaluation(index: ChannelIndex, device: DeviceInfo): IndexEvaluation {
-        val currentIndexRelease = device.currentRelease?.let { current -> index.releases.firstOrNull { it.id == current.id } }
         if (isDeviceBeyondCap(index, device)) return IndexEvaluation(Evaluation.Skipped(null, SkippedReason.SPENDING_CAP_REACHED), emptyList())
         val verdicts = index.releases.sortedByDescending { it.number }.map { verdict(it, index, device) }
-        return IndexEvaluation(outcome(verdicts, index, device, currentIndexRelease), verdicts)
+        return IndexEvaluation(outcome(verdicts, index, device), verdicts)
     }
 
-    private fun outcome(verdicts: List<ReleaseVerdict>, index: ChannelIndex, device: DeviceInfo, currentIndexRelease: IndexRelease?): Evaluation {
+    private fun outcome(verdicts: List<ReleaseVerdict>, index: ChannelIndex, device: DeviceInfo): Evaluation {
         val currentNumber = device.currentRelease?.number ?: EMBEDDED_RELEASE_NUMBER
         val isCurrentRevoked = device.currentRelease?.let { isRevoked(it.id, index) } ?: false
         val eligibleVerdicts = verdicts.filter { it.isEligible }
@@ -58,7 +57,7 @@ object Evaluator {
         if (isCurrentRevoked) return Evaluation.Skipped(olderEligible?.release, SkippedReason.RELEASE_REVOKED)
         if (index.pausedAt != null && newerVerdict != null) return Evaluation.Skipped(newerVerdict.release, SkippedReason.CHANNEL_PAUSED)
         if (newerVerdict?.reason != null) return Evaluation.Skipped(newerVerdict.release, newerVerdict.reason, newerVerdict.conditionType)
-        return Evaluation.UpToDate(currentIndexRelease)
+        return Evaluation.UpToDate(device.currentRelease?.let { current -> index.releases.firstOrNull { it.id == current.id } })
     }
 
     fun verdict(release: IndexRelease, index: ChannelIndex, device: DeviceInfo): ReleaseVerdict {
@@ -74,7 +73,9 @@ object Evaluator {
         return ReleaseVerdict(release, true)
     }
 
+    // A case table: one branch per condition type.
     /** Whether the device satisfies the condition; an unknown type never does. */
+    @Suppress("CyclomaticComplexMethod")
     fun isSatisfied(condition: Condition, device: DeviceInfo): Boolean = when (condition) {
         is Condition.Attribute -> device.attributes[condition.key]?.let { Hashing.attributeHash(condition.key, it) == condition.valueSha256 } ?: false
         is Condition.Binary -> resolveBinaryVersion(device)?.let { VersionRange.isVersionInRange(it, condition.range) == true } ?: false

@@ -14,6 +14,8 @@ internal object Bspatch {
 
     // A control triple that reaches outside the old file adds nothing there, as bsdiff 4.3 defined it.
     // So only the hash of the result proves the patch was the right one.
+    // The three files and the cap the C function takes, which callers name.
+    @Suppress("LongParameterList")
     fun apply(patch: File, old: File, new: File, maximumBytes: Long) {
         when (applyPatch(old.path, new.path, patch.path, maximumBytes)) {
             0 -> return
@@ -23,6 +25,8 @@ internal object Bspatch {
         }
     }
 
+    // The JNI signature bspatch_jni.c implements.
+    @Suppress("LongParameterList")
     @JvmStatic
     private external fun applyPatch(oldPath: String, newPath: String, patchPath: String, maximumBytes: Long): Int
 }

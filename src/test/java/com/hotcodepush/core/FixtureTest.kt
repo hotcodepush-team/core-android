@@ -74,19 +74,19 @@ class FixtureTest {
         return List(cases.length()) { cases.getJSONObject(it) }
     }
 
-    private fun assertAccepted(path: String, key: String, document: String, decode: (JSONObject) -> Any) {
+    private fun assertAccepted(path: String, key: String, decode: (JSONObject) -> Any) {
         for (case in cases(path, key)) {
             try {
-                decode(case.getJSONObject(document))
+                decode(case)
             } catch (exception: Exception) {
                 fail("$key: ${case.getString("name")}: $exception")
             }
         }
     }
 
-    private fun assertRefused(path: String, key: String, document: String, decode: (JSONObject) -> Any) {
+    private fun assertRefused(path: String, key: String, decode: (JSONObject) -> Any) {
         for (case in cases(path, key)) {
-            assertThrows("$key: ${case.getString("name")}", JSONException::class.java) { decode(case.getJSONObject(document)) }
+            assertThrows("$key: ${case.getString("name")}", JSONException::class.java) { decode(case) }
         }
     }
 
@@ -125,18 +125,18 @@ class FixtureTest {
 
     @Test
     fun shouldAcceptEveryAcceptedWireRulesFixture() {
-        assertAccepted("wire-rules.json", "acceptedIndexes", "index", ChannelIndex::fromJson)
-        assertAccepted("wire-rules.json", "acceptedChannelsIndexes", "channelsIndex", ChannelsIndex::fromJson)
-        assertAccepted("wire-rules.json", "acceptedManifests", "manifest", BundleManifest::fromJson)
-        assertAccepted("wire-rules.json", "acceptedEnvelopes", "envelope", ManifestEnvelope::fromJson)
+        assertAccepted(path = "wire-rules.json", key = "acceptedIndexes") { ChannelIndex.fromJson(it.getJSONObject("index")) }
+        assertAccepted(path = "wire-rules.json", key = "acceptedChannelsIndexes") { ChannelsIndex.fromJson(it.getJSONObject("channelsIndex")) }
+        assertAccepted(path = "wire-rules.json", key = "acceptedManifests") { BundleManifest.fromJson(it.getJSONObject("manifest")) }
+        assertAccepted(path = "wire-rules.json", key = "acceptedEnvelopes") { ManifestEnvelope.fromJson(it.getJSONObject("envelope")) }
     }
 
     @Test
     fun shouldRefuseEveryRefusedWireRulesFixture() {
-        assertRefused("wire-rules.json", "refusedIndexes", "index", ChannelIndex::fromJson)
-        assertRefused("wire-rules.json", "refusedChannelsIndexes", "channelsIndex", ChannelsIndex::fromJson)
-        assertRefused("wire-rules.json", "refusedManifests", "manifest", BundleManifest::fromJson)
-        assertRefused("wire-rules.json", "refusedEnvelopes", "envelope", ManifestEnvelope::fromJson)
+        assertRefused(path = "wire-rules.json", key = "refusedIndexes") { ChannelIndex.fromJson(it.getJSONObject("index")) }
+        assertRefused(path = "wire-rules.json", key = "refusedChannelsIndexes") { ChannelsIndex.fromJson(it.getJSONObject("channelsIndex")) }
+        assertRefused(path = "wire-rules.json", key = "refusedManifests") { BundleManifest.fromJson(it.getJSONObject("manifest")) }
+        assertRefused(path = "wire-rules.json", key = "refusedEnvelopes") { ManifestEnvelope.fromJson(it.getJSONObject("envelope")) }
     }
 
     @Test
@@ -183,7 +183,7 @@ class FixtureTest {
 
     @Test
     fun shouldRefuseEveryRefusedResourceFileFixture() {
-        assertRefused("resource-files.json", "refusedResourceFiles", "resourceFile", Configuration::fromJson)
+        assertRefused(path = "resource-files.json", key = "refusedResourceFiles") { Configuration.fromJson(it.getJSONObject("resourceFile")) }
     }
 
     @Test
@@ -245,9 +245,12 @@ class FixtureTest {
 
     private data class PackDownloadOutcome(val packKind: String?, val requests: List<PackSource>)
 
-    private fun resolvePackDownloadOutcome(downloader: Downloader, envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int, statuses: List<Int>): PackDownloadOutcome {
+    private fun resolvePackDownloadOutcome(downloader: Downloader, case: JSONObject): PackDownloadOutcome {
+        val envelope = ManifestEnvelope.fromJson(case.getJSONObject("envelope"))
         val requests = mutableListOf<PackSource>()
-        var source = downloader.resolvePackSource(envelope, baseBundleId, missingFileCount) ?: return PackDownloadOutcome(PackKind.FILES.wire, requests)
+        var source = downloader.resolvePackSource(envelope, case.optNullableString("baseBundleId"), case.getInt("missingFileCount"))
+            ?: return PackDownloadOutcome(PackKind.FILES.wire, requests)
+        val statuses = case.getJSONArray("statuses").let { array -> List(array.length()) { array.getInt(it) } }
         for (status in statuses) {
             requests += source
             if (status == 200 || status == 206) return PackDownloadOutcome(source.kind.wire, requests)
@@ -268,14 +271,7 @@ class FixtureTest {
         for (case in cases("pack-sources.json", "cases")) {
             val name = case.getString("name")
             val configuration = configuration(case, case.getString("appId"))
-            val statuses = case.getJSONArray("statuses").let { array -> List(array.length()) { array.getInt(it) } }
-            val outcome = resolvePackDownloadOutcome(
-                DownloaderHarness(configuration).downloader,
-                ManifestEnvelope.fromJson(case.getJSONObject("envelope")),
-                case.optNullableString("baseBundleId"),
-                case.getInt("missingFileCount"),
-                statuses,
-            )
+            val outcome = resolvePackDownloadOutcome(DownloaderHarness(configuration).downloader, case)
             assertEquals(name, PackDownloadOutcome(case.optNullableString("packKind"), case.getJSONArray("requests").map(::packSource)), outcome)
             for (request in outcome.requests) assertTrue(name, configuration.isUrlOnConfiguredHost(request.url))
         }

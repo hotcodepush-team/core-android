@@ -32,10 +32,7 @@ class PackEntriesOnDeviceTest {
         for (case in cases) {
             val name = case.getString("name")
             val harness = DownloaderHarness()
-            for (sha256 in case.getJSONArray("heldSha256s").toStringList()) {
-                val content = contents.getValue(sha256)
-                if (isBaseEmbedded) harness.embedded.files[sha256] = content else harness.files.writeFile(content, sha256)
-            }
+            holdPatchBases(harness, case, isBaseEmbedded = isBaseEmbedded)
             val manifestFiles = case.getJSONArray("manifestFiles").map(BundleManifest.File::fromJson)
             for (file in manifestFiles) harness.http.stub(DownloaderHarness.fileUrl(file.sha256), body = contents.getValue(file.sha256))
             val patchEntry = case.getJSONObject("patchEntry")
@@ -52,6 +49,13 @@ class PackEntriesOnDeviceTest {
             val manifest = checkNotNull(harness.files.readManifest(DownloaderHarness.BUNDLE_ID))
             assertTrue(name, harness.files.isComplete(manifest, harness.embedded))
             harness.root.deleteRecursively()
+        }
+    }
+
+    private fun holdPatchBases(harness: DownloaderHarness, case: JSONObject, isBaseEmbedded: Boolean) {
+        for (sha256 in case.getJSONArray("heldSha256s").toStringList()) {
+            val content = contents.getValue(sha256)
+            if (isBaseEmbedded) harness.embedded.files[sha256] = content else harness.files.writeFile(content, sha256)
         }
     }
 }

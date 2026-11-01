@@ -104,6 +104,8 @@ class AssetsEmbeddedBundle(private val context: Context, manifest: EmbeddedBundl
 
 /** Lays a bundle out by path for the WebView, linking to the content-addressed files where the platform allows. */
 object BundleProjection {
+    // Public API, and the four arguments of core-ios's project(_:from:embedded:into:).
+    @Suppress("LongParameterList")
     fun project(manifest: BundleManifest, files: FileStore, embedded: EmbeddedBundle, directory: File) {
         directory.deleteRecursively()
         directory.mkdirs()

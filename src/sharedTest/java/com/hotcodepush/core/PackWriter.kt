@@ -17,18 +17,18 @@ object PackWriter {
         val output = ByteArrayOutputStream()
         for ((entry, body) in entries) {
             when (entry) {
-                is PackEntry.File -> writeEntry(output, "", entry.sha256, body)
-                is PackEntry.Patch -> writeEntry(output, "patches/${entry.fromSha256}", entry.toSha256, body)
+                is PackEntry.File -> output.writeEntry(prefix = "", name = entry.sha256, body = body)
+                is PackEntry.Patch -> output.writeEntry(prefix = "patches/${entry.fromSha256}", name = entry.toSha256, body = body)
             }
         }
         output.write(ByteArray(1024))
         return output.toByteArray()
     }
 
-    fun writeEntry(output: ByteArrayOutputStream, prefix: String, name: String, body: ByteArray) {
-        output.write(header(prefix, name, body.size.toLong()))
-        output.write(body)
-        output.write(ByteArray((512 - body.size % 512) % 512))
+    private fun ByteArrayOutputStream.writeEntry(prefix: String, name: String, body: ByteArray) {
+        write(header(prefix, name, body.size.toLong()))
+        write(body)
+        write(ByteArray((512 - body.size % 512) % 512))
     }
 
     fun header(prefix: String, name: String, size: Long): ByteArray {

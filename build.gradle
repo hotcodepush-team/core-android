@@ -9,12 +9,14 @@ buildscript {
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath 'io.gitlab.arturbosch.detekt:detekt-gradle-plugin:1.23.8'
     }
 }
 
 apply plugin: 'com.android.library'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'maven-publish'
+apply plugin: 'io.gitlab.arturbosch.detekt'
 
 group = 'com.hotcodepush'
 // A release build, -Prelease, keeps the version release-please writes into gradle.properties.
@@ -73,6 +75,24 @@ kotlin {
 repositories {
     google()
     mavenCentral()
+}
+
+detekt {
+    config.setFrom('detekt.yml')
+    source.setFrom('src/main/java', 'src/test/java', 'src/sharedTest/java', 'src/androidTest/java')
+}
+
+// Detekt 1.23 runs on the Kotlin compiler it was built with; the Kotlin plugin would otherwise move it to the project's.
+configurations.matching { it.name == 'detekt' }.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == 'org.jetbrains.kotlin') {
+            useVersion('2.0.21')
+        }
+    }
+}
+
+tasks.matching { it.name == 'lint' }.configureEach {
+    dependsOn('detekt')
 }
 
 dependencies {

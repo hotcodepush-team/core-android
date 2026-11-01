@@ -52,7 +52,9 @@ data class SyncResult(
     val downloadSizeBytes: Long? = null,
     val message: String? = null,
 ) {
+    // A case table: one set of keys per status.
     /** Writes the keys of its status only: a nullable field as an explicit `null`, an optional one left out. */
+    @Suppress("CyclomaticComplexMethod")
     fun toJson(): JSONObject {
         val json = JSONObject().put("status", status.wire).put("release", release?.toJson() ?: JSONObject.NULL)
         when (status) {

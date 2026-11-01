@@ -37,6 +37,13 @@ class Core(
 ) {
     private enum class Stage { CHECK, DOWNLOAD, SYNC }
 
+    private class Cycle(val trigger: SyncTrigger, val stage: Stage, val options: SyncOptions)
+
+    private sealed class CycleIndex {
+        data class Index(val index: ChannelIndex) : CycleIndex()
+        data class Failure(val result: SyncResult) : CycleIndex()
+    }
+
     private sealed class ChannelResolution {
         data class Id(val id: String) : ChannelResolution()
         object Offline : ChannelResolution()
@@ -301,7 +308,7 @@ class Core(
      */
     suspend fun sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()): SyncResult {
         verifyChannelId()
-        return runCycle(trigger, Stage.SYNC, options)
+        return runCycle(Cycle(trigger, Stage.SYNC, options))
     }
 
     /**
@@ -310,7 +317,7 @@ class Core(
      */
     suspend fun checkForUpdate(): SyncResult {
         verifyChannelId()
-        return runCycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions(downloadStrategy = DownloadStrategy.MANUAL))
+        return runCycle(Cycle(SyncTrigger.MANUAL, Stage.CHECK, SyncOptions(downloadStrategy = DownloadStrategy.MANUAL)))
     }
 
     /**
@@ -320,26 +327,26 @@ class Core(
      */
     suspend fun downloadUpdate(options: DownloadUpdateOptions = DownloadUpdateOptions()): SyncResult {
         verifyChannelId()
-        return runCycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions(options.applyStrategy, DownloadStrategy.AUTO, options.mandatoryApplyStrategy))
+        return runCycle(Cycle(SyncTrigger.MANUAL, Stage.DOWNLOAD, SyncOptions(options.applyStrategy, DownloadStrategy.AUTO, options.mandatoryApplyStrategy)))
     }
 
-    private suspend fun runCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
+    private suspend fun runCycle(cycle: Cycle): SyncResult {
         while (true) {
-            val cycle = lock.withLock { runningCycle ?: startCycle(trigger, stage, options) }
-            if (cycle.stage == stage) return cycle.result.await()
-            cycle.result.join()
+            val running = lock.withLock { runningCycle ?: startCycle(cycle) }
+            if (running.stage == cycle.stage) return running.result.await()
+            running.result.join()
         }
     }
 
-    private fun startCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): RunningCycle {
+    private fun startCycle(cycle: Cycle): RunningCycle {
         val result = scope.async(start = CoroutineStart.LAZY) {
             try {
-                cycleLock.withLock { performCycle(trigger, stage, options) }
+                cycleLock.withLock { performCycle(cycle) }
             } finally {
                 withContext(NonCancellable) { lock.withLock { runningCycle = null } }
             }
         }
-        return RunningCycle(stage, result).also { runningCycle = it }
+        return RunningCycle(cycle.stage, result).also { runningCycle = it }
     }
 
     /** Applies the downloaded update and reloads the app, at once or, before the app is up in this run, once it is. */
@@ -350,77 +357,86 @@ class Core(
         ApplyUpdateResult(ApplyUpdateStatus.APPLIED, next.release)
     }
 
-    private suspend fun performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
-        val result = resolveCycleSafely(trigger, stage, options)
+    private suspend fun performCycle(cycle: Cycle): SyncResult {
+        val result = resolveCycleSafely(cycle)
         lock.withLock {
-            state.lastCheck = LastCheck(clock.now(), trigger, result)
-            if (stage == Stage.SYNC) {
+            state.lastCheck = LastCheck(clock.now(), cycle.trigger, result)
+            if (cycle.stage == Stage.SYNC) {
                 state.lastSyncAt = clock.now()
                 scheduleIntervalSync(configuration.checkIntervalSeconds)
             }
         }
-        log.record(LogEntry.ofCycle(result, trigger, clock.now()))
+        log.record(LogEntry.ofCycle(result, cycle.trigger, clock.now()))
         if (result.status == SyncStatus.FAILED) {
             val reason = FailedReason.fromWire(result.reason)
-            if (reason != null) listener.updateFailed(UpdateFailedEvent(result.release, reason, result.message ?: "", trigger))
+            if (reason != null) listener.updateFailed(UpdateFailedEvent(result.release, reason, result.message ?: "", cycle.trigger))
         }
         launchTask { sendDeviceEvents() }
         return result
     }
 
-    private suspend fun resolveCycleSafely(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult = try {
-        resolveCycle(trigger, stage, options)
+    private suspend fun resolveCycleSafely(cycle: Cycle): SyncResult = try {
+        resolveCycle(cycle)
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (failure: Throwable) {
         SyncResult.failed(null, FailedReason.INDEX_INVALID, "The cycle stopped on $failure")
     }
 
-    private suspend fun resolveCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
+    private suspend fun resolveCycle(cycle: Cycle): SyncResult {
         val current = state.currentRelease
         if (isDisabledInThisBuild) return SyncResult.skipped(null, SkippedReason.BUILD_DEBUG)
-        val channelId = when (val resolution = resolveChannelId()) {
-            is ChannelResolution.Id -> resolution.id
-            ChannelResolution.Offline -> return SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channels index could not be fetched to resolve the channel name")
-            ChannelResolution.Unknown -> return SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, "The channel set at runtime is not in the app's channels index")
-            ChannelResolution.Missing -> return SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE)
-            is ChannelResolution.Invalid -> return SyncResult.failed(null, FailedReason.INDEX_INVALID, resolution.message)
-        }
-        val index = when (val fetch = fetchChannelIndex(channelId)) {
-            is IndexFetch.Index -> fetch.index
-            IndexFetch.Offline -> return SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channel index could not be fetched and no cached copy exists")
-            is IndexFetch.Invalid -> return SyncResult.failed(null, FailedReason.INDEX_INVALID, fetch.message)
-            IndexFetch.Missing -> return SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, resolveMissingIndexMessage(channelId))
+        val index = when (val fetch = fetchCycleIndex()) {
+            is CycleIndex.Index -> fetch.index
+            is CycleIndex.Failure -> return fetch.result
         }
         return when (val evaluation = Evaluator.evaluation(index, deviceInfo()).outcome) {
             is Evaluation.UpToDate -> SyncResult.upToDate(current)
             is Evaluation.Available -> {
                 lock.withLock { recordChecked(evaluation.release, index, SyncStatus.AVAILABLE) }
-                update(evaluation.release, evaluation.isMandatory, trigger, stage, options)
+                update(evaluation.release, isMandatory = evaluation.isMandatory, cycle = cycle)
             }
-            is Evaluation.Skipped -> when {
-                evaluation.reason != SkippedReason.RELEASE_REVOKED -> {
-                    evaluation.release?.let { release -> lock.withLock { recordChecked(release, index, SyncStatus.SKIPPED, evaluation.reason, evaluation.conditionType) } }
-                    SyncResult.skipped(evaluation.release?.release, evaluation.reason, evaluation.conditionType)
-                }
-                (evaluation.release?.bundleId ?: configuration.embeddedBundleId) == resolveRunningBundleId() -> {
-                    lock.withLock { adoptInPlace(evaluation.release?.release) }
-                    SyncResult.skipped(evaluation.release?.release, SkippedReason.RELEASE_REVOKED)
-                }
-                stage == Stage.CHECK -> SyncResult.skipped(evaluation.release?.release, SkippedReason.RELEASE_REVOKED)
-                evaluation.release == null -> {
-                    lock.withLock { revertToEmbedded() }
-                    SyncResult.skipped(null, SkippedReason.RELEASE_REVOKED)
-                }
-                else -> {
-                    val outcome = downloadAndApply(evaluation.release, true, ApplyStrategy.IMMEDIATE, trigger)
-                    if (outcome.status == SyncStatus.FAILED) outcome else SyncResult.skipped(evaluation.release.release, SkippedReason.RELEASE_REVOKED)
-                }
+            is Evaluation.Skipped -> if (evaluation.reason == SkippedReason.RELEASE_REVOKED) {
+                leaveRevokedRelease(fallback = evaluation.release, cycle = cycle)
+            } else {
+                evaluation.release?.let { release -> lock.withLock { recordChecked(release, index, SyncStatus.SKIPPED, evaluation.reason, evaluation.conditionType) } }
+                SyncResult.skipped(evaluation.release?.release, evaluation.reason, evaluation.conditionType)
             }
         }
     }
 
-    private suspend fun update(target: IndexRelease, isMandatory: Boolean, trigger: SyncTrigger, stage: Stage, options: SyncOptions): SyncResult {
+    private suspend fun fetchCycleIndex(): CycleIndex {
+        val channelId = when (val resolution = resolveChannelId()) {
+            is ChannelResolution.Id -> resolution.id
+            ChannelResolution.Offline -> return CycleIndex.Failure(SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channels index could not be fetched to resolve the channel name"))
+            ChannelResolution.Unknown -> return CycleIndex.Failure(SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, "The channel set at runtime is not in the app's channels index"))
+            ChannelResolution.Missing -> return CycleIndex.Failure(SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE))
+            is ChannelResolution.Invalid -> return CycleIndex.Failure(SyncResult.failed(null, FailedReason.INDEX_INVALID, resolution.message))
+        }
+        return when (val fetch = fetchChannelIndex(channelId)) {
+            is IndexFetch.Index -> CycleIndex.Index(fetch.index)
+            IndexFetch.Offline -> CycleIndex.Failure(SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channel index could not be fetched and no cached copy exists"))
+            is IndexFetch.Invalid -> CycleIndex.Failure(SyncResult.failed(null, FailedReason.INDEX_INVALID, fetch.message))
+            IndexFetch.Missing -> CycleIndex.Failure(SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, resolveMissingIndexMessage(channelId)))
+        }
+    }
+
+    private suspend fun leaveRevokedRelease(fallback: IndexRelease?, cycle: Cycle): SyncResult {
+        if ((fallback?.bundleId ?: configuration.embeddedBundleId) == resolveRunningBundleId()) {
+            lock.withLock { adoptInPlace(fallback?.release) }
+            return SyncResult.skipped(fallback?.release, SkippedReason.RELEASE_REVOKED)
+        }
+        if (cycle.stage == Stage.CHECK) return SyncResult.skipped(fallback?.release, SkippedReason.RELEASE_REVOKED)
+        if (fallback == null) {
+            lock.withLock { revertToEmbedded() }
+            return SyncResult.skipped(null, SkippedReason.RELEASE_REVOKED)
+        }
+        val next = NextRelease(resolveRelease(fallback, isMandatory = true), ApplyStrategy.IMMEDIATE)
+        val outcome = downloadAndApply(fallback, next, cycle.trigger)
+        return if (outcome.status == SyncStatus.FAILED) outcome else SyncResult.skipped(fallback.release, SkippedReason.RELEASE_REVOKED)
+    }
+
+    private suspend fun update(target: IndexRelease, isMandatory: Boolean, cycle: Cycle): SyncResult {
         val release = resolveRelease(target, isMandatory)
         // An adopted release already runs without a reload, so the cycle answers `up_to_date`.
         if (target.bundleId == resolveRunningBundleId()) {
@@ -428,18 +444,19 @@ class Core(
             return SyncResult.upToDate(release)
         }
         // The call's strategy wins over the downloaded release's, so an automatic cycle never overrides the app's choice.
-        val requestedApplyStrategy = resolveRequestedApplyStrategy(isMandatory, options)
+        val requestedApplyStrategy = resolveRequestedApplyStrategy(isMandatory, cycle.options)
         val downloaded = readDownloadedRelease(target)
         if (downloaded != null) {
-            if (stage == Stage.CHECK) return SyncResult.available(release, target.notes, resolveDownloadSizeBytes(target))
+            if (cycle.stage == Stage.CHECK) return SyncResult.available(release, target.notes, resolveDownloadSizeBytes(target))
             return lock.withLock { applyDownloaded(NextRelease(release, requestedApplyStrategy ?: downloaded.applyStrategy), target.notes) }
         }
         val applyStrategy = requestedApplyStrategy ?: resolveConfiguredApplyStrategy(isMandatory)
-        listener.updateAvailable(UpdateAvailableEvent(release, target.notes, resolveDownloadSizeBytes(target), trigger))
-        return when (resolveDownloadStrategy(target, stage, options)) {
+        listener.updateAvailable(UpdateAvailableEvent(release, target.notes, resolveDownloadSizeBytes(target), cycle.trigger))
+        val next = NextRelease(release, applyStrategy)
+        return when (resolveDownloadStrategy(target, cycle)) {
             DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, resolveDownloadSizeBytes(target))
-            DownloadStrategy.UNMETERED -> if (networkState.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, isMandatory, applyStrategy, trigger)
-            DownloadStrategy.AUTO -> downloadAndApply(target, isMandatory, applyStrategy, trigger)
+            DownloadStrategy.UNMETERED -> if (networkState.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, next, cycle.trigger)
+            DownloadStrategy.AUTO -> downloadAndApply(target, next, cycle.trigger)
         }
     }
 
@@ -448,8 +465,8 @@ class Core(
         if (isCarryingEmbeddedBundle(target.bundleId)) 0 else target.sizeBytes
 
     // A release of the embedded bundle downloads nothing, so it passes every gate but the check's.
-    private fun resolveDownloadStrategy(target: IndexRelease, stage: Stage, options: SyncOptions): DownloadStrategy =
-        if (isCarryingEmbeddedBundle(target.bundleId) && stage != Stage.CHECK) DownloadStrategy.AUTO else options.downloadStrategy ?: configuration.downloadStrategy
+    private fun resolveDownloadStrategy(target: IndexRelease, cycle: Cycle): DownloadStrategy =
+        if (isCarryingEmbeddedBundle(target.bundleId) && cycle.stage != Stage.CHECK) DownloadStrategy.AUTO else cycle.options.downloadStrategy ?: configuration.downloadStrategy
 
     private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(target.id, target.number, target.bundleId, target.bundleVersion, isMandatory)
 
@@ -466,14 +483,13 @@ class Core(
         return if (files.isComplete(manifest, embedded)) next else null
     }
 
-    private suspend fun downloadAndApply(target: IndexRelease, isMandatory: Boolean, applyStrategy: ApplyStrategy, trigger: SyncTrigger): SyncResult {
-        val release = resolveRelease(target, isMandatory)
+    private suspend fun downloadAndApply(target: IndexRelease, next: NextRelease, trigger: SyncTrigger): SyncResult {
         if (!isCarryingEmbeddedBundle(target.bundleId)) {
-            val failure = downloadBundle(target, release)
+            val failure = downloadBundle(target, next.release)
             if (failure != null) return failure
         }
-        if (applyStrategy != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(release, applyStrategy, trigger))
-        return lock.withLock { applyDownloaded(NextRelease(release, applyStrategy), target.notes) }
+        if (next.applyStrategy != ApplyStrategy.IMMEDIATE) listener.updateDownloaded(UpdateDownloadedEvent(next.release, next.applyStrategy, trigger))
+        return lock.withLock { applyDownloaded(next, target.notes) }
     }
 
     private suspend fun downloadBundle(target: IndexRelease, release: Release): SyncResult? {
@@ -840,32 +856,25 @@ class Core(
         is ChannelChoice.Id -> ChannelResolution.Id(choice.id)
         is ChannelChoice.Name -> {
             val resolved = resolvedChannelName
-            if (resolved != null && resolved.first == choice.name) {
-                ChannelResolution.Id(resolved.second)
-            } else {
-                val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/channels/v1/index.json"
-                val response = runCatching { http.get(url, emptyMap()) }.getOrNull()
-                // A failed fetch means offline, never an unknown name.
-                when (response?.status) {
-                    null -> ChannelResolution.Offline
-                    200 -> {
-                        val index = runCatching { ChannelsIndex.fromJson(parseJsonObject(response.body)) }.getOrNull()
-                        if (index == null) {
-                            ChannelResolution.Invalid("The channels index could not be parsed")
-                        } else {
-                            val entry = index.channels.firstOrNull { it.name == choice.name }
-                            if (entry == null) {
-                                ChannelResolution.Unknown
-                            } else {
-                                resolvedChannelName = choice.name to entry.id
-                                ChannelResolution.Id(entry.id)
-                            }
-                        }
-                    }
-                    404 -> ChannelResolution.Unknown
-                    else -> ChannelResolution.Offline
-                }
+            if (resolved != null && resolved.first == choice.name) ChannelResolution.Id(resolved.second) else fetchChannelId(name = choice.name)
+        }
+    }
+
+    private suspend fun fetchChannelId(name: String): ChannelResolution {
+        val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/channels/v1/index.json"
+        val response = runCatching { http.get(url, emptyMap()) }.getOrNull()
+        // A failed fetch means offline, never an unknown name.
+        return when (response?.status) {
+            null -> ChannelResolution.Offline
+            200 -> {
+                val index = runCatching { ChannelsIndex.fromJson(parseJsonObject(response.body)) }.getOrNull()
+                    ?: return ChannelResolution.Invalid("The channels index could not be parsed")
+                val entry = index.channels.firstOrNull { it.name == name } ?: return ChannelResolution.Unknown
+                resolvedChannelName = name to entry.id
+                ChannelResolution.Id(entry.id)
             }
+            404 -> ChannelResolution.Unknown
+            else -> ChannelResolution.Offline
         }
     }
 
@@ -897,17 +906,19 @@ class Core(
                 lock.withLock { state.cachedIndex = CachedIndex(cached.etag, clock.now(), cached.body) }
                 IndexFetch.Index(cached.body)
             }
-            200 -> {
-                val index = runCatching { ChannelIndex.fromJson(parseJsonObject(response.body)) }.getOrNull()
-                    ?: return IndexFetch.Invalid("The channel index could not be parsed")
-                if (!isIndexForDevice(index, channelId)) return IndexFetch.Invalid("The channel index names another app, channel or platform")
-                if (cached != null && isBehindCachedIndex(index, cached)) return IndexFetch.Index(cached.body)
-                lock.withLock { state.cachedIndex = CachedIndex(response.header("ETag"), clock.now(), index) }
-                IndexFetch.Index(index)
-            }
+            200 -> acceptFetchedIndex(response, channelId, cached = cached)
             404 -> IndexFetch.Missing
             else -> cached?.let { IndexFetch.Index(it.body) } ?: IndexFetch.Offline
         }
+    }
+
+    private suspend fun acceptFetchedIndex(response: HttpResponse, channelId: String, cached: CachedIndex?): IndexFetch {
+        val index = runCatching { ChannelIndex.fromJson(parseJsonObject(response.body)) }.getOrNull()
+            ?: return IndexFetch.Invalid("The channel index could not be parsed")
+        if (!isIndexForDevice(index, channelId)) return IndexFetch.Invalid("The channel index names another app, channel or platform")
+        if (cached != null && isBehindCachedIndex(index, cached)) return IndexFetch.Index(cached.body)
+        lock.withLock { state.cachedIndex = CachedIndex(response.header("ETag"), clock.now(), index) }
+        return IndexFetch.Index(index)
     }
 
     // An older kept index counts as absent, so a forged far-future sequence freezes the device for a day at most.
