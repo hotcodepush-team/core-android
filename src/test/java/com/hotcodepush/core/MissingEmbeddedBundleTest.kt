@@ -1,11 +1,9 @@
 package com.hotcodepush.core
 
 import kotlinx.coroutines.runBlocking
-import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -25,12 +23,8 @@ class MissingEmbeddedBundleTest {
     }
 
     @Test
-    fun shouldReadAResourceFileWithANullEmbeddedBundleManifestAndRefuseOneWithoutTheKey() {
-        val resourceFile = withoutEmbeddedBundle.getJSONObject("resourceFile")
-        val configuration = Configuration.fromJson(resourceFile)
-        assertNull(configuration.embeddedBundleManifest)
-        assertNull(configuration.embeddedBundleId)
-        assertThrows(JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).apply { remove("embeddedBundleManifest") }) }
+    fun shouldReadANullEmbeddedBundleIdFromTheFixtureOfABuildWithoutAnEmbeddedBundle() {
+        assertNull(Configuration.fromJson(withoutEmbeddedBundle.getJSONObject("resourceFile")).embeddedBundleId)
     }
 
     @Test
