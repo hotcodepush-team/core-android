@@ -132,22 +132,6 @@ class MissingChannelTest {
     }
 
     @Test
-    fun shouldFireUpdateFailedOnceWhenAnAutomaticCheckFindsItsRuntimeChannelGoneAndTheBuildCarriesNoneAndStartNoCheckAfterIt() = runBlocking {
-        val harness = harness()
-        harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003"))
-        harness.core.handleAppStart()
-        assertEquals(listOf(FailedReason.CHANNEL_UNKNOWN), harness.listener.failed.map { it.reason })
-        assertEquals(listOf(SyncTrigger.START), harness.listener.failed.map { it.trigger })
-        harness.scheduler.fire()
-        harness.core.handleAppPause()
-        harness.clock.now += 1_000_000
-        harness.core.handleAppResume()
-        assertEquals(1, harness.listener.failed.size)
-        assertEquals(SyncTrigger.START, StateStore(harness.store).lastCheck?.trigger)
-        assertEquals(1, harness.http.requests.size)
-    }
-
-    @Test
     fun shouldPostNoReportAndQueueNothing() = runBlocking {
         val harness = harness()
         harness.acknowledgeEvents()
@@ -199,23 +183,40 @@ class MissingChannelTest {
     }
 
     @Test
-    fun shouldFallBackToNoChannelWhenTheRuntimeChannelServesNoIndex() = runBlocking {
+    fun shouldFailWithUnknownChannelKeepTheRuntimeChoiceAndKeepCheckingWhenTheRuntimeChannelServesNoIndexAndTheBuildCarriesNone() = runBlocking {
         val harness = harness()
+        harness.core.setChannel(ChannelChoice.Id(GONE_CHANNEL_ID))
         harness.core.handleAppStart()
-        harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003"))
-        assertEquals(failed, harness.core.sync(SyncTrigger.MANUAL))
-        assertEquals(listOf("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/90e00000-0000-4000-8000-000000000003/android/v1/index.json"), harness.http.requests.map { it.first })
-        assertEquals(GetChannelResult(null, null, ChannelSource.CONFIG), harness.core.getChannel())
+        assertEquals(listOf(UpdateFailedEvent(null, FailedReason.CHANNEL_UNKNOWN, "The channel $GONE_CHANNEL_ID set at runtime serves no index.", SyncTrigger.START)), harness.listener.failed)
+        assertEquals(GetChannelResult(GONE_CHANNEL_ID, null, ChannelSource.RUNTIME), harness.core.getChannel())
+        assertEquals(listOf(GONE_INDEX_URL), harness.http.requests.map { it.first })
+        harness.scheduler.fire()
+        assertEquals(SyncTrigger.INTERVAL, StateStore(harness.store).lastCheck?.trigger)
+        assertEquals(listOf(900.0), harness.scheduler.tasks.map { it.seconds })
     }
 
     @Test
-    fun shouldFallBackToTheConfiguredChannelWhenTheRuntimeChannelServesNoIndex() = runBlocking {
-        val harness = Harness()
+    fun shouldFailWithUnknownChannelKeepTheRuntimeChoiceAndRequestNoOtherIndexWhenTheRuntimeChannelServesNoIndexAndTheBuildCarriesOne() = runBlocking {
+        val harness = Harness(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
         harness.publish(listOf(Fixture.release(1, "b2", v2Content)), 1)
         harness.core.handleAppStart()
-        harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003"))
-        assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
+        val requestsOnTheConfiguredChannel = harness.http.requests.size
+        harness.core.setChannel(ChannelChoice.Id(GONE_CHANNEL_ID))
+        assertEquals(SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, "The channel $GONE_CHANNEL_ID set at runtime serves no index."), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(GetChannelResult(GONE_CHANNEL_ID, null, ChannelSource.RUNTIME), harness.core.getChannel())
+        assertEquals(listOf(GONE_INDEX_URL), harness.http.requests.drop(requestsOnTheConfiguredChannel).map { it.first })
+        assertEquals(listOf(900.0), harness.scheduler.tasks.filter { !it.isCancelled }.map { it.seconds })
+    }
+
+    @Test
+    fun shouldFailWithUnknownChannelAndKeepCheckingWhenTheConfiguredChannelServesNoIndex() = runBlocking {
+        val harness = Harness(Fixture.configuration(checkStrategy = CheckStrategy.AUTO))
+        harness.core.handleAppStart()
+        assertEquals(listOf(UpdateFailedEvent(null, FailedReason.CHANNEL_UNKNOWN, "The channel ${Fixture.CHANNEL_ID} of this build serves no index.", SyncTrigger.START)), harness.listener.failed)
         assertEquals(GetChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.getChannel())
+        harness.scheduler.fire()
+        assertEquals(SyncTrigger.INTERVAL, StateStore(harness.store).lastCheck?.trigger)
+        assertEquals(listOf(900.0), harness.scheduler.tasks.map { it.seconds })
     }
 
     @Test
@@ -251,5 +252,10 @@ class MissingChannelTest {
         assertTrue(harness.http.requests.isEmpty())
         assertTrue(harness.http.posts.isEmpty())
         assertTrue(harness.scheduler.tasks.isEmpty())
+    }
+
+    private companion object {
+        const val GONE_CHANNEL_ID = "90e00000-0000-4000-8000-000000000003"
+        const val GONE_INDEX_URL = "${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/channels/$GONE_CHANNEL_ID/android/v1/index.json"
     }
 }

@@ -390,8 +390,7 @@ class Core(
             is IndexFetch.Index -> fetch.index
             IndexFetch.Offline -> return SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channel index could not be fetched and no cached copy exists")
             is IndexFetch.Invalid -> return SyncResult.failed(null, FailedReason.INDEX_INVALID, fetch.message)
-            IndexFetch.Absent -> return SyncResult.upToDate(current)
-            IndexFetch.NoChannel -> return SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE)
+            IndexFetch.Missing -> return SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, resolveMissingIndexMessage(channelId))
         }
         return when (val evaluation = Evaluator.evaluate(index, deviceInfo())) {
             is Evaluation.UpToDate -> SyncResult.upToDate(current)
@@ -835,10 +834,7 @@ class Core(
         data class Index(val index: ChannelIndex) : IndexFetch()
         object Offline : IndexFetch()
         data class Invalid(val message: String) : IndexFetch()
-        object Absent : IndexFetch()
-
-        // The runtime channel serves no index and the build carries none to fall back to.
-        object NoChannel : IndexFetch()
+        object Missing : IndexFetch()
     }
 
     private suspend fun resolveChannelId(): ChannelResolution = when (val choice = state.channel) {
@@ -889,6 +885,9 @@ class Core(
     private val hasChannel: Boolean
         get() = state.channel != null || configuration.channelId != null
 
+    private fun resolveMissingIndexMessage(channelId: String): String =
+        if (state.channel != null) "The channel $channelId set at runtime serves no index." else "The channel $channelId of this build serves no index."
+
     private suspend fun fetchChannelIndex(channelId: String): IndexFetch {
         val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/channels/$channelId/${device.platform}/v1/index.json"
         val cached = state.cachedIndex?.takeIf { it.body.channelId == channelId }
@@ -908,11 +907,7 @@ class Core(
                 lock.withLock { state.cachedIndex = CachedIndex(response.header("ETag"), clock.now(), index) }
                 IndexFetch.Index(index)
             }
-            404 -> {
-                if (state.channel == null) return IndexFetch.Absent
-                lock.withLock { state.channel = null }
-                configuration.channelId?.let { fetchChannelIndex(it) } ?: IndexFetch.NoChannel
-            }
+            404 -> IndexFetch.Missing
             else -> cached?.let { IndexFetch.Index(it.body) } ?: IndexFetch.Offline
         }
     }
