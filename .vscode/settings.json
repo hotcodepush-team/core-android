@@ -1,0 +1,15 @@
+{
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "text": "Conventional commit: <type>(<scope>)!: <imperative subject, max 72 chars>. Types: feat, fix, docs, perf, refactor, test, build, ci, chore. Body explains why, not what. Footer: Closes #<issue>."
+    }
+  ],
+  "github.copilot.chat.pullRequestDescriptionGeneration.instructions": [
+    {
+      "text": "Title: the conventional commit of the squash merge. Body: the PR template — Closes #<issue>, then What and why."
+    }
+  ],
+  "github.copilot.chat.reviewSelection.instructions": [
+    { "file": ".github/copilot-instructions.md" }
+  ]
+}
