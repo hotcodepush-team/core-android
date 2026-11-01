@@ -17,8 +17,11 @@ apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'maven-publish'
 
 group = 'com.hotcodepush'
-// Until the library is on Maven Central, a version is the full sha of the commit it is built from.
-version = providers.exec { commandLine 'git', 'rev-parse', 'HEAD' }.standardOutput.asText.get().trim()
+// A release build, -Prelease, keeps the version release-please writes into gradle.properties.
+// Every other build is versioned by the full sha of its commit, the pin the maven branch serves.
+if (!providers.gradleProperty('release').present) {
+    version = providers.exec { commandLine 'git', 'rev-parse', 'HEAD' }.standardOutput.asText.get().trim()
+}
 
 android {
     namespace = 'com.hotcodepush.core'
