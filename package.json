@@ -1,6 +1,6 @@
 {
   "name": "@hotcodepush/core-android-fixtures",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "The protocol fixtures the Android library's tests read; nothing of this file ships",
   "license": "MIT",
