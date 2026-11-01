@@ -2,6 +2,7 @@
 <resources>
     <string name="hotcodepush_debug_screen_title">HotCodePush</string>
     <string name="hotcodepush_debug_screen_check_now">Check now</string>
+    <string name="hotcodepush_debug_screen_return_to_configured_channel">Return to configured channel</string>
     <string name="hotcodepush_debug_screen_share">Share</string>
 
     <style name="HotCodePushDebugScreen" parent="@android:style/Theme.DeviceDefault.Light" />

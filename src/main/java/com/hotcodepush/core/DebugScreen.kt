@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -31,10 +32,14 @@ object DebugScreen {
     }
 }
 
-/** Shows the `DebugReport` text under two buttons: check now, and share the same text through the system share sheet. */
+/**
+ * Shows the `DebugReport` text under its buttons: check now, return to the configured channel while a runtime choice is in
+ * effect, and share the same text through the system share sheet.
+ */
 class DebugScreenActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var report: TextView? = null
+    private var returnButton: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,12 +57,15 @@ class DebugScreenActivity : Activity() {
         }
         val checkButton = Button(this).apply { setText(R.string.hotcodepush_debug_screen_check_now) }
         checkButton.setOnClickListener { checkNow(core, checkButton) }
+        val returnButton = Button(this).apply { setText(R.string.hotcodepush_debug_screen_return_to_configured_channel) }
+        returnButton.setOnClickListener { returnToConfiguredChannel(core) }
         val shareButton = Button(this).apply { setText(R.string.hotcodepush_debug_screen_share) }
         shareButton.setOnClickListener { share() }
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(padding, padding, padding, 0)
             addView(checkButton)
+            addView(returnButton)
             addView(shareButton)
         }
         val content = LinearLayout(this).apply {
@@ -67,6 +75,7 @@ class DebugScreenActivity : Activity() {
             addView(ScrollView(context).apply { addView(report) })
         }
         this.report = report
+        this.returnButton = returnButton
         setContentView(content)
         render(core)
     }
@@ -93,6 +102,14 @@ class DebugScreenActivity : Activity() {
 
     private fun render(core: Core) {
         report?.text = DebugReport.text(core.debugSnapshot())
+        returnButton?.visibility = if (core.getChannel().source == ChannelSource.RUNTIME) View.VISIBLE else View.GONE
+    }
+
+    private fun returnToConfiguredChannel(core: Core) {
+        scope.launch {
+            withContext(Dispatchers.IO) { core.setChannel(null) }
+            render(core)
+        }
     }
 
     private fun share() {

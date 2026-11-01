@@ -2,6 +2,7 @@ package com.hotcodepush.core
 
 import android.content.Intent
 import android.os.Looper
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
@@ -42,12 +43,28 @@ class DebugScreenActivityTest {
         assertTrue(harness.http.requestThreads.isNotEmpty())
         assertTrue(harness.http.requestThreads.none { it == Looper.getMainLooper().thread })
 
-        (buttons.getChildAt(1) as Button).performClick()
+        (buttons.getChildAt(2) as Button).performClick()
         val chooser = shadowOf(activity).nextStartedActivity
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         val shared = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
         assertEquals(report.text.toString(), shared?.getStringExtra(Intent.EXTRA_TEXT))
         assertTrue(shared?.getStringExtra(Intent.EXTRA_TEXT)?.contains("Result: failed device_offline") == true)
+    }
+
+    @Test
+    fun shouldShowTheReturnButtonOnlyWhileARuntimeChoiceIsInEffectAndReturnToTheConfiguredChannelOnItsClick() {
+        val harness = Harness()
+        runBlocking { harness.core.setChannel(ChannelChoice.Id("90e00000-0000-4000-8000-000000000003")) }
+        val application = RuntimeEnvironment.getApplication()
+        DebugScreen.show(application, harness.core)
+        val activity = Robolectric.buildActivity(DebugScreenActivity::class.java, shadowOf(application).nextStartedActivity).setup().get()
+        val content = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
+        val returnButton = (content.getChildAt(0) as ViewGroup).getChildAt(1) as Button
+        assertEquals(View.VISIBLE, returnButton.visibility)
+
+        returnButton.performClick()
+        idleMainLooperUntil { returnButton.visibility == View.GONE }
+        assertEquals(GetChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.getChannel())
     }
 
     // The check runs off the main thread and renders back on it, so the main looper must run until the answer shows.
