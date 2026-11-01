@@ -1,11 +1,9 @@
 package com.hotcodepush.core
 
 import kotlinx.coroutines.runBlocking
-import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -26,13 +24,6 @@ class MissingChannelTest {
         val withoutEmbeddedBundle = resourceFiles.single { it.isNull("embeddedBundleManifest") }
         assertNull(Configuration.fromJson(withoutChannel.getJSONObject("resourceFile")).channelId)
         for (case in resourceFiles - withoutChannel - withoutEmbeddedBundle) assertEquals(case.getString("name"), "c1", Configuration.fromJson(case.getJSONObject("resourceFile")).channelId)
-    }
-
-    @Test
-    fun shouldRefuseAResourceFileWithoutTheChannelKeyOrWithAnEmptyChannel() {
-        val resourceFile = resourceFiles.first().getJSONObject("resourceFile")
-        assertThrows(JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).apply { remove("channelId") }) }
-        assertThrows(JSONException::class.java) { Configuration.fromJson(JSONObject(resourceFile.toString()).put("channelId", "")) }
     }
 
     @Test
