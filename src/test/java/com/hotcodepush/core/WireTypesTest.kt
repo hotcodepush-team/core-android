@@ -80,7 +80,7 @@ class WireTypesTest {
     }
 
     @Test
-    fun shouldRefuseAResourceFileWhoseHostIsNotAnHttpOrHttpsUrl() {
+    fun shouldRefuseAResourceFileWhoseHostIsNotHttpOrHttps() {
         for (url in listOf("ftp://files.test", "file:///files", "files.test")) {
             assertThrows(url, JSONException::class.java) { Configuration.fromJson(resourceFile().put("filesBaseUrl", url)) }
             assertThrows(url, JSONException::class.java) { Configuration.fromJson(resourceFile().put("updatesBaseUrl", url)) }

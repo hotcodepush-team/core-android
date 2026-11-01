@@ -12,7 +12,7 @@ class CatalogTest {
     private fun assertCatalogValues(key: String, values: List<String>) = assertEquals(key, catalog.getJSONArray(key).toStringList(), values)
 
     @Test
-    fun shouldCarryEveryListOfTheCatalog() = assertEquals(
+    fun shouldCoverEveryListOfTheCatalog() = assertEquals(
         setOf(
             "applyStrategies", "applyUpdateStatuses", "channelSources", "checkStrategies", "conditionTypes", "deviceEventTypes", "downloadStrategies", "failedReasons",
             "mandatoryApplyStrategies", "packKinds", "platforms", "readySignals", "rollbackReasons", "skippedReasons", "syncStatuses", "syncTriggers",

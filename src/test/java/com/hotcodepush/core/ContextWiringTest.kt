@@ -51,12 +51,12 @@ class ContextWiringTest {
     }
 
     @Test
-    fun shouldReadNoConfigurationWhenTheAssetsLackTheResourceFile() {
+    fun shouldReadNoConfigurationWhenTheResourcesLackTheResourceFile() {
         assertNull(Configuration.read(application))
     }
 
     @Test
-    fun shouldReadTheConfigurationAtTheAssetPathGiven() {
+    fun shouldReadTheConfigurationInTheSubdirectoryGiven() {
         val context = contextWithAssets(mapOf("www/hotcodepush.json" to resourceFile.toString().toByteArray()))
 
         assertEquals(Configuration.decode(resourceFile.toString()), Configuration.read(context, "www/hotcodepush.json"))
@@ -64,7 +64,7 @@ class ContextWiringTest {
     }
 
     @Test
-    fun shouldThrowTheReadersErrorWhenTheReaderRefusesTheResourceFile() {
+    fun shouldThrowTheReadersErrorAndPhraseItWhenTheReaderRefusesTheResourceFile() {
         val refused = JSONObject(resourceFile.toString()).put("checkIntervalSeconds", 30)
         val context = contextWithAssets(mapOf("hotcodepush.json" to refused.toString().toByteArray()))
 
@@ -90,7 +90,7 @@ class ContextWiringTest {
     }
 
     @Test
-    fun shouldCopyAnEmbeddedFileFromItsAssetDirectoryByHash() {
+    fun shouldCopyAListedFileFromUnderTheRootDirectory() {
         val embedded = AssetsEmbeddedBundle(contextWithAssets(mapOf("public/index.html" to Fixture.embeddedIndexHtml)), Fixture.embeddedManifest(), "public")
         val sha256 = Hashing.sha256Hex(Fixture.embeddedIndexHtml)
         val destination = File(Files.createTempDirectory("hotcodepush-tests").toFile(), sha256)
@@ -102,14 +102,14 @@ class ContextWiringTest {
     }
 
     @Test
-    fun shouldHaveNoEmbeddedFileWhenItsAssetIsMissing() {
+    fun shouldHaveNoFileWhenTheBinaryLacksIt() {
         val embedded = AssetsEmbeddedBundle(contextWithAssets(mapOf("www/index.html" to Fixture.embeddedIndexHtml)), Fixture.embeddedManifest(), "public")
 
         assertFalse(embedded.has(Hashing.sha256Hex(Fixture.embeddedIndexHtml)))
     }
 
     @Test
-    fun shouldHaveNoEmbeddedFileWhenTheBuildEmbedsNoManifest() {
+    fun shouldHaveNoFileWhenTheBuildCarriesNoManifest() {
         val embedded = AssetsEmbeddedBundle(contextWithAssets(mapOf("public/index.html" to Fixture.embeddedIndexHtml)), null, "public")
         val sha256 = Hashing.sha256Hex(Fixture.embeddedIndexHtml)
 

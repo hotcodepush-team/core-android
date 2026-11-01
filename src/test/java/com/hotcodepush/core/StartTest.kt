@@ -49,13 +49,13 @@ class StartTest {
     }
 
     @Test
-    fun shouldAnswerTheStartsBundleToAHostWaitingInSynchronousCode() {
+    fun shouldAnswerTheStartsBundleToAHostThatWaitsInSynchronousCode() {
         val (harness, _) = harnessWithAWaitingRelease()
         assertEquals("b2", harness.core.handleAppStartBlocking())
     }
 
     @Test
-    fun shouldAnswerTheEmbeddedBundleWhenTheStartTakesLongerThanTheTimeoutAndReloadTheHostOnceItRan() {
+    fun shouldAnswerTheEmbeddedBundleWhenTheStartDoesNotAnswerInTimeAndReloadIntoItsBundleOnceItDoes() {
         val (harness, v2) = harnessWithAWaitingRelease()
         val latch = holdTheNextStart(harness)
         assertNull(harness.core.handleAppStartBlocking(isHeadless = false, timeout = 0.05))
@@ -65,7 +65,7 @@ class StartTest {
     }
 
     @Test
-    fun shouldConfirmTheReleaseAtTheRenderOfTheReloadedBundleNotOfTheEmbeddedOneWhenTheStartTookLongerThanTheTimeout() {
+    fun shouldConfirmTheReleaseAtTheRenderOfTheReloadedBundleNotOfTheEmbeddedOneWhenTheStartAnsweredTooLate() {
         val (harness, v2) = harnessWithAWaitingRelease()
         val latch = holdTheNextStart(harness)
         assertNull(harness.core.handleAppStartBlocking(isHeadless = false, timeout = 0.05))
@@ -81,7 +81,7 @@ class StartTest {
     }
 
     @Test
-    fun shouldHoldARestartUntilTheReloadedBundleRendersWhenAStartThatTookLongerThanTheTimeoutReloadsAfterARender() {
+    fun shouldHoldARestartUntilTheReloadedBundleRendersWhenAStartThatAnsweredTooLateReloadsAfterARender() {
         val (harness, _) = harnessWithAWaitingRelease()
         val latch = holdTheNextStart(harness)
         runBlocking { harness.core.handleRendered() }
@@ -96,7 +96,7 @@ class StartTest {
     }
 
     @Test
-    fun shouldConfirmNothingAtANotifyReadyOfTheEmbeddedBundleWhenTheStartTookLongerThanTheTimeout() {
+    fun shouldConfirmNothingAtANotifyReadyOfTheEmbeddedBundleWhenTheStartAnsweredTooLate() {
         val (harness, v2) = harnessWithAWaitingRelease()
         val latch = holdTheNextStart(harness)
         assertNull(harness.core.handleAppStartBlocking(isHeadless = false, timeout = 0.05))
@@ -109,7 +109,7 @@ class StartTest {
     }
 
     @Test
-    fun shouldApplyNoWaitingReleaseAndArmNoGateAtAHeadlessStartAndSwitchAtTheNextStartThatRenders() = runBlocking {
+    fun shouldNeitherApplyAWaitingReleaseNorArmTheGateAtAHeadlessStart() = runBlocking {
         val (harness, v2) = harnessWithAWaitingRelease()
         harness.loader.served = "b2"
         assertNull(harness.core.handleAppStart(isHeadless = true))
@@ -123,7 +123,7 @@ class StartTest {
     }
 
     @Test
-    fun shouldKeepAHeldApplyPersistedAcrossAHeadlessStartAndApplyItAtTheNextStart() = runBlocking {
+    fun shouldKeepAHeldApplyForTheNextStartAcrossAHeadlessStart() = runBlocking {
         val configuration = Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE)
         val harness = Harness(configuration)
         val v2 = Fixture.release(1, "b2", v2Content)
@@ -216,7 +216,7 @@ class StartTest {
     }
 
     @Test
-    fun shouldStartTheGatePausedWhenTheProcessStartsInTheBackgroundAndStartItsFullWindowAtTheFirstResume() = runBlocking {
+    fun shouldStartTheReadinessTimerAtTheFirstResumeWhenTheAppIsLaunchedIntoTheBackground() = runBlocking {
         val (harness, v2) = harnessWithAWaitingRelease()
         harness.processState.isInTheForeground = false
         harness.core.handleAppStart()
