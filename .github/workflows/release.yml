@@ -19,7 +19,7 @@ jobs:
   release-please:
     name: Release Please
     if: github.repository == 'hotcodepush-team/core-android' && inputs.tag == ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       issues: write
@@ -37,7 +37,7 @@ jobs:
     needs: release-please
     # A dispatch with a tag attaches the zip to that release again, so a failed upload never needs a new release.
     if: ${{ !cancelled() && (inputs.tag != '' || needs.release-please.outputs.release_created == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
@@ -57,9 +57,10 @@ jobs:
       - run: ./gradlew publishReleasePublicationToMavenBranchRepository -Prelease -PmavenBranchDir="$RUNNER_TEMP/maven" --console=plain
       - name: Refuse a publication under another version than the tag's
         run: test -e "$RUNNER_TEMP/maven/com/hotcodepush/core-android/$VERSION/core-android-$VERSION.aar"
+      # Python's zipfile, since ubuntu-latest moved to 26.04 whose zip listed the entries and wrote no archive.
       - name: Zip the Maven layout into the workspace
         run: |
-          (cd "$RUNNER_TEMP/maven" && zip -r "$GITHUB_WORKSPACE/$ZIP" com)
+          (cd "$RUNNER_TEMP/maven" && python3 -m zipfile -c "$GITHUB_WORKSPACE/$ZIP" com)
           ls -l "$ZIP"
       - run: gh release upload "$TAG" "$ZIP" --clobber
       - name: Write the checksum the bridges pin
