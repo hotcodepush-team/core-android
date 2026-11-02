@@ -44,7 +44,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
       VERSION: ${{ inputs.tag || needs.release-please.outputs.version }}
-      ZIP: core-android-${{ inputs.tag || needs.release-please.outputs.version }}-maven.zip
+      # Not ZIP: Info-ZIP reads an environment variable of that name as its default options.
+      ARCHIVE: core-android-${{ inputs.tag || needs.release-please.outputs.version }}-maven.zip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,10 +60,10 @@ jobs:
         run: test -e "$RUNNER_TEMP/maven/com/hotcodepush/core-android/$VERSION/core-android-$VERSION.aar"
       - name: Zip the Maven layout into the workspace
         run: |
-          (cd "$RUNNER_TEMP/maven" && zip -r "$GITHUB_WORKSPACE/$ZIP" com)
-          ls -l "$ZIP"
-      - run: gh release upload "$TAG" "$ZIP" --clobber
+          (cd "$RUNNER_TEMP/maven" && zip -r "$GITHUB_WORKSPACE/$ARCHIVE" com)
+          ls -l "$ARCHIVE"
+      - run: gh release upload "$TAG" "$ARCHIVE" --clobber
       - name: Write the checksum the bridges pin
         run: |
-          checksum=$(sha256sum "$ZIP" | cut -d ' ' -f 1)
+          checksum=$(sha256sum "$ARCHIVE" | cut -d ' ' -f 1)
           echo "SHA-256: \`$checksum\`" >> "$GITHUB_STEP_SUMMARY"
