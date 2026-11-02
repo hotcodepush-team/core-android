@@ -12,7 +12,10 @@ import java.security.Signature as PlatformSignature
  * A public key from the resource file: the base64 SubjectPublicKeyInfo DER, which `X509EncodedKeySpec` takes as it is,
  * and the key id a signature names.
  */
-data class DevicePublicKey(val der: String, val keyId: String) {
+data class DevicePublicKey(
+    val der: String,
+    val keyId: String,
+) {
     companion object {
         fun fromJson(json: JSONObject) = DevicePublicKey(der = json.getWireString("der", WireRule.BASE64), keyId = json.getWireString("keyId", WireRule.NON_EMPTY))
     }
@@ -51,7 +54,11 @@ object SignatureVerifier {
     const val MINIMUM_KEY_BITS = 2048
 
     /** Returns `null` when the signature covers the manifest under the configured key it names, else the reason it does not. */
-    fun verifyManifestSignature(manifest: String, signature: Signature?, publicKeys: List<DevicePublicKey>): SignatureRefusal? {
+    fun verifyManifestSignature(
+        manifest: String,
+        signature: Signature?,
+        publicKeys: List<DevicePublicKey>,
+    ): SignatureRefusal? {
         if (signature == null) return SignatureRefusal.UNSIGNED
         val signatureBytes = resolveSignatureBytes(signature.value) ?: return SignatureRefusal.UNKNOWN_SCHEME
         val publicKey = publicKeys.firstOrNull { it.keyId == signature.keyId } ?: return SignatureRefusal.UNLISTED_KEY
@@ -67,7 +74,13 @@ object SignatureVerifier {
         }
     }
 
-    private fun resolveSignatureBytes(value: String): ByteArray? = if (value.startsWith("$SCHEME:")) decodeCanonicalBase64(value.substring(SCHEME.length + 1)) else null
+    private fun resolveSignatureBytes(value: String): ByteArray? = if (value.startsWith("$SCHEME:")) {
+        decodeCanonicalBase64(
+            value.substring(SCHEME.length + 1),
+        )
+    } else {
+        null
+    }
 
     private fun resolveImportedKey(publicKey: DevicePublicKey): RSAPublicKey? {
         val der = decodeCanonicalBase64(publicKey.der) ?: return null

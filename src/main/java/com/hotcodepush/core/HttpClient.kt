@@ -24,8 +24,7 @@ interface HttpClient {
      * Past `maximumBytes` it stops and deletes the file. On a status other than 200 or 206, a redirect included, it deletes
      * the file and throws `HttpStatusException`.
      */
-    // Public API: three arguments and the trailing progress callback, as core-ios's download(_:to:maximumBytes:progress:).
-    @Suppress("LongParameterList")
+    @Suppress("LongParameterList") // Public API: three arguments and the trailing progress callback, as core-ios's download(_:to:maximumBytes:progress:).
     suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit)
 }
 

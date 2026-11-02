@@ -24,7 +24,10 @@ object DebugScreen {
     @Volatile
     internal var core: WeakReference<Core>? = null
 
-    fun show(context: Context, core: Core) {
+    fun show(
+        context: Context,
+        core: Core,
+    ) {
         this.core = WeakReference(core)
         val intent = Intent(context, DebugScreenActivity::class.java)
         if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -49,35 +52,39 @@ class DebugScreenActivity : Activity() {
             return
         }
         val padding = (PADDING_DP * resources.displayMetrics.density).toInt()
-        val report = TextView(this).apply {
-            typeface = Typeface.MONOSPACE
-            textSize = TEXT_SIZE_SP
-            setTextIsSelectable(true)
-            setPadding(padding, padding, padding, padding)
-        }
+        val report = buildReportView(padding)
         val checkButton = Button(this).apply { setText(R.string.hotcodepush_debug_screen_check_now) }
         checkButton.setOnClickListener { checkNow(core, checkButton) }
         val returnButton = Button(this).apply { setText(R.string.hotcodepush_debug_screen_return_to_configured_channel) }
         returnButton.setOnClickListener { returnToConfiguredChannel(core) }
         val shareButton = Button(this).apply { setText(R.string.hotcodepush_debug_screen_share) }
         shareButton.setOnClickListener { share() }
-        val buttons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(padding, padding, padding, 0)
-            addView(checkButton)
-            addView(returnButton)
-            addView(shareButton)
-        }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            fitsSystemWindows = true
-            addView(buttons)
-            addView(ScrollView(context).apply { addView(report) })
-        }
+        val buttons =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(padding, padding, padding, 0)
+                addView(checkButton)
+                addView(returnButton)
+                addView(shareButton)
+            }
+        val content =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                fitsSystemWindows = true
+                addView(buttons)
+                addView(ScrollView(context).apply { addView(report) })
+            }
         this.report = report
         this.returnButton = returnButton
         setContentView(content)
         render(core)
+    }
+
+    private fun buildReportView(padding: Int): TextView = TextView(this).apply {
+        typeface = Typeface.MONOSPACE
+        textSize = TEXT_SIZE_SP
+        setTextIsSelectable(true)
+        setPadding(padding, padding, padding, padding)
     }
 
     override fun onDestroy() {
@@ -86,7 +93,10 @@ class DebugScreenActivity : Activity() {
     }
 
     // Only the check runs, so nothing downloads or reloads behind the screen. Android refuses the network on the main thread.
-    private fun checkNow(core: Core, button: Button) {
+    private fun checkNow(
+        core: Core,
+        button: Button,
+    ) {
         button.isEnabled = false
         scope.launch {
             try {

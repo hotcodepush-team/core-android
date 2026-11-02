@@ -9,10 +9,15 @@ import java.nio.file.Files
 import java.security.DigestInputStream
 import java.security.MessageDigest
 
-class HashMismatchException(val expected: String, val actual: String) : Exception("Expected $expected, got $actual")
+class HashMismatchException(
+    val expected: String,
+    val actual: String,
+) : Exception("Expected $expected, got $actual")
 
 /** The SDK's directory in the app's private storage: content-addressed files and one manifest per bundle. */
-class FileStore(val rootDirectory: File) {
+class FileStore(
+    val rootDirectory: File,
+) {
     val filesDirectory: File get() = File(rootDirectory, "files")
     val bundlesDirectory: File get() = File(rootDirectory, "bundles")
 
@@ -24,7 +29,10 @@ class FileStore(val rootDirectory: File) {
      * Streams the content to a temporary file while hashing it and moves it into place only when it hashes to `sha256`.
      * So a file that exists is complete. The caller closes the stream.
      */
-    fun writeFile(content: InputStream, sha256: String) {
+    fun writeFile(
+        content: InputStream,
+        sha256: String,
+    ) {
         filesDirectory.mkdirs()
         val temporary = File(filesDirectory, "$sha256.part")
         try {
@@ -44,7 +52,10 @@ class FileStore(val rootDirectory: File) {
         runCatching { BundleManifest.fromJson(org.json.JSONObject(file.readText())) }.getOrNull()
     }
 
-    fun writeManifest(manifest: BundleManifest, bundleId: String) {
+    fun writeManifest(
+        manifest: BundleManifest,
+        bundleId: String,
+    ) {
         val file = manifestFile(bundleId)
         file.parentFile?.mkdirs()
         file.writeText(manifest.toJson().toString())
@@ -71,7 +82,13 @@ class FileStore(val rootDirectory: File) {
     fun availableBytes(): Long = generateSequence(rootDirectory) { it.parentFile }.first { it.exists() }.usableSpace
 
     /** Whether every file the manifest lists is on disk; existence is the check, not a re-hash. */
-    fun isComplete(manifest: BundleManifest, embedded: EmbeddedBundle): Boolean = manifest.files.all { hasFile(it.sha256) || embedded.has(it.sha256) }
+    fun isComplete(
+        manifest: BundleManifest,
+        embedded: EmbeddedBundle,
+    ): Boolean = manifest.files.all {
+        hasFile(it.sha256) ||
+            embedded.has(it.sha256)
+    }
 
     companion object {
         /** Where every SDK keeps its store: `hotcodepush` in the app's private files, under which its loader lays its bundles out too. */
@@ -84,19 +101,32 @@ interface EmbeddedBundle {
     fun has(sha256: String): Boolean
 
     /** Copies the embedded file with that hash to the destination. */
-    fun copyFile(sha256: String, destination: File)
+    fun copyFile(
+        sha256: String,
+        destination: File,
+    )
 }
 
 /** The files compiled into the binary, `assets/<assetDirectory>/` in the APK, addressed by the embedded manifest's hashes; none without a manifest. */
-class AssetsEmbeddedBundle(private val context: Context, manifest: EmbeddedBundleManifest?, private val assetDirectory: String) : EmbeddedBundle {
+class AssetsEmbeddedBundle(
+    private val context: Context,
+    manifest: EmbeddedBundleManifest?,
+    private val assetDirectory: String,
+) : EmbeddedBundle {
     private val pathsBySha256 = manifest?.files.orEmpty().associate { it.sha256 to it.path }
 
     override fun has(sha256: String): Boolean {
         val path = pathsBySha256[sha256] ?: return false
-        return runCatching { context.assets.open("$assetDirectory/$path").close(); true }.getOrDefault(false)
+        return runCatching {
+            context.assets.open("$assetDirectory/$path").close()
+            true
+        }.getOrDefault(false)
     }
 
-    override fun copyFile(sha256: String, destination: File) {
+    override fun copyFile(
+        sha256: String,
+        destination: File,
+    ) {
         val path = pathsBySha256[sha256] ?: throw PlainException("No embedded file with hash $sha256")
         context.assets.open("$assetDirectory/$path").use { input -> destination.outputStream().use { input.copyTo(it) } }
     }
@@ -106,7 +136,12 @@ class AssetsEmbeddedBundle(private val context: Context, manifest: EmbeddedBundl
 object BundleProjection {
     // Public API, and the four arguments of core-ios's project(_:from:embedded:into:).
     @Suppress("LongParameterList")
-    fun project(manifest: BundleManifest, files: FileStore, embedded: EmbeddedBundle, directory: File) {
+    fun project(
+        manifest: BundleManifest,
+        files: FileStore,
+        embedded: EmbeddedBundle,
+        directory: File,
+    ) {
         directory.deleteRecursively()
         directory.mkdirs()
         for (file in manifest.files) {
@@ -122,7 +157,10 @@ object BundleProjection {
     }
 
     /** `Files.createLink` arrived with API 26; below it, and wherever a link fails, the tree is a copy. */
-    private fun link(source: File, destination: File): Boolean {
+    private fun link(
+        source: File,
+        destination: File,
+    ): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
         return try {
             Files.createLink(destination.toPath(), source.toPath())

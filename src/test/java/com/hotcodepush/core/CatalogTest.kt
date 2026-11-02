@@ -9,13 +9,30 @@ import java.io.File
 class CatalogTest {
     private val catalog = JSONObject(File("node_modules/@hotcodepush/protocol/catalog.json").readText())
 
-    private fun assertCatalogValues(key: String, values: List<String>) = assertEquals(key, catalog.getJSONArray(key).toStringList(), values)
+    private fun assertCatalogValues(
+        key: String,
+        values: List<String>,
+    ) = assertEquals(key, catalog.getJSONArray(key).toStringList(), values)
 
     @Test
     fun shouldCoverEveryListOfTheCatalog() = assertEquals(
         setOf(
-            "applyStrategies", "applyUpdateStatuses", "channelSources", "checkStrategies", "conditionTypes", "deviceEventTypes", "downloadStrategies", "failedReasons",
-            "mandatoryApplyStrategies", "packKinds", "platforms", "readySignals", "rollbackReasons", "skippedReasons", "syncStatuses", "syncTriggers",
+            "applyStrategies",
+            "applyUpdateStatuses",
+            "channelSources",
+            "checkStrategies",
+            "conditionTypes",
+            "deviceEventTypes",
+            "downloadStrategies",
+            "failedReasons",
+            "mandatoryApplyStrategies",
+            "packKinds",
+            "platforms",
+            "readySignals",
+            "rollbackReasons",
+            "skippedReasons",
+            "syncStatuses",
+            "syncTriggers",
         ),
         catalog.keys().asSequence().toSet(),
     )
@@ -24,7 +41,12 @@ class CatalogTest {
     fun shouldCarryTheCatalogsApplyStrategiesInItsOrder() = assertCatalogValues("applyStrategies", ApplyStrategy.entries.map { it.wire })
 
     @Test
-    fun shouldCarryTheCatalogsApplyUpdateStatusesInItsOrder() = assertCatalogValues("applyUpdateStatuses", ApplyUpdateStatus.entries.map { it.wire })
+    fun shouldCarryTheCatalogsApplyUpdateStatusesInItsOrder() = assertCatalogValues(
+        "applyUpdateStatuses",
+        ApplyUpdateStatus.entries.map {
+            it.wire
+        },
+    )
 
     @Test
     fun shouldCarryTheCatalogsChannelSources() = assertCatalogValues("channelSources", ChannelSource.entries.map { it.wire }.sorted())
@@ -48,13 +70,23 @@ class CatalogTest {
     )
 
     @Test
-    fun shouldCarryTheCatalogsDownloadStrategiesInItsOrder() = assertCatalogValues("downloadStrategies", DownloadStrategy.entries.map { it.wire })
+    fun shouldCarryTheCatalogsDownloadStrategiesInItsOrder() = assertCatalogValues(
+        "downloadStrategies",
+        DownloadStrategy.entries.map {
+            it.wire
+        },
+    )
 
     @Test
     fun shouldCarryTheCatalogsFailedReasonsInItsOrder() = assertCatalogValues("failedReasons", FailedReason.entries.map { it.wire })
 
     @Test
-    fun shouldCarryTheCatalogsMandatoryApplyStrategiesInItsOrder() = assertCatalogValues("mandatoryApplyStrategies", MandatoryApplyStrategy.entries.map { it.wire })
+    fun shouldCarryTheCatalogsMandatoryApplyStrategiesInItsOrder() = assertCatalogValues(
+        "mandatoryApplyStrategies",
+        MandatoryApplyStrategy.entries.map {
+            it.wire
+        },
+    )
 
     @Test
     fun shouldCarryTheCatalogsPackKinds() = assertCatalogValues("packKinds", PackKind.entries.map { it.wire }.sorted())

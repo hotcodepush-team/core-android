@@ -25,7 +25,9 @@ class AppLifecycleTest {
         return harness
     }
 
-    private fun pendingIntervals(harness: Harness): List<Double> = harness.scheduler.tasks.filter { !it.isCancelled }.map { it.seconds }
+    private fun pendingIntervals(harness: Harness): List<Double> = harness.scheduler.tasks
+        .filter { !it.isCancelled }
+        .map { it.seconds }
 
     @Test
     fun shouldSkipTheFirstResumeAndHandleEveryPauseAndResumeAfterIt() {
@@ -35,7 +37,11 @@ class AppLifecycleTest {
         assertEquals(listOf(900.0), harness.scheduler.tasks.map { it.seconds })
 
         activity.pause()
-        assertTrue(harness.scheduler.tasks.single().isCancelled)
+        assertTrue(
+            harness.scheduler.tasks
+                .single()
+                .isCancelled,
+        )
         harness.clock.now += 600_000
         activity.resume()
 

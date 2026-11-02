@@ -103,7 +103,12 @@ data class IndexRelease(
 }
 
 enum class ConditionType(override val wire: String) : WireEnum {
-    BINARY("binary"), FINGERPRINT("fingerprint"), OS("os"), ATTRIBUTE("attribute"), DEVICE("device");
+    BINARY("binary"),
+    FINGERPRINT("fingerprint"),
+    OS("os"),
+    ATTRIBUTE("attribute"),
+    DEVICE("device"),
+    ;
 
     companion object : WireEnumCompanion<ConditionType>({ entries })
 }
@@ -298,7 +303,9 @@ internal enum class WireRule {
     SIGNATURE_VALUE,
 
     // Base64 in its one canonical spelling: padded, with no unused bits set.
-    BASE64;
+    BASE64,
+
+    ;
 
     // A case table: one check per rule.
     @Suppress("CyclomaticComplexMethod")

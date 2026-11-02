@@ -34,6 +34,7 @@ package.json                             private, only the pinned @hotcodepush/p
 | `npm ci`                              | installs the protocol package the fixtures are read from           |
 | `npm run lint`                        | `./gradlew lint`, after detekt and its `detekt.yml`                |
 | `npm test`                            | `./gradlew test`                                                   |
+| `./gradlew spotlessApply`             | formats every Kotlin file with ktlint                              |
 | `npm run verify`                      | the lint, the tests and the release build                          |
 | `./gradlew connectedDebugAndroidTest` | the on-device tests, on every running emulator and attached device |
 

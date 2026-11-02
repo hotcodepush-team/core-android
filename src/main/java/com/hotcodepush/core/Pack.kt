@@ -10,14 +10,23 @@ import java.util.zip.GZIPInputStream
  * file `toSha256`. Its body streams through `PackReader`.
  */
 sealed interface PackEntry {
-    data class File(val sha256: String) : PackEntry
+    data class File(
+        val sha256: String,
+    ) : PackEntry
 
-    data class Patch(val fromSha256: String, val toSha256: String) : PackEntry
+    data class Patch(
+        val fromSha256: String,
+        val toSha256: String,
+    ) : PackEntry
 }
 
-class PackFormatException(message: String) : Exception(message)
+class PackFormatException(
+    message: String,
+) : Exception(message)
 
-class GzipSizeException(maximumBytes: Long) : Exception("The content inflates past its $maximumBytes bytes")
+class GzipSizeException(
+    maximumBytes: Long,
+) : Exception("The content inflates past its $maximumBytes bytes")
 
 /**
  * Reads the pack format: an uncompressed ustar archive of file entries named by their content hash and patch entries named
@@ -39,14 +48,22 @@ object PackReader {
      * Each body is a stream of exactly the entry size; what `read` leaves unread is skipped. Memory holds one header and one
      * chunk at a time, however large the pack.
      */
-    fun forEachEntry(input: InputStream, length: Long, read: (PackEntry, InputStream) -> Unit) {
+    fun forEachEntry(
+        input: InputStream,
+        length: Long,
+        read: (PackEntry, InputStream) -> Unit,
+    ) {
         val header = ByteArray(BLOCK_SIZE)
         var remaining = length
         while (true) {
             if (input.readFully(header) < BLOCK_SIZE) throw PackFormatException("The pack ends before its end-of-archive blocks")
             remaining -= BLOCK_SIZE
             if (header.isZero()) {
-                if (input.readFully(header) < BLOCK_SIZE || !header.isZero()) throw PackFormatException("A zero block is not followed by the second end-of-archive block")
+                if (input.readFully(header) < BLOCK_SIZE ||
+                    !header.isZero()
+                ) {
+                    throw PackFormatException("A zero block is not followed by the second end-of-archive block")
+                }
                 return
             }
             verifyChecksum(header)
@@ -70,7 +87,11 @@ object PackReader {
     private fun resolveEntry(name: String): PackEntry? {
         if (WireRule.SHA256.accepts(name)) return PackEntry.File(name)
         val segments = name.split('/')
-        if (segments.size != 3 || segments[0] != "patches" || !WireRule.SHA256.accepts(segments[1]) || !WireRule.SHA256.accepts(segments[2])) return null
+        if (segments.size != 3 || segments[0] != "patches" || !WireRule.SHA256.accepts(segments[1]) ||
+            !WireRule.SHA256.accepts(segments[2])
+        ) {
+            return null
+        }
         return PackEntry.Patch(fromSha256 = segments[1], toSha256 = segments[2])
     }
 
@@ -81,7 +102,10 @@ object PackReader {
         if (actual != expected) throw PackFormatException("The header's checksum does not add up")
     }
 
-    private fun field(header: ByteArray, range: IntRange): String {
+    private fun field(
+        header: ByteArray,
+        range: IntRange,
+    ): String {
         val end = range.firstOrNull { header[it] == 0.toByte() } ?: (range.last + 1)
         return String(header, range.first, end - range.first, Charsets.US_ASCII).trim()
     }
@@ -109,13 +133,20 @@ object PackReader {
         return total
     }
 
-    private class EntryBodyInputStream(private val pack: InputStream, private var remaining: Long) : InputStream() {
+    private class EntryBodyInputStream(
+        private val pack: InputStream,
+        private var remaining: Long,
+    ) : InputStream() {
         override fun read(): Int {
             val byte = ByteArray(1)
             return if (read(byte, 0, 1) < 0) -1 else byte[0].toInt() and 0xff
         }
 
-        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        override fun read(
+            buffer: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Int {
             if (remaining == 0L) return -1
             if (length == 0) return 0
             val read = pack.read(buffer, offset, minOf(length.toLong(), remaining).toInt())
@@ -140,7 +171,10 @@ object Gzip {
      * Inflates the gzip body into a stream that stops past `maximumBytes`, the file size.
      * A few bytes that would inflate to gigabytes are refused on the way. An empty body is an empty file.
      */
-    fun decompress(body: InputStream, maximumBytes: Long): InputStream {
+    fun decompress(
+        body: InputStream,
+        maximumBytes: Long,
+    ): InputStream {
         val input = PushbackInputStream(body, 1)
         val first = input.read()
         if (first < 0) return ByteArrayInputStream(ByteArray(0))
@@ -148,7 +182,10 @@ object Gzip {
         return SizeCappedInputStream(GZIPInputStream(input), maximumBytes)
     }
 
-    private class SizeCappedInputStream(private val input: InputStream, private val maximumBytes: Long) : InputStream() {
+    private class SizeCappedInputStream(
+        private val input: InputStream,
+        private val maximumBytes: Long,
+    ) : InputStream() {
         private var count = 0L
 
         override fun read(): Int {
@@ -156,7 +193,11 @@ object Gzip {
             return if (read(byte, 0, 1) < 0) -1 else byte[0].toInt() and 0xff
         }
 
-        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        override fun read(
+            buffer: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Int {
             val read = input.read(buffer, offset, length)
             if (read > 0) {
                 count += read

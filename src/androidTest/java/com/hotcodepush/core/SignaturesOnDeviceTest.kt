@@ -9,7 +9,12 @@ import org.junit.runner.RunWith
 // Each Android version brings its own `java.security` providers, which the JVM tests cannot stand in for.
 @RunWith(AndroidJUnit4::class)
 class SignaturesOnDeviceTest {
-    private val fixture = SignatureFixtures(InstrumentationRegistry.getInstrumentation().context.assets.open("signatures.json").bufferedReader().use { JSONObject(it.readText()) })
+    private val fixture =
+        SignatureFixtures(
+            InstrumentationRegistry.getInstrumentation().context.assets.open("signatures.json").bufferedReader().use {
+                JSONObject(it.readText())
+            },
+        )
 
     @Test
     fun shouldNameTheRefusalOfEverySignatureFixture() = fixture.assertTheRefusalOfEveryManifest()

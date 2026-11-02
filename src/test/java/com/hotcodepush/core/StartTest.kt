@@ -60,7 +60,12 @@ class StartTest {
         val latch = holdTheNextStart(harness)
         assertNull(harness.core.handleAppStartBlocking(isHeadless = false, timeout = 0.05))
         latch.countDown()
-        runBlocking { assertEquals(NotifyReadyResult(currentRelease = v2.release.release, previousRelease = null, isRolledBack = false, rollbackReason = null), harness.core.notifyReady()) }
+        runBlocking {
+            assertEquals(
+                NotifyReadyResult(currentRelease = v2.release.release, previousRelease = null, isRolledBack = false, rollbackReason = null),
+                harness.core.notifyReady(),
+            )
+        }
         assertEquals(listOf("b2"), harness.loader.loaded)
     }
 
@@ -103,7 +108,10 @@ class StartTest {
         val embeddedReady = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) { harness.core.notifyReady() }
         latch.countDown()
         runBlocking {
-            assertEquals(NotifyReadyResult(currentRelease = v2.release.release, previousRelease = null, isRolledBack = false, rollbackReason = null), embeddedReady.await())
+            assertEquals(
+                NotifyReadyResult(currentRelease = v2.release.release, previousRelease = null, isRolledBack = false, rollbackReason = null),
+                embeddedReady.await(),
+            )
             assertNull(harness.core.getState().fallbackRelease)
         }
     }
@@ -162,7 +170,12 @@ class StartTest {
         harness.restart()
         assertNull(harness.core.handleAppStart())
         assertEquals(listOf("b2"), StateStore(harness.store).failedBundleIds)
-        assertEquals(RollbackReason.APP_CRASHED, harness.listener.rollbacks.single().reason)
+        assertEquals(
+            RollbackReason.APP_CRASHED,
+            harness.listener.rollbacks
+                .single()
+                .reason,
+        )
     }
 
     @Test
@@ -177,7 +190,16 @@ class StartTest {
     @Test
     fun shouldStartOnTheEmbeddedBundleWhenTheStoreIsCorrupt() = runBlocking {
         val (harness, _) = harnessWithAWaitingRelease()
-        for (key in listOf("currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "pendingRollbackEvent", "lastBuiltAt")) harness.store.putString(key = "hotcodepush.$key", value = "{not json")
+        for (key in listOf(
+            "currentRelease",
+            "nextRelease",
+            "fallbackRelease",
+            "failedBundleIds",
+            "pendingRollbackEvent",
+            "lastBuiltAt",
+        )) {
+            harness.store.putString(key = "hotcodepush.$key", value = "{not json")
+        }
         assertNull(harness.core.handleAppStart())
         assertNull(harness.core.getState().nextRelease)
     }
@@ -189,7 +211,12 @@ class StartTest {
         assertNull(harness.core.handleAppStart())
         assertNull(harness.core.getState().currentRelease)
         assertNull(harness.core.getState().nextRelease)
-        assertTrue(harness.core.debugSnapshot().log.any { it.message.contains("the loader broke") })
+        assertTrue(
+            harness.core
+                .debugSnapshot()
+                .log
+                .any { it.message.contains("the loader broke") },
+        )
     }
 
     @Test
@@ -197,7 +224,12 @@ class StartTest {
         val (harness, _) = harnessWithAWaitingRelease()
         harness.loader.loadFailure = IllegalStateException("the loader broke")
         assertEquals("b2", harness.core.handleAppStart())
-        assertTrue(harness.core.debugSnapshot().log.any { it.message.contains("the loader broke") })
+        assertTrue(
+            harness.core
+                .debugSnapshot()
+                .log
+                .any { it.message.contains("the loader broke") },
+        )
     }
 
     @Test
@@ -206,13 +238,28 @@ class StartTest {
         harness.core.handleAppStart()
         harness.clock.now += 3_000
         harness.core.handleAppPause()
-        assertTrue(harness.scheduler.tasks.single().isCancelled)
+        assertTrue(
+            harness.scheduler.tasks
+                .single()
+                .isCancelled,
+        )
         harness.clock.now += 600_000
         harness.core.handleAppResume()
-        assertEquals(10.0, harness.scheduler.tasks.last().seconds, 0.0)
+        assertEquals(
+            10.0,
+            harness.scheduler.tasks
+                .last()
+                .seconds,
+            0.0,
+        )
         assertEquals(v2.release.release, harness.core.getState().currentRelease)
         harness.scheduler.fire()
-        assertEquals(RollbackReason.READINESS_TIMED_OUT, harness.listener.rollbacks.single().reason)
+        assertEquals(
+            RollbackReason.READINESS_TIMED_OUT,
+            harness.listener.rollbacks
+                .single()
+                .reason,
+        )
     }
 
     @Test
@@ -224,9 +271,20 @@ class StartTest {
         assertTrue(harness.scheduler.tasks.isEmpty())
         harness.clock.now += 600_000
         harness.core.handleAppResume()
-        assertEquals(10.0, harness.scheduler.tasks.single().seconds, 0.0)
+        assertEquals(
+            10.0,
+            harness.scheduler.tasks
+                .single()
+                .seconds,
+            0.0,
+        )
         harness.scheduler.fire()
-        assertEquals(RollbackReason.READINESS_TIMED_OUT, harness.listener.rollbacks.single().reason)
+        assertEquals(
+            RollbackReason.READINESS_TIMED_OUT,
+            harness.listener.rollbacks
+                .single()
+                .reason,
+        )
     }
 
     @Test

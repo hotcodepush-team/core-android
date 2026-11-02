@@ -15,7 +15,10 @@ class SigningTest {
     fun shouldRefuseASignatureWhoseBase64IsNotCanonical() {
         val signed = fixture.sign(manifest = manifest, name = "rsa-4096-a")
         val unpadded = Signature(keyId = signed.keyId, value = signed.value.trimEnd('='))
-        assertEquals(SignatureRefusal.UNKNOWN_SCHEME, SignatureVerifier.verifyManifestSignature(manifest, unpadded, listOf(fixture.devicePublicKey("rsa-4096-a"))))
+        assertEquals(
+            SignatureRefusal.UNKNOWN_SCHEME,
+            SignatureVerifier.verifyManifestSignature(manifest, unpadded, listOf(fixture.devicePublicKey("rsa-4096-a"))),
+        )
     }
 
     @Test

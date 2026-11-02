@@ -31,7 +31,11 @@ class HttpClientTest {
     fun shouldResumeAPartialDownloadWithARangeRequestAndAppendTheRest() {
         file.writeText("abc")
         val ranges = mutableListOf<String?>()
-        val client = client { request -> ranges += request.header("Range"); response(request, 206, "defgh".toByteArray().toResponseBody()) }
+        val client =
+            client { request ->
+                ranges += request.header("Range")
+                response(request, 206, "defgh".toByteArray().toResponseBody())
+            }
         assertNull(download(client, 8))
         assertEquals(listOf("bytes=3-"), ranges)
         assertEquals("abcdefgh", file.readText())
@@ -57,10 +61,15 @@ class HttpClientTest {
     fun shouldAnswerARedirectWithItsStatusAndNeverFollowIt() {
         file.writeText("abc")
         val requested = mutableListOf<String>()
-        val client = client { request ->
-            requested += request.url.toString()
-            response(request, 302, ByteArray(0).toResponseBody()).newBuilder().header("Location", "https://files.test/apps/a/bundles/b2/full").build()
-        }
+        val client =
+            client { request ->
+                requested += request.url.toString()
+                response(
+                    request,
+                    302,
+                    ByteArray(0).toResponseBody(),
+                ).newBuilder().header("Location", "https://files.test/apps/a/bundles/b2/full").build()
+            }
         assertEquals(302, (download(client, 8) as? HttpStatusException)?.status)
         assertEquals(listOf(url), requested)
         assertFalse(file.exists())
@@ -70,12 +79,19 @@ class HttpClientTest {
     fun shouldKeepWhatArrivedWhenTheConnectionDropsAndResumeFromIt() {
         val body = ByteArray(200_000) { (it % 251).toByte() }
         val ranges = mutableListOf<String?>()
-        val client = client { request ->
-            val range = request.header("Range")
-            ranges += range
-            val start = range?.removePrefix("bytes=")?.removeSuffix("-")?.toInt()
-            if (start == null) response(request, 200, droppedBody(body.copyOf(150_000))) else response(request, 206, body.copyOfRange(start, body.size).toResponseBody())
-        }
+        val client =
+            client { request ->
+                val range = request.header("Range")
+                ranges += range
+                val start = range?.removePrefix("bytes=")?.removeSuffix("-")?.toInt()
+                if (start ==
+                    null
+                ) {
+                    response(request, 200, droppedBody(body.copyOf(150_000)))
+                } else {
+                    response(request, 206, body.copyOfRange(start, body.size).toResponseBody())
+                }
+            }
         assertTrue(download(client, body.size.toLong()) is IOException)
         assertArrayEquals(body.copyOf(150_000), file.readBytes())
         assertNull(download(client, body.size.toLong()))
@@ -90,7 +106,10 @@ class HttpClientTest {
         assertFalse(file.exists())
     }
 
-    private fun download(client: HttpClient, maximumBytes: Long): Exception? = runBlocking {
+    private fun download(
+        client: HttpClient,
+        maximumBytes: Long,
+    ): Exception? = runBlocking {
         try {
             client.download(url, file, maximumBytes) { _, _ -> }
             null
@@ -101,7 +120,18 @@ class HttpClientTest {
 
     private fun client(reply: (Request) -> Response) = OkHttpClientAdapter(OkHttpClient.Builder().addInterceptor { chain -> reply(chain.request()) }.build())
 
-    private fun response(request: Request, code: Int, body: ResponseBody) = Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(code).message("").body(body).build()
+    private fun response(
+        request: Request,
+        code: Int,
+        body: ResponseBody,
+    ) = Response
+        .Builder()
+        .request(request)
+        .protocol(Protocol.HTTP_1_1)
+        .code(code)
+        .message("")
+        .body(body)
+        .build()
 
     private fun droppedBody(delivered: ByteArray): ResponseBody = object : ResponseBody() {
         override fun contentType(): MediaType? = null
@@ -111,7 +141,10 @@ class HttpClientTest {
         override fun source(): BufferedSource = object : Source {
             private var isDelivered = false
 
-            override fun read(sink: Buffer, byteCount: Long): Long {
+            override fun read(
+                sink: Buffer,
+                byteCount: Long,
+            ): Long {
                 if (isDelivered) throw IOException("Connection lost")
                 isDelivered = true
                 sink.write(delivered)

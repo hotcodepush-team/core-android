@@ -203,8 +203,7 @@ class Core(
 
     // The moment stored at download decides, so a per-call strategy holds for that release.
     // A held `immediate` apply switches too, and a bundle the host already serves is adopted.
-    private fun shouldSwitchAtStart(next: NextRelease): Boolean =
-        loader.servedBundleId() == resolveServedBundleId(next.release) || next.applyStrategy == ApplyStrategy.NEXT_START || next.applyStrategy == ApplyStrategy.IMMEDIATE
+    private fun shouldSwitchAtStart(next: NextRelease): Boolean = loader.servedBundleId() == resolveServedBundleId(next.release) || next.applyStrategy == ApplyStrategy.NEXT_START || next.applyStrategy == ApplyStrategy.IMMEDIATE
 
     private fun shouldApplyAtResume(next: NextRelease): Boolean = next.applyStrategy == ApplyStrategy.NEXT_RESUME
 
@@ -392,10 +391,12 @@ class Core(
         }
         return when (val evaluation = Evaluator.evaluation(index, deviceInfo()).outcome) {
             is Evaluation.UpToDate -> SyncResult.upToDate(release = current)
+
             is Evaluation.Available -> {
                 lock.withLock { recordChecked(evaluation.release, index, SyncStatus.AVAILABLE) }
                 update(evaluation.release, isMandatory = evaluation.isMandatory, cycle = cycle)
             }
+
             is Evaluation.Skipped -> if (evaluation.reason == SkippedReason.RELEASE_REVOKED) {
                 leaveRevokedRelease(fallback = evaluation.release, cycle = cycle)
             } else {
@@ -461,20 +462,16 @@ class Core(
     }
 
     // The binary already carries the embedded bundle, so a release of it downloads nothing.
-    private fun resolveDownloadSizeBytes(target: IndexRelease): Long =
-        if (isCarryingEmbeddedBundle(target.bundleId)) 0 else target.sizeBytes
+    private fun resolveDownloadSizeBytes(target: IndexRelease): Long = if (isCarryingEmbeddedBundle(target.bundleId)) 0 else target.sizeBytes
 
     // A release of the embedded bundle downloads nothing, so it passes every gate but the check's.
-    private fun resolveDownloadStrategy(target: IndexRelease, cycle: Cycle): DownloadStrategy =
-        if (isCarryingEmbeddedBundle(target.bundleId) && cycle.stage != Stage.CHECK) DownloadStrategy.AUTO else cycle.options.downloadStrategy ?: configuration.downloadStrategy
+    private fun resolveDownloadStrategy(target: IndexRelease, cycle: Cycle): DownloadStrategy = if (isCarryingEmbeddedBundle(target.bundleId) && cycle.stage != Stage.CHECK) DownloadStrategy.AUTO else cycle.options.downloadStrategy ?: configuration.downloadStrategy
 
     private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(id = target.id, number = target.number, bundleId = target.bundleId, bundleVersion = target.bundleVersion, isMandatory = isMandatory)
 
-    private fun resolveRequestedApplyStrategy(isMandatory: Boolean, options: SyncOptions): ApplyStrategy? =
-        if (isMandatory) options.mandatoryApplyStrategy?.toApplyStrategy() else options.applyStrategy
+    private fun resolveRequestedApplyStrategy(isMandatory: Boolean, options: SyncOptions): ApplyStrategy? = if (isMandatory) options.mandatoryApplyStrategy?.toApplyStrategy() else options.applyStrategy
 
-    private fun resolveConfiguredApplyStrategy(isMandatory: Boolean): ApplyStrategy =
-        if (isMandatory) configuration.mandatoryApplyStrategy.toApplyStrategy() else configuration.applyStrategy
+    private fun resolveConfiguredApplyStrategy(isMandatory: Boolean): ApplyStrategy = if (isMandatory) configuration.mandatoryApplyStrategy.toApplyStrategy() else configuration.applyStrategy
 
     private fun readDownloadedRelease(target: IndexRelease): NextRelease? {
         val next = state.nextRelease ?: return null
@@ -605,8 +602,7 @@ class Core(
     // A restored phone brings back the store's keys without the files, so a release may name a tree that is not there.
     private fun hasReleaseWithoutManifest(): Boolean = listOfNotNull(state.currentRelease, state.nextRelease?.release).any { readBundleManifest(it.bundleId) == null }
 
-    private fun readBundleManifest(bundleId: String): BundleManifest? =
-        if (isCarryingEmbeddedBundle(bundleId)) configuration.embeddedBundleManifest else files.readManifest(bundleId)
+    private fun readBundleManifest(bundleId: String): BundleManifest? = if (isCarryingEmbeddedBundle(bundleId)) configuration.embeddedBundleManifest else files.readManifest(bundleId)
 
     // A new binary brings a new floor and a restored phone has no files, so the embedded bundle runs.
     // The kept index and its ETag go too, so the first check fetches unconditionally and a frozen sequence heals.
@@ -859,6 +855,7 @@ class Core(
         // A failed fetch means offline, never an unknown name.
         return when (response?.status) {
             null -> ChannelResolution.Offline
+
             200 -> {
                 val index = runCatching { ChannelsIndex.fromJson(parseJsonObject(response.body)) }.getOrNull()
                     ?: return ChannelResolution.Invalid("The channels index could not be parsed")
@@ -866,7 +863,9 @@ class Core(
                 resolvedChannelName = name to entry.id
                 ChannelResolution.Id(entry.id)
             }
+
             404 -> ChannelResolution.Unknown
+
             else -> ChannelResolution.Offline
         }
     }
@@ -885,8 +884,7 @@ class Core(
     private val hasChannel: Boolean
         get() = state.channel != null || configuration.channelId != null
 
-    private fun resolveMissingIndexMessage(channelId: String): String =
-        if (state.channel != null) "The channel $channelId set at runtime serves no index." else "The channel $channelId of this build serves no index."
+    private fun resolveMissingIndexMessage(channelId: String): String = if (state.channel != null) "The channel $channelId set at runtime serves no index." else "The channel $channelId of this build serves no index."
 
     private suspend fun fetchChannelIndex(channelId: String): IndexFetch {
         val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/channels/$channelId/${device.platform}/v1/index.json"
@@ -899,8 +897,11 @@ class Core(
                 lock.withLock { state.cachedIndex = CachedIndex(cached.etag, clock.now(), cached.body) }
                 IndexFetch.Index(cached.body)
             }
+
             200 -> acceptFetchedIndex(response, channelId, cached = cached)
+
             404 -> IndexFetch.Missing
+
             else -> cached?.let { IndexFetch.Index(it.body) } ?: IndexFetch.Offline
         }
     }
@@ -915,11 +916,9 @@ class Core(
     }
 
     // An older kept index counts as absent, so a forged far-future sequence freezes the device for a day at most.
-    private fun isBehindCachedIndex(index: ChannelIndex, cached: CachedIndex): Boolean =
-        index.sequence < cached.body.sequence && clock.now() - cached.fetchedAt < (CACHED_INDEX_MAX_AGE * 1000).toLong()
+    private fun isBehindCachedIndex(index: ChannelIndex, cached: CachedIndex): Boolean = index.sequence < cached.body.sequence && clock.now() - cached.fetchedAt < (CACHED_INDEX_MAX_AGE * 1000).toLong()
 
-    private fun isIndexForDevice(index: ChannelIndex, channelId: String): Boolean =
-        index.appId == configuration.appId && index.channelId == channelId && index.platform == device.platform
+    private fun isIndexForDevice(index: ChannelIndex, channelId: String): Boolean = index.appId == configuration.appId && index.channelId == channelId && index.platform == device.platform
 
     // A React Native or Expo debug build bundles no JavaScript, so it carries no embedded manifest.
     private val isDisabledInThisBuild: Boolean
@@ -973,7 +972,9 @@ class Core(
                     state.reportedAt = DeviceEventsAcknowledgement(hasReport = request.report != null, reportedAt = answer.reportedAt).resolveKeptReportedAt(heldReportedAt = state.reportedAt)
                     request.report?.let { state.acknowledgedReport = it }
                 }
+
                 is BatchAnswer.Refused -> dropBatchEvents()
+
                 is BatchAnswer.Failed -> Unit
             }
         }

@@ -13,8 +13,17 @@ import org.junit.runner.RunWith
 // In the fixture, `applied` writes the file without fetching it, `fallback` fetches it, and `ignored` does neither.
 @RunWith(AndroidJUnit4::class)
 class PackEntriesOnDeviceTest {
-    private val fixture = InstrumentationRegistry.getInstrumentation().context.assets.open("pack-entries.json").bufferedReader().use { JSONObject(it.readText()) }
-    private val contents = fixture.getJSONArray("files").map { it.getString("sha256") to Base64.decode(it.getString("contentBase64"), Base64.DEFAULT) }.toMap()
+    private val fixture =
+        InstrumentationRegistry.getInstrumentation().context.assets.open("pack-entries.json").bufferedReader().use {
+            JSONObject(it.readText())
+        }
+    private val contents =
+        fixture
+            .getJSONArray("files")
+            .map {
+                it.getString("sha256") to
+                    Base64.decode(it.getString("contentBase64"), Base64.DEFAULT)
+            }.toMap()
 
     @Test
     fun shouldMatchEveryPatchCaseWhenTheBaseIsInTheEmbeddedBundle() {
@@ -37,8 +46,20 @@ class PackEntriesOnDeviceTest {
             for (file in manifestFiles) harness.http.stub(DownloaderHarness.fileUrl(file.sha256), body = contents.getValue(file.sha256))
             val patchEntry = case.getJSONObject("patchEntry")
             val toSha256 = patchEntry.getString("toSha256")
-            val patch = PackedEntry.patch(fromSha256 = patchEntry.getString("fromSha256"), toSha256 = toSha256, body = Base64.decode(patchEntry.getString("bodyBase64"), Base64.DEFAULT))
-            harness.download(harness.publish(DownloaderHarness.manifest(manifestFiles), deltas = mapOf("b1" to PackWriter.pack(listOf(patch)))), "b1")
+            val patch =
+                PackedEntry.patch(
+                    fromSha256 = patchEntry.getString("fromSha256"),
+                    toSha256 = toSha256,
+                    body = Base64.decode(patchEntry.getString("bodyBase64"), Base64.DEFAULT),
+                )
+            harness.download(
+                harness.publish(
+                    DownloaderHarness.manifest(manifestFiles),
+                    deltas =
+                    mapOf("b1" to PackWriter.pack(listOf(patch))),
+                ),
+                "b1",
+            )
             val isFetched = harness.http.requests.any { it.first == DownloaderHarness.fileUrl(toSha256) }
             when (case.getString("outcome")) {
                 "applied" -> assertTrue(name, harness.files.hasFile(toSha256) && !isFetched)
@@ -52,7 +73,11 @@ class PackEntriesOnDeviceTest {
         }
     }
 
-    private fun holdPatchBases(harness: DownloaderHarness, case: JSONObject, isBaseEmbedded: Boolean) {
+    private fun holdPatchBases(
+        harness: DownloaderHarness,
+        case: JSONObject,
+        isBaseEmbedded: Boolean,
+    ) {
         for (sha256 in case.getJSONArray("heldSha256s").toStringList()) {
             val content = contents.getValue(sha256)
             if (isBaseEmbedded) harness.embedded.files[sha256] = content else harness.files.writeFile(content, sha256)

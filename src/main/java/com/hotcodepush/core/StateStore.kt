@@ -5,8 +5,13 @@ import org.json.JSONObject
 import java.util.UUID
 
 sealed class ChannelChoice {
-    data class Id(val id: String) : ChannelChoice()
-    data class Name(val name: String) : ChannelChoice()
+    data class Id(
+        val id: String,
+    ) : ChannelChoice()
+
+    data class Name(
+        val name: String,
+    ) : ChannelChoice()
 
     fun toJson(): JSONObject = when (this) {
         is Id -> JSONObject().put("id", id)
@@ -18,11 +23,19 @@ sealed class ChannelChoice {
     }
 }
 
-data class CachedIndex(val etag: String?, val fetchedAt: Long, val body: ChannelIndex) {
+data class CachedIndex(
+    val etag: String?,
+    val fetchedAt: Long,
+    val body: ChannelIndex,
+) {
     fun toJson(): JSONObject = JSONObject().put("etag", etag ?: JSONObject.NULL).put("fetchedAt", Iso8601.format(fetchedAt)).put("body", body.toJson())
 
     companion object {
-        fun fromJson(json: JSONObject) = CachedIndex(json.optNullableString("etag"), Iso8601.parse(json.getString("fetchedAt")), ChannelIndex.fromJson(json.getJSONObject("body")))
+        fun fromJson(json: JSONObject) = CachedIndex(
+            json.optNullableString("etag"),
+            Iso8601.parse(json.getString("fetchedAt")),
+            ChannelIndex.fromJson(json.getJSONObject("body")),
+        )
     }
 }
 
@@ -30,7 +43,10 @@ data class CachedIndex(val etag: String?, val fetchedAt: Long, val body: Channel
  * The downloaded release waiting to apply, with the moment decided at its download, a per-call override included.
  * The start and the resume read that moment, never the configuration.
  */
-data class NextRelease(val release: Release, val applyStrategy: ApplyStrategy) {
+data class NextRelease(
+    val release: Release,
+    val applyStrategy: ApplyStrategy,
+) {
     fun toJson(): JSONObject = JSONObject().put("release", release.toJson()).put("applyStrategy", applyStrategy.wire)
 
     companion object {
@@ -42,13 +58,20 @@ data class NextRelease(val release: Release, val applyStrategy: ApplyStrategy) {
  * The SDK's keys, `hotcodepush.<name>` each: three identity keys kept for the install's life,
  * the rest a cache under `stateVersion` that is dropped and rebuilt when unreadable.
  */
-class StateStore(private val store: KeyValueStore) {
+class StateStore(
+    private val store: KeyValueStore,
+) {
     init {
         if (store.getInt(PREFIX + "stateVersion") != STATE_VERSION) deleteCacheKeys()
     }
 
     val deviceId: String
-        get() = getRaw("deviceId") ?: UUID.randomUUID().toString().lowercase().also { putRaw(key = "deviceId", value = it) }
+        get() =
+            getRaw("deviceId") ?: UUID
+                .randomUUID()
+                .toString()
+                .lowercase()
+                .also { putRaw(key = "deviceId", value = it) }
 
     var attributes: Map<String, String>
         get() = readObject("attributes") { it.toStringMap() } ?: emptyMap()
@@ -122,13 +145,22 @@ class StateStore(private val store: KeyValueStore) {
         store.putInt(PREFIX + "stateVersion", STATE_VERSION)
     }
 
-    private fun <T> readObject(key: String, decode: (JSONObject) -> T): T? = readValue(key) { decode(JSONObject(it)) }
+    private fun <T> readObject(
+        key: String,
+        decode: (JSONObject) -> T,
+    ): T? = readValue(key) { decode(JSONObject(it)) }
 
-    private fun <T> readArray(key: String, decode: (JSONArray) -> T): T? = readValue(key) { decode(JSONArray(it)) }
+    private fun <T> readArray(
+        key: String,
+        decode: (JSONArray) -> T,
+    ): T? = readValue(key) { decode(JSONArray(it)) }
 
     // A value that does not decode, such as one another SDK version wrote under the same `stateVersion`, reads as absent.
     // It drops the cache with it, or the identity key alone.
-    private fun <T> readValue(key: String, decode: (String) -> T): T? {
+    private fun <T> readValue(
+        key: String,
+        decode: (String) -> T,
+    ): T? {
         val raw = getRaw(key) ?: return null
         return try {
             decode(raw)
@@ -138,18 +170,37 @@ class StateStore(private val store: KeyValueStore) {
         }
     }
 
-    private fun writeObject(key: String, value: JSONObject?) = putRaw(key = key, value = value?.toString())
+    private fun writeObject(
+        key: String,
+        value: JSONObject?,
+    ) = putRaw(key = key, value = value?.toString())
 
     private fun getRaw(key: String): String? = store.getString(PREFIX + key)
 
-    private fun putRaw(key: String, value: String?) = store.putString(key = PREFIX + key, value = value)
+    private fun putRaw(
+        key: String,
+        value: String?,
+    ) = store.putString(key = PREFIX + key, value = value)
 
     companion object {
         const val STATE_VERSION = 6
         const val PREFIX = "hotcodepush."
-        private val CACHE_KEYS = listOf(
-            "currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport",
-            "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "pendingRollbackEvent", "lastSyncAt",
-        )
+        private val CACHE_KEYS =
+            listOf(
+                "currentRelease",
+                "nextRelease",
+                "fallbackRelease",
+                "failedBundleIds",
+                "lastBuiltAt",
+                "reportedAt",
+                "acknowledgedReport",
+                "lastCheck",
+                "cachedIndex",
+                "unsentEvents",
+                "checkedReleaseIds",
+                "lastRollback",
+                "pendingRollbackEvent",
+                "lastSyncAt",
+            )
     }
 }

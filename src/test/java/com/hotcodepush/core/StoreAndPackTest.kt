@@ -54,15 +54,16 @@ class PackTest {
     @Test
     fun shouldStreamAnEntryOfAGibibyteAndReadTheEntryAfterIt() {
         val size = 1L shl 30
-        val pack = SequenceInputStream(
-            Collections.enumeration(
-                listOf(
-                    PackWriter.header(prefix = "", name = sha256, size = size).inputStream(),
-                    ZeroInputStream(size),
-                    PackWriter.pack(listOf(PackedEntry.file(Hashing.sha256Hex("y"), "y".toByteArray()))).inputStream(),
+        val pack =
+            SequenceInputStream(
+                Collections.enumeration(
+                    listOf(
+                        PackWriter.header(prefix = "", name = sha256, size = size).inputStream(),
+                        ZeroInputStream(size),
+                        PackWriter.pack(listOf(PackedEntry.file(Hashing.sha256Hex("y"), "y".toByteArray()))).inputStream(),
+                    ),
                 ),
-            ),
-        )
+            )
         val read = mutableListOf<Pair<PackEntry, String>>()
         PackReader.forEachEntry(pack, 512 + size + 2048) { entry, body -> read += entry to String(body.readNBytes(1)) }
         assertEquals(listOf(PackEntry.File(sha256) to "\u0000", PackEntry.File(Hashing.sha256Hex("y")) to "y"), read)
@@ -72,13 +73,21 @@ class PackTest {
     fun shouldRefuseAPackCutInsideAnEntryTheReaderReads() {
         val pack = PackWriter.pack(listOf(PackedEntry.file(sha256, ByteArray(700))))
         val cut = pack.copyOf(512 + 600)
-        assertThrows(PackFormatException::class.java) { PackReader.forEachEntry(cut.inputStream(), pack.size.toLong()) { _, body -> body.readBytes() } }
+        assertThrows(PackFormatException::class.java) {
+            PackReader.forEachEntry(cut.inputStream(), pack.size.toLong()) { _, body -> body.readBytes() }
+        }
     }
 
-    private class ZeroInputStream(private var remaining: Long) : InputStream() {
+    private class ZeroInputStream(
+        private var remaining: Long,
+    ) : InputStream() {
         override fun read(): Int = if (remaining-- > 0) 0 else -1
 
-        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        override fun read(
+            buffer: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Int {
             if (remaining == 0L) return -1
             val count = minOf(length.toLong(), remaining).toInt()
             buffer.fill(0, offset, offset + count)
@@ -100,7 +109,10 @@ class StateStoreTest {
     fun shouldKeepTheIdentityKeysAndDropTheCacheOnAnUnknownStateVersion() {
         val store = InMemoryStore()
         store.putInt("hotcodepush.stateVersion", 9)
-        store.putString(key = "hotcodepush.currentRelease", value = Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false).toJson().toString())
+        store.putString(
+            key = "hotcodepush.currentRelease",
+            value = Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false).toJson().toString(),
+        )
         store.putString(key = "hotcodepush.deviceId", value = "device-1")
         val state = StateStore(store)
         assertEquals("device-1", state.deviceId)
@@ -111,9 +123,24 @@ class StateStoreTest {
     @Test
     fun shouldDropALastCheckStoredUnderTheFieldNamesOfThePreviousStateVersion() {
         val store = InMemoryStore()
-        val result = JSONObject().put("status", "skipped").put("release", JSONObject.NULL).put("reason", "device_incompatible").put("condition", "os")
+        val result =
+            JSONObject()
+                .put(
+                    "status",
+                    "skipped",
+                ).put("release", JSONObject.NULL)
+                .put("reason", "device_incompatible")
+                .put("condition", "os")
         store.putInt("hotcodepush.stateVersion", 5)
-        store.putString(key = "hotcodepush.lastCheck", value = JSONObject().put("checkedAt", "2026-10-30T10:00:00.000Z").put("trigger", "manual").put("result", result).toString())
+        store.putString(
+            key = "hotcodepush.lastCheck",
+            value =
+            JSONObject()
+                .put("checkedAt", "2026-10-30T10:00:00.000Z")
+                .put("trigger", "manual")
+                .put("result", result)
+                .toString(),
+        )
         store.putString(key = "hotcodepush.deviceId", value = "device-1")
         val state = StateStore(store)
         assertNull(state.lastCheck)
@@ -124,7 +151,8 @@ class StateStoreTest {
     fun shouldDropTheCacheWhenAValueDoesNotParse() {
         val store = InMemoryStore()
         val state = StateStore(store)
-        state.nextRelease = NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START)
+        state.nextRelease =
+            NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START)
         store.putString(key = "hotcodepush.currentRelease", value = "not json")
         assertNull(state.currentRelease)
         assertNull(state.nextRelease)
@@ -143,11 +171,25 @@ class StateStoreTest {
 
     @Test
     fun shouldDropTheCacheWhenAStoredValueHoldsWhatThisSdkDoesNotKnow() {
-        val notice = JSONObject().put("fromRelease", Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false).toJson()).put("toRelease", JSONObject.NULL).put("reason", "reason_of_a_later_sdk")
-        for ((key, value) in listOf("pendingRollbackEvent" to notice.toString(), "lastCheck" to JSONObject().put("checkedAt", "yesterday").toString(), "lastBuiltAt" to "yesterday")) {
+        val notice =
+            JSONObject()
+                .put(
+                    "fromRelease",
+                    Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false).toJson(),
+                ).put("toRelease", JSONObject.NULL)
+                .put("reason", "reason_of_a_later_sdk")
+        for ((key, value) in listOf(
+            "pendingRollbackEvent" to notice.toString(),
+            "lastCheck" to JSONObject().put("checkedAt", "yesterday").toString(),
+            "lastBuiltAt" to "yesterday",
+        )) {
             val store = InMemoryStore()
             val state = StateStore(store)
-            state.nextRelease = NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START)
+            state.nextRelease =
+                NextRelease(
+                    Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false),
+                    ApplyStrategy.NEXT_START,
+                )
             store.putString(key = "hotcodepush.$key", value = value)
             assertNull(key, state.pendingRollbackEvent ?: state.lastCheck ?: state.lastBuiltAt)
             assertNull(key, state.nextRelease)
@@ -171,11 +213,18 @@ class StateStoreTest {
     fun shouldDropAnIdentityKeyThatDoesNotParseAndKeepTheCache() {
         val store = InMemoryStore()
         val state = StateStore(store)
-        state.nextRelease = NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START)
+        state.nextRelease =
+            NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START)
         store.putString(key = "hotcodepush.channel", value = "not json")
         assertNull(state.channel)
         assertNull(store.getString("hotcodepush.channel"))
-        assertEquals(NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START), state.nextRelease)
+        assertEquals(
+            NextRelease(
+                Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false),
+                ApplyStrategy.NEXT_START,
+            ),
+            state.nextRelease,
+        )
     }
 }
 
@@ -188,8 +237,20 @@ class FileStoreTest {
     @Test
     fun shouldCollectWhatNoKeptBundleLists() {
         val files = FileStore(Files.createTempDirectory("fs").toFile())
-        val kept = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File(path = "a", sha256 = Hashing.sha256Hex("a"), sizeBytes = 1)), platforms = listOf("android"))
-        val gone = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File(path = "b", sha256 = Hashing.sha256Hex("b"), sizeBytes = 1)), platforms = listOf("android"))
+        val kept =
+            BundleManifest(
+                appId = "a",
+                bundleVersion = "1",
+                files = listOf(BundleManifest.File(path = "a", sha256 = Hashing.sha256Hex("a"), sizeBytes = 1)),
+                platforms = listOf("android"),
+            )
+        val gone =
+            BundleManifest(
+                appId = "a",
+                bundleVersion = "1",
+                files = listOf(BundleManifest.File(path = "b", sha256 = Hashing.sha256Hex("b"), sizeBytes = 1)),
+                platforms = listOf("android"),
+            )
         files.writeManifest(kept, "kept")
         files.writeManifest(gone, "gone")
         files.writeFile("a".toByteArray(), Hashing.sha256Hex("a"))
@@ -206,7 +267,17 @@ class FileStoreTest {
         val files = FileStore(File(root, "store"))
         val embedded = InMemoryEmbeddedBundle().apply { this.files[Hashing.sha256Hex("embedded")] = "embedded".toByteArray() }
         files.writeFile("new".toByteArray(), Hashing.sha256Hex("new"))
-        val manifest = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File(path = "index.html", sha256 = Hashing.sha256Hex("new"), sizeBytes = 3), BundleManifest.File(path = "assets/logo.svg", sha256 = Hashing.sha256Hex("embedded"), sizeBytes = 8)), platforms = listOf("android"))
+        val manifest =
+            BundleManifest(
+                appId = "a",
+                bundleVersion = "1",
+                files =
+                listOf(
+                    BundleManifest.File(path = "index.html", sha256 = Hashing.sha256Hex("new"), sizeBytes = 3),
+                    BundleManifest.File(path = "assets/logo.svg", sha256 = Hashing.sha256Hex("embedded"), sizeBytes = 8),
+                ),
+                platforms = listOf("android"),
+            )
         val www = File(root, "www")
         BundleProjection.project(manifest, files, embedded, www)
         assertEquals("new", File(www, "index.html").readText())
