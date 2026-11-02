@@ -78,6 +78,27 @@ class ContextWiringTest {
     }
 
     @Test
+    fun shouldLoadTheConfigurationOfTheResourceFile() {
+        val context = contextWithAssets(mapOf("hotcodepush.json" to resourceFile.toString().toByteArray()))
+
+        assertEquals(ConfigurationLoadResult.Loaded(Configuration.decode(resourceFile.toString())), Configuration.load(context))
+    }
+
+    @Test
+    fun shouldLoadTheMissingMessageWhenTheResourcesLackTheResourceFile() {
+        assertEquals(ConfigurationLoadResult.NotConfigured(Configuration.MISSING_MESSAGE), Configuration.load(application))
+    }
+
+    @Test
+    fun shouldLoadTheRefusedMessageWhenTheReaderRefusesTheResourceFile() {
+        val context = contextWithAssets(mapOf("hotcodepush.json" to "{}".toByteArray()))
+
+        val result = Configuration.load(context) as ConfigurationLoadResult.NotConfigured
+
+        assertTrue(result.message.startsWith("HotCodePush is not configured: the app's hotcodepush.json was refused: "))
+    }
+
+    @Test
     fun shouldKeepTheStoreInTheAppsDefaultPreferences() {
         SharedPreferencesStore(application).putString(key = "hotcodepush.deviceId", value = "d1")
 
