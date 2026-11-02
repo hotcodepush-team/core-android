@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0](https://github.com/hotcodepush-team/core-android/compare/0.1.1...0.2.0) (2026-11-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* ProcessState and ActivityManagerProcessState are AppState and ActivityManagerAppState, GetStateResult.index replaces indexSequence and indexFetchedAt, DownloadOutcome.bytes is downloadSizeBytes, and Gzip.inflate is Gzip.decompress.
+
+### Features
+
+* Configuration.load answers the configuration or the not-configured message ([#46](https://github.com/hotcodepush-team/core-android/issues/46)) ([b29f71a](https://github.com/hotcodepush-team/core-android/commit/b29f71ae4d63957fc5f9bb9580f280920d052e8b))
+
+
+### Code Refactoring
+
+* one shape and one name per seam and function, as in core-ios ([#44](https://github.com/hotcodepush-team/core-android/issues/44)) ([d219f5d](https://github.com/hotcodepush-team/core-android/commit/d219f5d26a9082935141d04bcd6e7feb0416e3d6))
+
 ## [0.1.1](https://github.com/hotcodepush-team/core-android/compare/0.1.0...0.1.1) (2026-11-02)
 
 
