@@ -100,8 +100,8 @@ object DebugReport {
         return DebugSection(
             "Index",
             listOf(
-                DebugRow(label = "Published at", value = state.indexSequence?.let(Iso8601::format) ?: "none"),
-                DebugRow(label = "Fetched at", value = state.indexFetchedAt?.let(Iso8601::format) ?: "never"),
+                DebugRow(label = "Published at", value = state.index?.sequence?.let(Iso8601::format) ?: "none"),
+                DebugRow(label = "Fetched at", value = state.index?.fetchedAt?.let(Iso8601::format) ?: "never"),
                 DebugRow(label = "Reported at", value = state.reportedAt?.let(Iso8601::format) ?: "never"),
             ),
         )

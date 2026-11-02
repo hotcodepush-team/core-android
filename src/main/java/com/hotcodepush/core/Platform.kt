@@ -91,12 +91,12 @@ fun interface Clock {
 }
 
 /** Whether the process runs in the foreground: the system starts one in the background for a push, a job or a headless task. */
-fun interface ProcessState {
+fun interface AppState {
     fun isInForeground(): Boolean
 }
 
 /** The importance the activity manager gives this process, read as React Native's host reads it. */
-object ActivityManagerProcessState : ProcessState {
+object ActivityManagerAppState : AppState {
     override fun isInForeground(): Boolean {
         val process = ActivityManager.RunningAppProcessInfo()
         ActivityManager.getMyMemoryState(process)
@@ -145,7 +145,7 @@ internal class AppLifecycleObserver(
 class PlainException(message: String) : Exception(message)
 
 object AttributeRules {
-    private const val VALUE_MAX_CODE_POINTS = 256
+    private const val VALUE_MAXIMUM_CODE_POINTS = 256
     private val keyPattern = Regex("^[A-Za-z0-9_.-]{1,64}$")
 
     fun validate(key: String, value: String) {
@@ -155,11 +155,11 @@ object AttributeRules {
 
     /** The value rule alone, shared with the app's rollback reason. */
     fun validate(value: String) {
-        if (!isValidValue(value)) throw PlainException("A value is at most $VALUE_MAX_CODE_POINTS Unicode code points without a control character")
+        if (!isValidValue(value)) throw PlainException("A value is at most $VALUE_MAXIMUM_CODE_POINTS Unicode code points without a control character")
     }
 
     fun isValidKey(key: String): Boolean = keyPattern.matches(key)
 
     /** At most 256 code points, not UTF-16 units or visible characters, and no control character. */
-    fun isValidValue(value: String): Boolean = value.codePointCount(0, value.length) <= VALUE_MAX_CODE_POINTS && value.none { it.isControlCharacter() }
+    fun isValidValue(value: String): Boolean = value.codePointCount(0, value.length) <= VALUE_MAXIMUM_CODE_POINTS && value.none { it.isControlCharacter() }
 }

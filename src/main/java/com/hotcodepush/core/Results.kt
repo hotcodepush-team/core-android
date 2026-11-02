@@ -112,6 +112,10 @@ data class LastCheck(val checkedAt: Long, val trigger: SyncTrigger, val result: 
     }
 }
 
+data class IndexState(val sequence: Long, val fetchedAt: Long) {
+    fun toJson(): JSONObject = JSONObject().put("sequence", sequence).put("fetchedAt", Iso8601.format(fetchedAt))
+}
+
 /** The SDK's state, a snapshot: everything the debug screen shows. */
 data class GetStateResult(
     val currentRelease: Release?,
@@ -119,8 +123,7 @@ data class GetStateResult(
     val fallbackRelease: Release?,
     val embeddedBundleId: String?,
     val lastCheck: LastCheck?,
-    val indexSequence: Long?,
-    val indexFetchedAt: Long?,
+    val index: IndexState?,
     val failedBundleIds: List<String>,
     /** The server time of the first acknowledged device report in the latest UTC month that has one; the spending cap is compared with it. */
     val reportedAt: Long?,
@@ -131,7 +134,7 @@ data class GetStateResult(
         .put("fallbackRelease", fallbackRelease?.toJson() ?: JSONObject.NULL)
         .put("embeddedBundleId", embeddedBundleId ?: JSONObject.NULL)
         .put("lastCheck", lastCheck?.toJson() ?: JSONObject.NULL)
-        .put("index", if (indexSequence != null && indexFetchedAt != null) JSONObject().put("sequence", indexSequence).put("fetchedAt", Iso8601.format(indexFetchedAt)) else JSONObject.NULL)
+        .put("index", index?.toJson() ?: JSONObject.NULL)
         .put("failedBundleIds", JSONArray(failedBundleIds))
         .put("reportedAt", reportedAt?.let(Iso8601::format) ?: JSONObject.NULL)
 }

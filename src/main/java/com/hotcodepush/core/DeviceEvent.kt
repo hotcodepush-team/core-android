@@ -2,8 +2,6 @@ package com.hotcodepush.core
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Calendar
-import java.util.TimeZone
 
 /** An outcome event or check event, queued in the outbox until the events endpoint acknowledges it. */
 data class DeviceEvent(
@@ -124,19 +122,14 @@ data class DeviceEventsResponse(val reportedAt: Long) {
     }
 }
 
-internal data class DeviceEventsAcknowledgement(val hasReport: Boolean, val reportedAt: Long)
-
-// The first stamp of a UTC month that carried the report stays, so the device compares `cappedAt` with the stamp the server counted.
-internal fun resolveKeptReportedAt(reportedAt: Long?, acknowledgement: DeviceEventsAcknowledgement): Long? {
-    if (!acknowledgement.hasReport) return reportedAt
-    if (reportedAt == null || resolveUtcMonthNumber(acknowledgement.reportedAt) > resolveUtcMonthNumber(reportedAt)) return acknowledgement.reportedAt
-    return reportedAt
-}
-
-// Months since year zero, so a later month compares greater across a year's turn.
-internal fun resolveUtcMonthNumber(epochMillis: Long): Int = Calendar.getInstance(TimeZone.getTimeZone("UTC")).run {
-    timeInMillis = epochMillis
-    get(Calendar.YEAR) * 12 + get(Calendar.MONTH)
+internal data class DeviceEventsAcknowledgement(val hasReport: Boolean, val reportedAt: Long) {
+    // Only a batch that carried the report moves the stamp, and only into a later UTC month.
+    // So the device compares with `cappedAt` the same stamp the consumer counted it by.
+    fun resolveKeptReportedAt(heldReportedAt: Long?): Long? {
+        if (!hasReport) return heldReportedAt
+        if (heldReportedAt == null) return reportedAt
+        return if (Iso8601.resolveUtcMonth(reportedAt) > Iso8601.resolveUtcMonth(heldReportedAt)) reportedAt else heldReportedAt
+    }
 }
 
 internal sealed class BatchAnswer {

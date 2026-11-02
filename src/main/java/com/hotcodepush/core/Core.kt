@@ -33,7 +33,7 @@ class Core(
     private val scope: CoroutineScope,
     temporaryDirectory: File,
     private val networkState: NetworkState,
-    private val processState: ProcessState = ActivityManagerProcessState,
+    private val appState: AppState = ActivityManagerAppState,
 ) {
     private enum class Stage { CHECK, DOWNLOAD, SYNC }
 
@@ -180,7 +180,7 @@ class Core(
     }
 
     private fun beginRun(isHeadless: Boolean) {
-        if (!processState.isInForeground()) backgroundedAt = clock.now()
+        if (!appState.isInForeground()) backgroundedAt = clock.now()
         if (!isHeadless) loadBundle()
         if (!hasAnnouncedRollback) announceRollback()
         if (isCurrentReleaseUnconfirmed()) {
@@ -249,7 +249,7 @@ class Core(
     fun observeAppLifecycle(application: Application) {
         if (!isObservingAppLifecycle.compareAndSet(false, true)) return
         val observer = AppLifecycleObserver(
-            hasPaused = !processState.isInForeground(),
+            hasPaused = !appState.isInForeground(),
             onPause = { launchTask(::handleAppPause) },
             onResume = { launchTask(::handleAppResume) },
         )
@@ -496,7 +496,7 @@ class Core(
         try {
             val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes = downloadSizeBytes, progressBytes = progressBytes, releaseId = target.id)) }
             BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
-            lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, outcome.bytes, outcome.packKind)) }
+            lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, outcome.downloadSizeBytes, outcome.packKind)) }
         } catch (failure: DownloadFailure) {
             lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(releaseId = target.id, reason = failure.reason.wire)) }
             return SyncResult.failed(release = release, reason = failure.reason, message = failure.message ?: "")
@@ -560,20 +560,16 @@ class Core(
     /** Returns everything the debug screen shows: the device, the configuration, the state and this session's log. */
     fun debugSnapshot(): DebugSnapshot = DebugSnapshot(takenAt = clock.now(), device = getDevice(), configuration = configuration, isDebugBuild = device.isDebugBuild, state = getState(), log = log.entries())
 
-    fun getState(): GetStateResult {
-        val cached = state.cachedIndex
-        return GetStateResult(
-            currentRelease = state.currentRelease,
-            nextRelease = state.nextRelease?.release,
-            fallbackRelease = state.fallbackRelease,
-            embeddedBundleId = configuration.embeddedBundleId,
-            lastCheck = state.lastCheck,
-            indexSequence = cached?.body?.sequence,
-            indexFetchedAt = cached?.fetchedAt,
-            failedBundleIds = state.failedBundleIds,
-            reportedAt = state.reportedAt,
-        )
-    }
+    fun getState(): GetStateResult = GetStateResult(
+        currentRelease = state.currentRelease,
+        nextRelease = state.nextRelease?.release,
+        fallbackRelease = state.fallbackRelease,
+        embeddedBundleId = configuration.embeddedBundleId,
+        lastCheck = state.lastCheck,
+        index = state.cachedIndex?.let { IndexState(sequence = it.body.sequence, fetchedAt = it.fetchedAt) },
+        failedBundleIds = state.failedBundleIds,
+        reportedAt = state.reportedAt,
+    )
 
     fun getChannel(): GetChannelResult = when (val choice = state.channel) {
         is ChannelChoice.Id -> GetChannelResult(id = choice.id, name = null, source = ChannelSource.RUNTIME)
@@ -851,13 +847,10 @@ class Core(
         object Missing : IndexFetch()
     }
 
-    private suspend fun resolveChannelId(): ChannelResolution = when (val choice = state.channel) {
-        null -> configuration.channelId?.let { ChannelResolution.Id(it) } ?: ChannelResolution.Missing
-        is ChannelChoice.Id -> ChannelResolution.Id(choice.id)
-        is ChannelChoice.Name -> {
-            val resolved = resolvedChannelName
-            if (resolved != null && resolved.first == choice.name) ChannelResolution.Id(resolved.second) else fetchChannelId(name = choice.name)
-        }
+    private suspend fun resolveChannelId(): ChannelResolution {
+        getChannel().id?.let { return ChannelResolution.Id(it) }
+        val choice = state.channel as? ChannelChoice.Name ?: return ChannelResolution.Missing
+        return fetchChannelId(name = choice.name)
     }
 
     private suspend fun fetchChannelId(name: String): ChannelResolution {
@@ -977,7 +970,7 @@ class Core(
             when (answer) {
                 is BatchAnswer.Acknowledged -> {
                     dropBatchEvents()
-                    state.reportedAt = resolveKeptReportedAt(state.reportedAt, DeviceEventsAcknowledgement(hasReport = request.report != null, reportedAt = answer.reportedAt))
+                    state.reportedAt = DeviceEventsAcknowledgement(hasReport = request.report != null, reportedAt = answer.reportedAt).resolveKeptReportedAt(heldReportedAt = state.reportedAt)
                     request.report?.let { state.acknowledgedReport = it }
                 }
                 is BatchAnswer.Refused -> dropBatchEvents()
@@ -997,7 +990,7 @@ class Core(
         val channelId = channel.id ?: return null
         val report = DeviceReport(attributes = state.attributes, binaryBuild = device.binaryBuild, binaryVersion = device.binaryVersion, channelId = channelId, channelSource = channel.source, embeddedBundleId = configuration.embeddedBundleId, fingerprint = configuration.fingerprint, osVersion = device.osVersion, releaseId = state.currentRelease?.id)
         val reportedAt = state.reportedAt
-        val isAcknowledged = report == state.acknowledgedReport && reportedAt != null && resolveUtcMonthNumber(reportedAt) == resolveUtcMonthNumber(clock.now())
+        val isAcknowledged = report == state.acknowledgedReport && reportedAt != null && Iso8601.resolveUtcMonth(reportedAt) == Iso8601.resolveUtcMonth(clock.now())
         return if (isAcknowledged) null else report
     }
 
