@@ -106,7 +106,7 @@ class DebugScreenActivity : Activity() {
 
     private fun returnToConfiguredChannel(core: Core) {
         scope.launch {
-            withContext(Dispatchers.IO) { core.setChannel(null) }
+            withContext(Dispatchers.IO) { core.setChannel(choice = null) }
             render(core)
         }
     }

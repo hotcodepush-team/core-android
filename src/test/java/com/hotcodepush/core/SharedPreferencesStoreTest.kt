@@ -14,7 +14,7 @@ class SharedPreferencesStoreTest {
 
     @Test
     fun shouldCommitAStringBeforeThePutReturns() {
-        store.putString("hotcodepush.deviceId", "d1")
+        store.putString(key = "hotcodepush.deviceId", value = "d1")
 
         val writes = inOrder(editor)
         writes.verify(editor).putString("hotcodepush.deviceId", "d1")

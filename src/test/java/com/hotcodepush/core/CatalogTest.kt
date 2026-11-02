@@ -43,7 +43,7 @@ class CatalogTest {
             DeviceEvent.checked("r1", SyncStatus.AVAILABLE),
             DeviceEvent.confirmed("r1"),
             DeviceEvent.downloaded("r1", 1, PackKind.FULL),
-            DeviceEvent.failed("r1", FailedReason.DOWNLOAD_FAILED.wire),
+            DeviceEvent.failed(releaseId = "r1", reason = FailedReason.DOWNLOAD_FAILED.wire),
         ).map { it.type },
     )
 

@@ -48,7 +48,7 @@ class StateStore(private val store: KeyValueStore) {
     }
 
     val deviceId: String
-        get() = getRaw("deviceId") ?: UUID.randomUUID().toString().lowercase().also { putRaw("deviceId", it) }
+        get() = getRaw("deviceId") ?: UUID.randomUUID().toString().lowercase().also { putRaw(key = "deviceId", value = it) }
 
     var attributes: Map<String, String>
         get() = readObject("attributes") { it.toStringMap() } ?: emptyMap()
@@ -72,16 +72,16 @@ class StateStore(private val store: KeyValueStore) {
 
     var failedBundleIds: List<String>
         get() = readArray("failedBundleIds") { it.toWireStringList() } ?: emptyList()
-        set(value) = putRaw("failedBundleIds", JSONArray(value).toString())
+        set(value) = putRaw(key = "failedBundleIds", value = JSONArray(value).toString())
 
     /** The floor of the binary that last started, to notice a new one. */
     var lastBuiltAt: Long?
         get() = readValue("lastBuiltAt", Iso8601::parse)
-        set(value) = putRaw("lastBuiltAt", value?.let(Iso8601::format))
+        set(value) = putRaw(key = "lastBuiltAt", value = value?.let(Iso8601::format))
 
     var reportedAt: Long?
         get() = readValue("reportedAt", Iso8601::parse)
-        set(value) = putRaw("reportedAt", value?.let(Iso8601::format))
+        set(value) = putRaw(key = "reportedAt", value = value?.let(Iso8601::format))
 
     var acknowledgedReport: DeviceReport?
         get() = readObject("acknowledgedReport", DeviceReport::fromJson)
@@ -97,11 +97,11 @@ class StateStore(private val store: KeyValueStore) {
 
     var unsentEvents: List<DeviceEvent>
         get() = readArray("unsentEvents") { array -> array.map(DeviceEvent::fromJson) } ?: emptyList()
-        set(value) = putRaw("unsentEvents", JSONArray(value.map { it.toJson() }).toString())
+        set(value) = putRaw(key = "unsentEvents", value = JSONArray(value.map { it.toJson() }).toString())
 
     var checkedReleaseIds: List<String>
         get() = readArray("checkedReleaseIds") { it.toWireStringList() } ?: emptyList()
-        set(value) = putRaw("checkedReleaseIds", JSONArray(value).toString())
+        set(value) = putRaw(key = "checkedReleaseIds", value = JSONArray(value).toString())
 
     var lastRollback: UpdateRolledBackEvent?
         get() = readObject("lastRollback", UpdateRolledBackEvent::fromJson)
@@ -114,11 +114,11 @@ class StateStore(private val store: KeyValueStore) {
 
     var lastSyncAt: Long?
         get() = readValue("lastSyncAt", Iso8601::parse)
-        set(value) = putRaw("lastSyncAt", value?.let(Iso8601::format))
+        set(value) = putRaw(key = "lastSyncAt", value = value?.let(Iso8601::format))
 
     /** Drops every cache key; the identity keys survive. Called at start on an unknown version, never by the app. */
     fun deleteCacheKeys() {
-        CACHE_KEYS.forEach { putRaw(it, null) }
+        CACHE_KEYS.forEach { putRaw(key = it, value = null) }
         store.putInt(PREFIX + "stateVersion", STATE_VERSION)
     }
 
@@ -133,16 +133,16 @@ class StateStore(private val store: KeyValueStore) {
         return try {
             decode(raw)
         } catch (exception: Exception) {
-            if (key in CACHE_KEYS) deleteCacheKeys() else putRaw(key, null)
+            if (key in CACHE_KEYS) deleteCacheKeys() else putRaw(key = key, value = null)
             null
         }
     }
 
-    private fun writeObject(key: String, value: JSONObject?) = putRaw(key, value?.toString())
+    private fun writeObject(key: String, value: JSONObject?) = putRaw(key = key, value = value?.toString())
 
     private fun getRaw(key: String): String? = store.getString(PREFIX + key)
 
-    private fun putRaw(key: String, value: String?) = store.putString(PREFIX + key, value)
+    private fun putRaw(key: String, value: String?) = store.putString(key = PREFIX + key, value = value)
 
     companion object {
         const val STATE_VERSION = 6

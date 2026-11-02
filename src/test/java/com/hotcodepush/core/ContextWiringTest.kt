@@ -42,7 +42,7 @@ class ContextWiringTest {
     fun shouldReadTheDeviceFactsFromThePackageManagerAndTheOs() {
         val facts = DeviceFacts.current(contextWithPackage(isDebuggable = false), "1.2.3")
 
-        assertEquals(DeviceFacts("android", "2.4.1", "57", Build.VERSION.RELEASE, "1.2.3", false), facts)
+        assertEquals(DeviceFacts(platform = "android", binaryVersion = "2.4.1", binaryBuild = "57", osVersion = Build.VERSION.RELEASE, sdkVersion = "1.2.3", isDebugBuild = false), facts)
     }
 
     @Test
@@ -79,7 +79,7 @@ class ContextWiringTest {
 
     @Test
     fun shouldKeepTheStoreInTheAppsDefaultPreferences() {
-        SharedPreferencesStore(application).putString("hotcodepush.deviceId", "d1")
+        SharedPreferencesStore(application).putString(key = "hotcodepush.deviceId", value = "d1")
 
         assertEquals("d1", application.getSharedPreferences("${application.packageName}_preferences", Context.MODE_PRIVATE).getString("hotcodepush.deviceId", null))
     }
@@ -110,7 +110,7 @@ class ContextWiringTest {
 
     @Test
     fun shouldHaveNoFileWhenTheBuildCarriesNoManifest() {
-        val embedded = AssetsEmbeddedBundle(contextWithAssets(mapOf("public/index.html" to Fixture.embeddedIndexHtml)), null, "public")
+        val embedded = AssetsEmbeddedBundle(context = contextWithAssets(mapOf("public/index.html" to Fixture.embeddedIndexHtml)), manifest = null, assetDirectory = "public")
         val sha256 = Hashing.sha256Hex(Fixture.embeddedIndexHtml)
 
         assertFalse(embedded.has(sha256))
@@ -128,14 +128,14 @@ class ContextWiringTest {
 
     @Test
     fun shouldReadTheConnectionAsUnmeteredWhenThereIsNoConnectivityManager() {
-        assertFalse(NetworkMonitor(contextWithConnectivity(null)).isConnectionMetered())
+        assertFalse(NetworkMonitor(contextWithConnectivity(connectivity = null)).isConnectionMetered())
     }
 
     @Test
     fun shouldKeepTheCoresStateInTheAppsDefaultPreferencesWhenWiredFromTheContext() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val root = Files.createTempDirectory("hotcodepush-tests").toFile()
-        val core = Core(application, Fixture.configuration(), DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", false), InMemoryEmbeddedBundle(), FakeLoader(root), FakeListener(), scope, ManualScheduler())
+        val core = Core(application, Fixture.configuration(), DeviceFacts(platform = "android", binaryVersion = "2.4.1", binaryBuild = "57", osVersion = "14", sdkVersion = "0.0.0", isDebugBuild = false), InMemoryEmbeddedBundle(), FakeLoader(root), FakeListener(), scope, ManualScheduler())
 
         val deviceId = core.getDevice().id
 

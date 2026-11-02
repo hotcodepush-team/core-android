@@ -31,7 +31,7 @@ class FileStore(val rootDirectory: File) {
             val digest = MessageDigest.getInstance("SHA-256")
             temporary.outputStream().use { output -> DigestInputStream(content, digest).copyTo(output) }
             val actual = digest.digest().toByteString().hex()
-            if (actual != sha256) throw HashMismatchException(sha256, actual)
+            if (actual != sha256) throw HashMismatchException(expected = sha256, actual = actual)
             if (!temporary.renameTo(file(sha256))) temporary.copyTo(file(sha256), overwrite = true)
         } finally {
             temporary.delete()
@@ -114,7 +114,7 @@ object BundleProjection {
             destination.parentFile?.mkdirs()
             if (files.hasFile(file.sha256)) {
                 val source = files.file(file.sha256)
-                if (!link(source, destination)) source.copyTo(destination, overwrite = true)
+                if (!link(source = source, destination = destination)) source.copyTo(destination, overwrite = true)
             } else {
                 embedded.copyFile(file.sha256, destination)
             }

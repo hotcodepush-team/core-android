@@ -17,7 +17,7 @@ internal object Bspatch {
     // The three files and the cap the C function takes, which callers name.
     @Suppress("LongParameterList")
     fun apply(patch: File, old: File, new: File, maximumBytes: Long) {
-        when (applyPatch(old.path, new.path, patch.path, maximumBytes)) {
+        when (applyPatch(oldPath = old.path, newPath = new.path, patchPath = patch.path, maximumBytes = maximumBytes)) {
             0 -> return
             1 -> throw BspatchException(Failure.CORRUPT_PATCH)
             3 -> throw BspatchException(Failure.OUT_OF_MEMORY)

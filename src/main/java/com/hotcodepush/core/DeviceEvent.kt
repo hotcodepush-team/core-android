@@ -148,7 +148,7 @@ internal sealed class BatchAnswer {
 
     companion object {
         fun of(response: HttpResponse?): BatchAnswer = when (val status = response?.status) {
-            null -> Failed(null)
+            null -> Failed(status = null)
             202 -> runCatching { DeviceEventsResponse.fromJson(parseJsonObject(response.body)) }.getOrNull()?.let { Acknowledged(it.reportedAt) } ?: Failed(status)
             408, 429 -> Failed(status)
             in 400..499 -> Refused(status)

@@ -86,7 +86,7 @@ object Fixture {
 
     data class Published(val release: IndexRelease, val manifest: BundleManifest, val envelope: ManifestEnvelope, val pack: ByteArray)
 
-    fun embeddedManifest() = EmbeddedBundleManifest(appId = APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File("index.html", Hashing.sha256Hex(embeddedIndexHtml), embeddedIndexHtml.size.toLong())), platforms = listOf("android"))
+    fun embeddedManifest() = EmbeddedBundleManifest(appId = APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File(path = "index.html", sha256 = Hashing.sha256Hex(embeddedIndexHtml), sizeBytes = embeddedIndexHtml.size.toLong())), platforms = listOf("android"))
 
     fun configuration(applyStrategy: ApplyStrategy = ApplyStrategy.NEXT_START, mandatoryApplyStrategy: MandatoryApplyStrategy = MandatoryApplyStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, checkStrategy: CheckStrategy = CheckStrategy.MANUAL, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<DevicePublicKey> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, isEnabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID, hasEmbeddedBundle: Boolean = true): Configuration {
         val json = JSONObject()
@@ -119,15 +119,15 @@ object Fixture {
         val sha256 = Hashing.sha256Hex(content)
         val js = "js-$bundleId".toByteArray()
         val pack = PackWriter.pack(listOf(PackedEntry.file(sha256, Gzip.compress(content)), PackedEntry.file(Hashing.sha256Hex(js), Gzip.compress(js))))
-        val manifest = BundleManifest(appId = APP_ID, bundleVersion = "1.$number.0", files = listOf(BundleManifest.File("index.html", sha256, content.size.toLong()), BundleManifest.File("assets/app.js", Hashing.sha256Hex(js), js.size.toLong())), platforms = listOf("android"))
+        val manifest = BundleManifest(appId = APP_ID, bundleVersion = "1.$number.0", files = listOf(BundleManifest.File(path = "index.html", sha256 = sha256, sizeBytes = content.size.toLong()), BundleManifest.File(path = "assets/app.js", sha256 = Hashing.sha256Hex(js), sizeBytes = js.size.toLong())), platforms = listOf("android"))
         val manifestJson = manifest.toJson().toString()
-        val envelope = ManifestEnvelope(bundleId, createdAt, manifestJson, null, ManifestEnvelope.Pack("$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/pack", pack.size.toLong()), emptyList())
-        val release = IndexRelease("r$number", number, createdAt, isMandatory, "notes $number", rolloutPercent, conditions, bundleId, manifest.bundleVersion, "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json", Hashing.sha256Hex(manifestJson), content.size.toLong())
+        val envelope = ManifestEnvelope(bundleId = bundleId, createdAt = createdAt, manifest = manifestJson, signature = null, pack = ManifestEnvelope.Pack("$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/pack", pack.size.toLong()), deltas = emptyList())
+        val release = IndexRelease(id = "r$number", number = number, createdAt = createdAt, isMandatory = isMandatory, notes = "notes $number", rolloutPercent = rolloutPercent, conditions = conditions, bundleId = bundleId, bundleVersion = manifest.bundleVersion, manifestUrl = "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json", manifestSha256 = Hashing.sha256Hex(manifestJson), sizeBytes = content.size.toLong())
         return Published(release, manifest, envelope, pack)
     }
 
     fun index(sequence: Long, releases: List<IndexRelease>, revoked: List<String> = emptyList(), pausedAt: Long? = null, cappedAt: Long? = null) =
-        ChannelIndex(ChannelIndex.SCHEMA, sequence, APP_ID, CHANNEL_ID, "android", pausedAt, cappedAt, revoked, releases)
+        ChannelIndex(schema = ChannelIndex.SCHEMA, sequence = sequence, appId = APP_ID, channelId = CHANNEL_ID, platform = "android", pausedAt = pausedAt, cappedAt = cappedAt, revokedReleaseIds = revoked, releases = releases)
 }
 
 class DownloaderHarness(configuration: Configuration = Fixture.configuration()) {
@@ -141,12 +141,12 @@ class DownloaderHarness(configuration: Configuration = Fixture.configuration()) 
 
     fun publish(manifest: BundleManifest, pack: ByteArray? = null, packUrl: String = PACK_URL, packSizeBytes: Long? = null, bundleId: String = BUNDLE_ID, manifestUrl: String = MANIFEST_URL, deltas: Map<String, ByteArray> = emptyMap()): IndexRelease {
         val json = manifest.toJson().toString()
-        val deltaEntries = deltas.map { (baseBundleId, delta) -> ManifestEnvelope.Delta(baseBundleId, "$PACK_URL-from-$baseBundleId", delta.size.toLong()) }
-        val envelope = ManifestEnvelope(bundleId, Fixture.BUILT_AT, json, null, ManifestEnvelope.Pack(packUrl, packSizeBytes ?: pack?.size?.toLong() ?: 0), deltaEntries)
+        val deltaEntries = deltas.map { (baseBundleId, delta) -> ManifestEnvelope.Delta(baseBundleId = baseBundleId, url = "$PACK_URL-from-$baseBundleId", sizeBytes = delta.size.toLong()) }
+        val envelope = ManifestEnvelope(bundleId = bundleId, createdAt = Fixture.BUILT_AT, manifest = json, signature = null, pack = ManifestEnvelope.Pack(packUrl, packSizeBytes ?: pack?.size?.toLong() ?: 0), deltas = deltaEntries)
         http.stubJson(manifestUrl, envelope.toJson())
         if (pack != null) http.stub(packUrl, body = pack)
         for (entry in deltaEntries) http.stub(entry.url, body = deltas.getValue(entry.baseBundleId))
-        return IndexRelease("r2", 2, Fixture.BUILT_AT, false, null, 100, emptyList(), BUNDLE_ID, manifest.bundleVersion, manifestUrl, Hashing.sha256Hex(json), 0)
+        return IndexRelease(id = "r2", number = 2, createdAt = Fixture.BUILT_AT, isMandatory = false, notes = null, rolloutPercent = 100, conditions = emptyList(), bundleId = BUNDLE_ID, bundleVersion = manifest.bundleVersion, manifestUrl = manifestUrl, manifestSha256 = Hashing.sha256Hex(json), sizeBytes = 0)
     }
 
     fun download(release: IndexRelease, baseBundleId: String?): DownloadOutcome = runBlocking { downloader.downloadRelease(release, baseBundleId) { _, _ -> } }
@@ -168,7 +168,7 @@ class DownloaderHarness(configuration: Configuration = Fixture.configuration()) 
         fun bundle(files: Map<String, ByteArray>): Bundle {
             val sorted = files.toSortedMap()
             val pack = PackWriter.pack(sorted.values.map { PackedEntry.file(Hashing.sha256Hex(it), Gzip.compress(it)) })
-            val entries = sorted.map { (path, content) -> BundleManifest.File(path, Hashing.sha256Hex(content), content.size.toLong()) }
+            val entries = sorted.map { (path, content) -> BundleManifest.File(path = path, sha256 = Hashing.sha256Hex(content), sizeBytes = content.size.toLong()) }
             return Bundle(manifest(entries), pack)
         }
 

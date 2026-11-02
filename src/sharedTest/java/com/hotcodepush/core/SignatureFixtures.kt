@@ -21,14 +21,14 @@ class SignatureFixtures(document: JSONObject = JSONObject(File("node_modules/@ho
         }
     }
 
-    fun devicePublicKey(name: String): DevicePublicKey = key(name).let { DevicePublicKey(it.getString("publicKey").substringAfter(':'), it.getString("keyId")) }
+    fun devicePublicKey(name: String): DevicePublicKey = key(name).let { DevicePublicKey(der = it.getString("publicKey").substringAfter(':'), keyId = it.getString("keyId")) }
 
     fun sign(manifest: String, name: String): Signature {
         val key = key(name)
         val signer = java.security.Signature.getInstance("SHA256withRSA")
         signer.initSign(KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(key.getString("privateKey").decodeBase64()!!.toByteArray())))
         signer.update(manifest.toByteArray(Charsets.UTF_8))
-        return Signature(key.getString("keyId"), "${SignatureVerifier.SCHEME}:${signer.sign().toByteString().base64()}")
+        return Signature(keyId = key.getString("keyId"), value = "${SignatureVerifier.SCHEME}:${signer.sign().toByteString().base64()}")
     }
 
     private fun key(name: String) = keys.first { it.getString("name") == name }

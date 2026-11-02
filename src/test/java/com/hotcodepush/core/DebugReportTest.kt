@@ -28,10 +28,10 @@ class DebugReportTest {
 
     @Test
     fun shouldPrintEverySectionAsLabelsAndValues() {
-        val running = Release("r2", 2, "b2", "1.2.0", true)
-        val device = GetDeviceResult("d1", "android", "2.4.1", "57", "14", "0.0.0", null, GetChannelResult("c2", "beta", ChannelSource.RUNTIME), mapOf("plan" to "pro", "cohort" to "a"))
-        val state = GetStateResult(running, null, running, null, null, null, null, listOf("b0", "b1"), null)
-        val log = listOf(LogEntry(Fixture.BUILT_AT, "applied", "release r2 is the running release"))
+        val running = Release(id = "r2", number = 2, bundleId = "b2", bundleVersion = "1.2.0", isMandatory = true)
+        val device = GetDeviceResult(id = "d1", platform = "android", binaryVersion = "2.4.1", binaryBuild = "57", osVersion = "14", sdkVersion = "0.0.0", fingerprint = null, channel = GetChannelResult(id = "c2", name = "beta", source = ChannelSource.RUNTIME), attributes = mapOf("plan" to "pro", "cohort" to "a"))
+        val state = GetStateResult(currentRelease = running, nextRelease = null, fallbackRelease = running, embeddedBundleId = null, lastCheck = null, indexSequence = null, indexFetchedAt = null, failedBundleIds = listOf("b0", "b1"), reportedAt = null)
+        val log = listOf(LogEntry(at = Fixture.BUILT_AT, code = "applied", message = "release r2 is the running release"))
         val expected = """
             HotCodePush debug report, 2023-11-14T22:13:21.000Z
 
@@ -78,7 +78,7 @@ class DebugReportTest {
             Log
               2023-11-14T22:13:20.000Z: applied — release r2 is the running release
         """.trimIndent()
-        assertEquals(expected, DebugReport.text(DebugSnapshot(Fixture.BUILT_AT + 1_000, device, Fixture.configuration(), true, state, log)))
+        assertEquals(expected, DebugReport.text(DebugSnapshot(takenAt = Fixture.BUILT_AT + 1_000, device = device, configuration = Fixture.configuration(), isDebugBuild = true, state = state, log = log)))
     }
 
     @Test

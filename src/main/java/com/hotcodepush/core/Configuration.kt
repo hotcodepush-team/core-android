@@ -95,7 +95,7 @@ data class Configuration(
             nextResumeMinimumBackgroundSeconds = json.getOption("nextResumeMinimumBackgroundSeconds", 300.0) { json.getSeconds(it) },
             readySignal = json.getOption("readySignal", ReadySignal.RENDER) { json.getWireEnum(it, ReadySignal) },
             readyTimeoutSeconds = json.getOption("readyTimeoutSeconds", 10.0) { json.getSeconds(it, minimum = MINIMUM_READY_TIMEOUT_SECONDS) },
-            isEnabledInDebugBuilds = json.getOption("isEnabledInDebugBuilds", true, json::getWireBoolean),
+            isEnabledInDebugBuilds = json.getOption(key = "isEnabledInDebugBuilds", default = true, read = json::getWireBoolean),
             publicKeys = json.getOption("publicKeys", emptyList()) { json.getJSONArray(it).map(DevicePublicKey::fromJson) },
             builtAt = json.getTimestamp("builtAt"),
             fingerprint = json.getNullableWireString("fingerprint", WireRule.NON_EMPTY),

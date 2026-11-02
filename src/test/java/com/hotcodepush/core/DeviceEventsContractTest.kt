@@ -16,10 +16,10 @@ class DeviceEventsContractTest {
         DeviceEvent.downloaded("r2", 2048, PackKind.STREAMED),
         DeviceEvent.applied("r2"),
         DeviceEvent.confirmed("r2"),
-        DeviceEvent.failed("r2", FailedReason.SIGNATURE_INVALID.wire),
-        DeviceEvent.failed("r2", FailedReason.MANIFEST_INVALID.wire),
-        DeviceEvent.failed("r2", FailedReason.CONTENT_MISMATCHED.wire),
-        DeviceEvent.failed("r2", RollbackReason.APP_REQUESTED.wire, "checkout broke"),
+        DeviceEvent.failed(releaseId = "r2", reason = FailedReason.SIGNATURE_INVALID.wire),
+        DeviceEvent.failed(releaseId = "r2", reason = FailedReason.MANIFEST_INVALID.wire),
+        DeviceEvent.failed(releaseId = "r2", reason = FailedReason.CONTENT_MISMATCHED.wire),
+        DeviceEvent.failed(releaseId = "r2", reason = RollbackReason.APP_REQUESTED.wire, detail = "checkout broke"),
     )
 
     @Test

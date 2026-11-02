@@ -71,7 +71,7 @@ object PackReader {
         if (WireRule.SHA256.accepts(name)) return PackEntry.File(name)
         val segments = name.split('/')
         if (segments.size != 3 || segments[0] != "patches" || !WireRule.SHA256.accepts(segments[1]) || !WireRule.SHA256.accepts(segments[2])) return null
-        return PackEntry.Patch(segments[1], segments[2])
+        return PackEntry.Patch(fromSha256 = segments[1], toSha256 = segments[2])
     }
 
     // The ustar checksum is the sum of the header bytes with the checksum field read as spaces, stored in octal.

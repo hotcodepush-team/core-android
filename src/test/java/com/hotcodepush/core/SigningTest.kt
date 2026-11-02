@@ -13,15 +13,15 @@ class SigningTest {
 
     @Test
     fun shouldRefuseASignatureWhoseBase64IsNotCanonical() {
-        val signed = fixture.sign(manifest, "rsa-4096-a")
-        val unpadded = Signature(signed.keyId, signed.value.trimEnd('='))
+        val signed = fixture.sign(manifest = manifest, name = "rsa-4096-a")
+        val unpadded = Signature(keyId = signed.keyId, value = signed.value.trimEnd('='))
         assertEquals(SignatureRefusal.UNKNOWN_SCHEME, SignatureVerifier.verifyManifestSignature(manifest, unpadded, listOf(fixture.devicePublicKey("rsa-4096-a"))))
     }
 
     @Test
     fun shouldRefuseAKeyTheSystemCannotImportAsAConfigurationError() {
-        val signed = fixture.sign(manifest, "rsa-4096-a")
-        val notAKey = DevicePublicKey(Base64.getEncoder().encodeToString(ByteArray(32)), signed.keyId)
+        val signed = fixture.sign(manifest = manifest, name = "rsa-4096-a")
+        val notAKey = DevicePublicKey(der = Base64.getEncoder().encodeToString(ByteArray(32)), keyId = signed.keyId)
         assertEquals(SignatureRefusal.UNIMPORTABLE_KEY, SignatureVerifier.verifyManifestSignature(manifest, signed, listOf(notAKey)))
     }
 }

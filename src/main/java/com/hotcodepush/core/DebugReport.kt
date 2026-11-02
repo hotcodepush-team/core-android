@@ -42,14 +42,14 @@ object DebugReport {
         return DebugSection(
             "Device",
             listOf(
-                DebugRow("Device id", device.id),
-                DebugRow("Platform", device.platform),
-                DebugRow("Binary", "${device.binaryVersion} (${device.binaryBuild})"),
-                DebugRow("OS", device.osVersion),
-                DebugRow("SDK", device.sdkVersion),
-                DebugRow("Fingerprint", device.fingerprint ?: "none"),
-                DebugRow("Debug build", if (snapshot.isDebugBuild) "yes" else "no"),
-                DebugRow("Attributes", if (attributes.isEmpty()) "none" else attributes.joinToString(", ")),
+                DebugRow(label = "Device id", value = device.id),
+                DebugRow(label = "Platform", value = device.platform),
+                DebugRow(label = "Binary", value = "${device.binaryVersion} (${device.binaryBuild})"),
+                DebugRow(label = "OS", value = device.osVersion),
+                DebugRow(label = "SDK", value = device.sdkVersion),
+                DebugRow(label = "Fingerprint", value = device.fingerprint ?: "none"),
+                DebugRow(label = "Debug build", value = if (snapshot.isDebugBuild) "yes" else "no"),
+                DebugRow(label = "Attributes", value = if (attributes.isEmpty()) "none" else attributes.joinToString(", ")),
             ),
         )
     }
@@ -59,9 +59,9 @@ object DebugReport {
         return DebugSection(
             "Channel",
             listOf(
-                DebugRow("Channel id", describeChannelId(channel, snapshot.configuration)),
-                DebugRow("Name", channel.name ?: "none"),
-                DebugRow("Source", channel.source.wire),
+                DebugRow(label = "Channel id", value = describeChannelId(channel, snapshot.configuration)),
+                DebugRow(label = "Name", value = channel.name ?: "none"),
+                DebugRow(label = "Source", value = channel.source.wire),
             ),
         )
     }
@@ -71,26 +71,26 @@ object DebugReport {
         return DebugSection(
             "Releases",
             listOf(
-                DebugRow("Running", describe(state.currentRelease) ?: "the embedded bundle"),
-                DebugRow("Downloaded", describe(state.nextRelease) ?: "none"),
-                DebugRow("Fallback", describe(state.fallbackRelease) ?: "the embedded bundle"),
-                DebugRow("Embedded bundle", describeEmbeddedBundle(snapshot)),
-                DebugRow("Failed bundles", if (state.failedBundleIds.isEmpty()) "none" else state.failedBundleIds.joinToString(", ")),
+                DebugRow(label = "Running", value = describe(state.currentRelease) ?: "the embedded bundle"),
+                DebugRow(label = "Downloaded", value = describe(state.nextRelease) ?: "none"),
+                DebugRow(label = "Fallback", value = describe(state.fallbackRelease) ?: "the embedded bundle"),
+                DebugRow(label = "Embedded bundle", value = describeEmbeddedBundle(snapshot)),
+                DebugRow(label = "Failed bundles", value = if (state.failedBundleIds.isEmpty()) "none" else state.failedBundleIds.joinToString(", ")),
             ),
         )
     }
 
     private fun lastCheckSection(snapshot: DebugSnapshot): DebugSection {
-        val check = snapshot.state.lastCheck ?: return DebugSection("Last check", listOf(DebugRow("When", "never")))
+        val check = snapshot.state.lastCheck ?: return DebugSection("Last check", listOf(DebugRow(label = "When", value = "never")))
         val entry = LogEntry.ofCycle(check.result, check.trigger, check.checkedAt)
         return DebugSection(
             "Last check",
             listOf(
-                DebugRow("When", Iso8601.format(check.checkedAt)),
-                DebugRow("Trigger", check.trigger.wire),
-                DebugRow("Result", entry.code),
-                DebugRow("Release", describe(check.result.release) ?: "none"),
-                DebugRow("Message", entry.message),
+                DebugRow(label = "When", value = Iso8601.format(check.checkedAt)),
+                DebugRow(label = "Trigger", value = check.trigger.wire),
+                DebugRow(label = "Result", value = entry.code),
+                DebugRow(label = "Release", value = describe(check.result.release) ?: "none"),
+                DebugRow(label = "Message", value = entry.message),
             ),
         )
     }
@@ -100,9 +100,9 @@ object DebugReport {
         return DebugSection(
             "Index",
             listOf(
-                DebugRow("Published at", state.indexSequence?.let(Iso8601::format) ?: "none"),
-                DebugRow("Fetched at", state.indexFetchedAt?.let(Iso8601::format) ?: "never"),
-                DebugRow("Reported at", state.reportedAt?.let(Iso8601::format) ?: "never"),
+                DebugRow(label = "Published at", value = state.indexSequence?.let(Iso8601::format) ?: "none"),
+                DebugRow(label = "Fetched at", value = state.indexFetchedAt?.let(Iso8601::format) ?: "never"),
+                DebugRow(label = "Reported at", value = state.reportedAt?.let(Iso8601::format) ?: "never"),
             ),
         )
     }
@@ -112,21 +112,21 @@ object DebugReport {
         return DebugSection(
             "Configuration",
             listOf(
-                DebugRow("App id", configuration.appId),
-                DebugRow("Configured channel", configuration.channelId ?: "none"),
-                DebugRow("Built at", Iso8601.format(configuration.builtAt)),
-                DebugRow("Check strategy", if (configuration.checkStrategy == CheckStrategy.AUTO) "auto, every ${configuration.checkIntervalSeconds.toInt()} s" else "manual"),
-                DebugRow("Strategies", "download ${configuration.downloadStrategy.wire}, apply ${configuration.applyStrategy.wire}, mandatory ${configuration.mandatoryApplyStrategy.wire}"),
-                DebugRow("Ready signal", "${configuration.readySignal.wire}, ${configuration.readyTimeoutSeconds.toInt()} s"),
-                DebugRow("Debug builds", if (configuration.isEnabledInDebugBuilds) "enabled" else "disabled"),
-                DebugRow("Public keys", configuration.publicKeys.size.toString()),
+                DebugRow(label = "App id", value = configuration.appId),
+                DebugRow(label = "Configured channel", value = configuration.channelId ?: "none"),
+                DebugRow(label = "Built at", value = Iso8601.format(configuration.builtAt)),
+                DebugRow(label = "Check strategy", value = if (configuration.checkStrategy == CheckStrategy.AUTO) "auto, every ${configuration.checkIntervalSeconds.toInt()} s" else "manual"),
+                DebugRow(label = "Strategies", value = "download ${configuration.downloadStrategy.wire}, apply ${configuration.applyStrategy.wire}, mandatory ${configuration.mandatoryApplyStrategy.wire}"),
+                DebugRow(label = "Ready signal", value = "${configuration.readySignal.wire}, ${configuration.readyTimeoutSeconds.toInt()} s"),
+                DebugRow(label = "Debug builds", value = if (configuration.isEnabledInDebugBuilds) "enabled" else "disabled"),
+                DebugRow(label = "Public keys", value = configuration.publicKeys.size.toString()),
             ),
         )
     }
 
     private fun logSection(snapshot: DebugSnapshot): DebugSection {
-        val rows = snapshot.log.map { DebugRow(Iso8601.format(it.at), "${it.code} — ${it.message}") }
-        return DebugSection("Log", rows.ifEmpty { listOf(DebugRow("Entries", "none this session")) })
+        val rows = snapshot.log.map { DebugRow(label = Iso8601.format(it.at), value = "${it.code} — ${it.message}") }
+        return DebugSection("Log", rows.ifEmpty { listOf(DebugRow(label = "Entries", value = "none this session")) })
     }
 
     private fun describeChannelId(channel: GetChannelResult, configuration: Configuration): String = when {

@@ -14,7 +14,7 @@ class WireTypesTest {
     @Test
     fun shouldReadAManifestStoredWhileBundlesCarriedPatches() {
         val stored = """{"appId":"a1","bundleVersion":"1.0.0","files":[{"path":"index.html","sha256":"$sha256","sizeBytes":7}],"fingerprint":null,"keyId":null,"patches":[],"platforms":["android"]}"""
-        val manifest = BundleManifest(appId = "a1", bundleVersion = "1.0.0", files = listOf(BundleManifest.File("index.html", sha256, 7)), platforms = listOf("android"))
+        val manifest = BundleManifest(appId = "a1", bundleVersion = "1.0.0", files = listOf(BundleManifest.File(path = "index.html", sha256 = sha256, sizeBytes = 7)), platforms = listOf("android"))
         assertEquals(manifest, BundleManifest.fromJson(JSONObject(stored)))
     }
 
@@ -28,32 +28,32 @@ class WireTypesTest {
     @Test
     fun shouldRefuseAManifestPathThatClimbsOutOfItsDirectory() {
         for (path in listOf("../escape.html", "assets/../../escape.html", "/etc/hosts", "assets//app.js", "./index.html", "assets\\..\\escape.html", "index\u0000.html", "", "../́escape.html")) {
-            assertThrows(path, JSONException::class.java) { decodeManifest(path, sha256) }
+            assertThrows(path, JSONException::class.java) { decodeManifest(path = path, sha256 = sha256) }
         }
     }
 
     @Test
     fun shouldRefuseAManifestFileHashThatIsNotALowercaseSha256() {
         for (hash in listOf("../../files/escape", sha256.uppercase(), sha256.dropLast(1))) {
-            assertThrows(hash, JSONException::class.java) { decodeManifest("index.html", hash) }
+            assertThrows(hash, JSONException::class.java) { decodeManifest(path = "index.html", sha256 = hash) }
         }
     }
 
     @Test
     fun shouldRefuseAnIndexReleaseWhoseIdsAreNotIdentifiers() {
-        assertThrows(JSONException::class.java) { decodeIndexRelease("../r1", "b1") }
-        assertThrows(JSONException::class.java) { decodeIndexRelease("r1", "../..") }
+        assertThrows(JSONException::class.java) { decodeIndexRelease(id = "../r1", bundleId = "b1") }
+        assertThrows(JSONException::class.java) { decodeIndexRelease(id = "r1", bundleId = "../..") }
     }
 
     @Test
     fun shouldRefuseAnIndexReleaseWhoseManifestHashIsNotALowercaseSha256() {
-        assertThrows(JSONException::class.java) { decodeIndexRelease("r1", "b1", manifestSha256 = sha256.uppercase()) }
-        assertThrows(JSONException::class.java) { decodeIndexRelease("r1", "b1", manifestSha256 = "../escape") }
+        assertThrows(JSONException::class.java) { decodeIndexRelease(id = "r1", bundleId = "b1", manifestSha256 = sha256.uppercase()) }
+        assertThrows(JSONException::class.java) { decodeIndexRelease(id = "r1", bundleId = "b1", manifestSha256 = "../escape") }
     }
 
     @Test
     fun shouldRefuseAnIndexReleaseMissingAField() {
-        val json = decodeIndexRelease("r1", "b1").toJson()
+        val json = decodeIndexRelease(id = "r1", bundleId = "b1").toJson()
         for (key in listOf("isMandatory", "rolloutPercent", "conditions", "sizeBytes", "notes")) {
             val incomplete = JSONObject(json.toString()).also { it.remove(key) }
             assertThrows(key, JSONException::class.java) { IndexRelease.fromJson(incomplete) }
@@ -62,7 +62,7 @@ class WireTypesTest {
 
     @Test
     fun shouldRefuseAValueCoercedFromAnotherType() {
-        val json = decodeIndexRelease("r1", "b1").toJson()
+        val json = decodeIndexRelease(id = "r1", bundleId = "b1").toJson()
         assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("id", 2)) }
         assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("isMandatory", "true")) }
         assertThrows(JSONException::class.java) { IndexRelease.fromJson(JSONObject(json.toString()).put("rolloutPercent", 50.5)) }
@@ -73,10 +73,10 @@ class WireTypesTest {
     fun shouldAcceptTheIdsAndPathsTheApiWrites() {
         val bundleId = "0f8fad5b-d9cb-469f-a165-70867728950e"
         for (path in listOf("index.html", "assets/index-a1b2c3.js", ".well-known/assetlinks.json", "assets/..hidden")) {
-            assertEquals(path, decodeManifest(path, sha256).files.single().path)
+            assertEquals(path, decodeManifest(path = path, sha256 = sha256).files.single().path)
         }
         assertEquals(bundleId, decodeEnvelope(bundleId).bundleId)
-        assertEquals(bundleId, decodeIndexRelease("1c6e2a3b-7f4d-4e1a-9b2c-3d4e5f6a7b8c", bundleId).bundleId)
+        assertEquals(bundleId, decodeIndexRelease(id = "1c6e2a3b-7f4d-4e1a-9b2c-3d4e5f6a7b8c", bundleId = bundleId).bundleId)
     }
 
     @Test
@@ -128,7 +128,7 @@ class WireTypesTest {
     @Test
     fun shouldRefuseAChannelsIndexOfAnotherSchemaOrWithAChannelIdThatIsNotAUuid() {
         val entry = JSONObject().put("id", Fixture.CHANNEL_ID).put("name", "beta")
-        assertEquals(listOf(ChannelsIndex.Entry(Fixture.CHANNEL_ID, "beta")), ChannelsIndex.fromJson(JSONObject().put("schema", 1).put("channels", JSONArray().put(entry))).channels)
+        assertEquals(listOf(ChannelsIndex.Entry(id = Fixture.CHANNEL_ID, name = "beta")), ChannelsIndex.fromJson(JSONObject().put("schema", 1).put("channels", JSONArray().put(entry))).channels)
         assertThrows(JSONException::class.java) { ChannelsIndex.fromJson(JSONObject().put("schema", 2).put("channels", JSONArray().put(entry))) }
         for (id in listOf("../../other-app/channels/c1", "c1", "${Fixture.CHANNEL_ID}?x=1")) {
             assertThrows(id, JSONException::class.java) { ChannelsIndex.fromJson(JSONObject().put("schema", 1).put("channels", JSONArray().put(JSONObject(entry.toString()).put("id", id)))) }
@@ -136,17 +136,17 @@ class WireTypesTest {
     }
 
     private fun decodeManifest(path: String, sha256: String): BundleManifest {
-        val manifest = BundleManifest(appId = Fixture.APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File(path, sha256, 7)), platforms = listOf("android"))
+        val manifest = BundleManifest(appId = Fixture.APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File(path = path, sha256 = sha256, sizeBytes = 7)), platforms = listOf("android"))
         return BundleManifest.fromJson(manifest.toJson())
     }
 
     private fun decodeEnvelope(bundleId: String): ManifestEnvelope {
-        val envelope = ManifestEnvelope(bundleId, Fixture.BUILT_AT, "{}", null, ManifestEnvelope.Pack("${Fixture.FILES_BASE_URL}/pack", 1), emptyList())
+        val envelope = ManifestEnvelope(bundleId = bundleId, createdAt = Fixture.BUILT_AT, manifest = "{}", signature = null, pack = ManifestEnvelope.Pack("${Fixture.FILES_BASE_URL}/pack", 1), deltas = emptyList())
         return ManifestEnvelope.fromJson(envelope.toJson())
     }
 
     private fun decodeIndexRelease(id: String, bundleId: String, manifestSha256: String = sha256): IndexRelease {
-        val release = IndexRelease(id, 1, Fixture.BUILT_AT, false, null, 100, emptyList(), bundleId, "1.0.0", "${Fixture.FILES_BASE_URL}/manifest.json", manifestSha256, 7)
+        val release = IndexRelease(id = id, number = 1, createdAt = Fixture.BUILT_AT, isMandatory = false, notes = null, rolloutPercent = 100, conditions = emptyList(), bundleId = bundleId, bundleVersion = "1.0.0", manifestUrl = "${Fixture.FILES_BASE_URL}/manifest.json", manifestSha256 = manifestSha256, sizeBytes = 7)
         return IndexRelease.fromJson(release.toJson())
     }
 
