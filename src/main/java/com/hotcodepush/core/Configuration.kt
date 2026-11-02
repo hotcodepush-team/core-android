@@ -118,7 +118,20 @@ data class Configuration(
         /** The message for an SDK that runs without a core because the reader refused the resource file. */
         fun resolveRefusedMessage(refusal: Exception): String =
             "HotCodePush is not configured: the app's hotcodepush.json was refused: ${refusal.message}. Check the project's hotcodepush.json and build the app again."
+
+        /** Reads the resource file like `read`, and answers the message an SDK logs when there is none or the reader refused it. */
+        fun load(context: Context, assetPath: String = "hotcodepush.json"): ConfigurationLoadResult = try {
+            read(context, assetPath)?.let { ConfigurationLoadResult.Loaded(it) } ?: ConfigurationLoadResult.NotConfigured(MISSING_MESSAGE)
+        } catch (exception: Exception) {
+            ConfigurationLoadResult.NotConfigured(resolveRefusedMessage(exception))
+        }
     }
+}
+
+/** What `Configuration.load` found: the configuration, or why the SDK runs without a core. */
+sealed class ConfigurationLoadResult {
+    data class Loaded(val configuration: Configuration) : ConfigurationLoadResult()
+    data class NotConfigured(val message: String) : ConfigurationLoadResult()
 }
 
 // An SDK option the file leaves out takes its default; a null, a wrong type or an unknown value refuses the file.
