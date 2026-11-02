@@ -101,7 +101,7 @@ class DownloaderTest {
         val harness = DownloaderHarness()
         val archive = Gzip.compress("console.log('precompressed')".toByteArray())
         val sha256 = Hashing.sha256Hex(archive)
-        val manifest = DownloaderHarness.manifest(listOf(BundleManifest.File("assets/app.js.gz", sha256, archive.size.toLong())))
+        val manifest = DownloaderHarness.manifest(listOf(BundleManifest.File(path = "assets/app.js.gz", sha256 = sha256, sizeBytes = archive.size.toLong())))
         harness.http.stub("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/files/$sha256", body = archive)
         assertNull(harness.downloadFailure(harness.publish(manifest, emptyPack)))
         assertArrayEquals(archive, harness.files.file(sha256).readBytes())
@@ -120,7 +120,7 @@ class DownloaderTest {
     fun shouldRefuseASingleFileLargerThanItsSize() {
         val harness = DownloaderHarness()
         val sha256 = Hashing.sha256Hex(indexHtml)
-        val manifest = DownloaderHarness.manifest(listOf(BundleManifest.File("index.html", sha256, indexHtml.size - 1L)))
+        val manifest = DownloaderHarness.manifest(listOf(BundleManifest.File(path = "index.html", sha256 = sha256, sizeBytes = indexHtml.size - 1L)))
         harness.http.stub("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/files/$sha256", body = indexHtml)
         assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(harness.publish(manifest, emptyPack))?.reason)
         assertFalse(harness.files.hasFile(sha256))
@@ -233,7 +233,7 @@ class DeltaTest {
     fun shouldTakeTheFullPackOnAFreshInstallWithoutABase() {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, bundle.pack)
-        assertEquals(PackKind.FULL, harness.download(release, null).packKind)
+        assertEquals(PackKind.FULL, harness.download(release, baseBundleId = null).packKind)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
     }
 
@@ -241,7 +241,7 @@ class DeltaTest {
     fun shouldTakeTheFullPackWhenTheDeviceHoldsNoBaseAndLacksASingleFile() {
         val harness = DownloaderHarness()
         val single = DownloaderHarness.bundle(mapOf("index.html" to indexHtml))
-        assertEquals(PackKind.FULL, harness.download(harness.publish(single.manifest, single.pack), null).packKind)
+        assertEquals(PackKind.FULL, harness.download(harness.publish(single.manifest, single.pack), baseBundleId = null).packKind)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
     }
 }
@@ -256,7 +256,7 @@ class FetchRetryTest {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, bundle.pack)
         harness.http.failNextFetches(DownloaderHarness.MANIFEST_URL, IOException("connection reset"), IOException("connection reset"))
-        assertEquals(PackKind.FULL, harness.downloader.downloadRelease(release, null) { _, _ -> }.packKind)
+        assertEquals(PackKind.FULL, harness.downloader.downloadRelease(target = release, baseBundleId = null) { _, _ -> }.packKind)
         assertEquals(List(3) { DownloaderHarness.MANIFEST_URL } + DownloaderHarness.PACK_URL, harness.http.requests.map { it.first })
         assertEquals(4_000L, currentTime)
     }
@@ -269,7 +269,7 @@ class FetchRetryTest {
         val fileUrl = DownloaderHarness.fileUrl(sha256)
         harness.http.stub(fileUrl, body = indexHtml)
         harness.http.failNextFetches(fileUrl, IOException("connection reset"), IOException("connection reset"))
-        harness.downloader.downloadRelease(release, null) { _, _ -> }
+        harness.downloader.downloadRelease(target = release, baseBundleId = null) { _, _ -> }
         assertEquals(3, harness.http.requests.count { it.first == fileUrl })
         assertArrayEquals(indexHtml, harness.files.file(sha256).readBytes())
     }
@@ -283,7 +283,7 @@ class FetchRetryTest {
         var thrown: Throwable? = null
         val download = launch {
             try {
-                harness.downloader.downloadRelease(release, null) { _, _ -> }
+                harness.downloader.downloadRelease(target = release, baseBundleId = null) { _, _ -> }
             } catch (failure: Throwable) {
                 thrown = failure
                 throw failure

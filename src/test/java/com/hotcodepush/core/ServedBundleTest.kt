@@ -17,7 +17,7 @@ class ServedBundleTest {
 
     @Test
     fun shouldBeTheEmbeddedBundleForAnEmptyPathAMissingDirectoryOrAForeignPath() {
-        assertNull(ServedBundle.resolveBundleId(null, projections))
+        assertNull(ServedBundle.resolveBundleId(persistedPath = null, projectionsDirectory = projections))
         assertNull(ServedBundle.resolveBundleId("", projections))
         assertNull(ServedBundle.resolveBundleId(File(projections, "gone").path, projections))
         assertNull(ServedBundle.resolveBundleId("public", projections))

@@ -14,7 +14,7 @@ import java.security.Signature as PlatformSignature
  */
 data class DevicePublicKey(val der: String, val keyId: String) {
     companion object {
-        fun fromJson(json: JSONObject) = DevicePublicKey(json.getWireString("der", WireRule.BASE64), json.getWireString("keyId", WireRule.NON_EMPTY))
+        fun fromJson(json: JSONObject) = DevicePublicKey(der = json.getWireString("der", WireRule.BASE64), keyId = json.getWireString("keyId", WireRule.NON_EMPTY))
     }
 }
 

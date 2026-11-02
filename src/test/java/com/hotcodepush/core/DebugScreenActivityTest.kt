@@ -64,7 +64,7 @@ class DebugScreenActivityTest {
 
         returnButton.performClick()
         idleMainLooperUntil { returnButton.visibility == View.GONE }
-        assertEquals(GetChannelResult(Fixture.CHANNEL_ID, null, ChannelSource.CONFIG), harness.core.getChannel())
+        assertEquals(GetChannelResult(id = Fixture.CHANNEL_ID, name = null, source = ChannelSource.CONFIG), harness.core.getChannel())
     }
 
     // The check runs off the main thread and renders back on it, so the main looper must run until the answer shows.

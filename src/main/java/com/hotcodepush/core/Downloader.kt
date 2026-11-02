@@ -82,7 +82,7 @@ class Downloader(
         val manifest = envelope?.let { runCatching { it.decodeManifest() }.getOrNull() } ?: throw DownloadFailure.ManifestInvalid("The manifest could not be parsed")
         verifyManifestSignature(envelope, target.manifestSha256)
         if (envelope.bundleId != target.bundleId) throw DownloadFailure.ManifestInvalid("The manifest names another bundle")
-        if (!manifest.isForDevice(configuration.appId, platform)) throw DownloadFailure.ManifestInvalid("The manifest is for another app or does not list $platform")
+        if (!manifest.isForDevice(appId = configuration.appId, platform = platform)) throw DownloadFailure.ManifestInvalid("The manifest is for another app or does not list $platform")
         return envelope to manifest
     }
 
@@ -116,7 +116,7 @@ class Downloader(
         if (missingFileCount == 0) return null
         if (baseBundleId == null) return resolveFullPackSource(envelope)
         val listedDelta = envelope.deltas.firstOrNull { it.baseBundleId == baseBundleId } ?: return resolveStreamedPackSource(envelope, baseBundleId)
-        return PackSource(listedDelta.url, listedDelta.sizeBytes, listedDelta.sizeBytes, PackKind.DELTA)
+        return PackSource(url = listedDelta.url, sizeBytes = listedDelta.sizeBytes, packBytesLimit = listedDelta.sizeBytes, kind = PackKind.DELTA)
     }
 
     // Only the streamed pack gives way to the full pack. A download follows no redirect, so the host's redirect lands here too.
@@ -125,11 +125,11 @@ class Downloader(
         PackKind.STREAMED -> resolveFullPackSource(envelope)
     }
 
-    private fun resolveFullPackSource(envelope: ManifestEnvelope) = PackSource(envelope.pack.url, envelope.pack.sizeBytes, envelope.pack.sizeBytes, PackKind.FULL)
+    private fun resolveFullPackSource(envelope: ManifestEnvelope) = PackSource(url = envelope.pack.url, sizeBytes = envelope.pack.sizeBytes, packBytesLimit = envelope.pack.sizeBytes, kind = PackKind.FULL)
 
     // Its length is known only as it arrives, and it never exceeds the full pack, whose entries it shares.
     private fun resolveStreamedPackSource(envelope: ManifestEnvelope, baseBundleId: String) =
-        PackSource("${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/bundles/${envelope.bundleId}/deltas/$baseBundleId", null, envelope.pack.sizeBytes, PackKind.STREAMED)
+        PackSource(url = "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/bundles/${envelope.bundleId}/deltas/$baseBundleId", sizeBytes = null, packBytesLimit = envelope.pack.sizeBytes, kind = PackKind.STREAMED)
 
     internal fun verifyFreeSpace(requiredBytes: Long) {
         val availableBytes = files.availableBytes()

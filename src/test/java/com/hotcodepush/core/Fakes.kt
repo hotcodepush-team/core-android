@@ -121,7 +121,7 @@ class FixedClock(var now: Long) : Clock {
 }
 
 // A test's own `dispatcher` runs the core's pauses in virtual time.
-class Harness(configuration: Configuration = Fixture.configuration(), isDebugBuild: Boolean = false, private val device: DeviceFacts = DeviceFacts("android", "2.4.1", "57", "14", "0.0.0", isDebugBuild), dispatcher: CoroutineDispatcher = Dispatchers.Unconfined) {
+class Harness(configuration: Configuration = Fixture.configuration(), isDebugBuild: Boolean = false, private val device: DeviceFacts = DeviceFacts(platform = "android", binaryVersion = "2.4.1", binaryBuild = "57", osVersion = "14", sdkVersion = "0.0.0", isDebugBuild = isDebugBuild), dispatcher: CoroutineDispatcher = Dispatchers.Unconfined) {
     val root: File = Files.createTempDirectory("hotcodepush-tests").toFile()
     val store = InMemoryStore()
     val http = FakeHttpClient()
@@ -151,7 +151,7 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     }
 
     fun publish(releases: List<Fixture.Published>, sequence: Long, revoked: List<String> = emptyList(), pausedAt: Long? = null, cappedAt: Long? = null, etag: String = "\"e1\"") {
-        http.stubJson(Fixture.indexUrl(), Fixture.index(sequence, releases.map { it.release }, revoked, pausedAt, cappedAt).toJson(), headers = mapOf("ETag" to etag))
+        http.stubJson(Fixture.indexUrl(), Fixture.index(sequence = sequence, releases = releases.map { it.release }, revoked = revoked, pausedAt = pausedAt, cappedAt = cappedAt).toJson(), headers = mapOf("ETag" to etag))
         for (entry in releases) {
             http.stubJson(entry.release.manifestUrl, entry.envelope.toJson())
             http.stub(entry.envelope.pack.url, body = entry.pack)

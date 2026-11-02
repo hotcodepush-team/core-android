@@ -7,7 +7,7 @@ data class PackedEntry(val entry: PackEntry, val body: ByteArray) {
     companion object {
         fun file(sha256: String, body: ByteArray) = PackedEntry(PackEntry.File(sha256), body)
 
-        fun patch(fromSha256: String, toSha256: String, body: ByteArray) = PackedEntry(PackEntry.Patch(fromSha256, toSha256), body)
+        fun patch(fromSha256: String, toSha256: String, body: ByteArray) = PackedEntry(PackEntry.Patch(fromSha256 = fromSha256, toSha256 = toSha256), body)
     }
 }
 
@@ -26,7 +26,7 @@ object PackWriter {
     }
 
     private fun ByteArrayOutputStream.writeEntry(prefix: String, name: String, body: ByteArray) {
-        write(header(prefix, name, body.size.toLong()))
+        write(header(prefix = prefix, name = name, size = body.size.toLong()))
         write(body)
         write(ByteArray((512 - body.size % 512) % 512))
     }

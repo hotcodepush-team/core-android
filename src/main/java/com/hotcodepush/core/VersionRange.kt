@@ -44,7 +44,7 @@ object VersionRange {
     }
 
     private fun isSatisfied(version: List<Long>, comparator: Comparator): Boolean {
-        val order = compare(version, comparator.version, comparator.version.size)
+        val order = compare(left = version, right = comparator.version, length = comparator.version.size)
         return when (comparator.op) {
             "<" -> order < 0
             "<=" -> order <= 0
@@ -66,7 +66,7 @@ object VersionRange {
         while (position < trimmed.length) {
             val match = comparatorPattern.matchAt(trimmed, position) ?: return null
             if (match.value.isEmpty()) return null
-            comparators += parseComparator(match.groups[1]?.value, match.groupValues[2]) ?: return null
+            comparators += parseComparator(op = match.groups[1]?.value, version = match.groupValues[2]) ?: return null
             position = match.range.last + 1
         }
         return comparators

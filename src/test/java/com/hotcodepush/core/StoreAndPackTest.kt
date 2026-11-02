@@ -57,7 +57,7 @@ class PackTest {
         val pack = SequenceInputStream(
             Collections.enumeration(
                 listOf(
-                    PackWriter.header("", sha256, size).inputStream(),
+                    PackWriter.header(prefix = "", name = sha256, size = size).inputStream(),
                     ZeroInputStream(size),
                     PackWriter.pack(listOf(PackedEntry.file(Hashing.sha256Hex("y"), "y".toByteArray()))).inputStream(),
                 ),
@@ -100,8 +100,8 @@ class StateStoreTest {
     fun shouldKeepTheIdentityKeysAndDropTheCacheOnAnUnknownStateVersion() {
         val store = InMemoryStore()
         store.putInt("hotcodepush.stateVersion", 9)
-        store.putString("hotcodepush.currentRelease", Release("r1", 1, "b1", "1", false).toJson().toString())
-        store.putString("hotcodepush.deviceId", "device-1")
+        store.putString(key = "hotcodepush.currentRelease", value = Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false).toJson().toString())
+        store.putString(key = "hotcodepush.deviceId", value = "device-1")
         val state = StateStore(store)
         assertEquals("device-1", state.deviceId)
         assertNull(state.currentRelease)
@@ -113,8 +113,8 @@ class StateStoreTest {
         val store = InMemoryStore()
         val result = JSONObject().put("status", "skipped").put("release", JSONObject.NULL).put("reason", "device_incompatible").put("condition", "os")
         store.putInt("hotcodepush.stateVersion", 5)
-        store.putString("hotcodepush.lastCheck", JSONObject().put("checkedAt", "2026-10-30T10:00:00.000Z").put("trigger", "manual").put("result", result).toString())
-        store.putString("hotcodepush.deviceId", "device-1")
+        store.putString(key = "hotcodepush.lastCheck", value = JSONObject().put("checkedAt", "2026-10-30T10:00:00.000Z").put("trigger", "manual").put("result", result).toString())
+        store.putString(key = "hotcodepush.deviceId", value = "device-1")
         val state = StateStore(store)
         assertNull(state.lastCheck)
         assertEquals("device-1", state.deviceId)
@@ -124,8 +124,8 @@ class StateStoreTest {
     fun shouldDropTheCacheWhenAValueDoesNotParse() {
         val store = InMemoryStore()
         val state = StateStore(store)
-        state.nextRelease = NextRelease(Release("r1", 1, "b1", "1", false), ApplyStrategy.NEXT_START)
-        store.putString("hotcodepush.currentRelease", "not json")
+        state.nextRelease = NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START)
+        store.putString(key = "hotcodepush.currentRelease", value = "not json")
         assertNull(state.currentRelease)
         assertNull(state.nextRelease)
         assertEquals(36, StateStore(store).deviceId.length)
@@ -135,20 +135,20 @@ class StateStoreTest {
     fun shouldDropTheCacheWhenAStoredReleaseIsMissingAField() {
         val store = InMemoryStore()
         val state = StateStore(store)
-        state.fallbackRelease = Release("r1", 1, "b1", "1", false)
-        store.putString("hotcodepush.currentRelease", JSONObject().put("id", "r2").put("number", 2).toString())
+        state.fallbackRelease = Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false)
+        store.putString(key = "hotcodepush.currentRelease", value = JSONObject().put("id", "r2").put("number", 2).toString())
         assertNull(state.currentRelease)
         assertNull(state.fallbackRelease)
     }
 
     @Test
     fun shouldDropTheCacheWhenAStoredValueHoldsWhatThisSdkDoesNotKnow() {
-        val notice = JSONObject().put("fromRelease", Release("r1", 1, "b1", "1", false).toJson()).put("toRelease", JSONObject.NULL).put("reason", "reason_of_a_later_sdk")
+        val notice = JSONObject().put("fromRelease", Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false).toJson()).put("toRelease", JSONObject.NULL).put("reason", "reason_of_a_later_sdk")
         for ((key, value) in listOf("pendingRollbackEvent" to notice.toString(), "lastCheck" to JSONObject().put("checkedAt", "yesterday").toString(), "lastBuiltAt" to "yesterday")) {
             val store = InMemoryStore()
             val state = StateStore(store)
-            state.nextRelease = NextRelease(Release("r1", 1, "b1", "1", false), ApplyStrategy.NEXT_START)
-            store.putString("hotcodepush.$key", value)
+            state.nextRelease = NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START)
+            store.putString(key = "hotcodepush.$key", value = value)
             assertNull(key, state.pendingRollbackEvent ?: state.lastCheck ?: state.lastBuiltAt)
             assertNull(key, state.nextRelease)
         }
@@ -156,12 +156,12 @@ class StateStoreTest {
 
     @Test
     fun shouldDropTheCacheWhenTheNextReleaseCarriesNoApplyMomentOrOneThisSdkDoesNotKnow() {
-        val release = Release("r1", 1, "b1", "1", false)
+        val release = Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false)
         for (stored in listOf(release.toJson(), JSONObject().put("release", release.toJson()).put("applyStrategy", "on-resume"))) {
             val store = InMemoryStore()
             val state = StateStore(store)
             state.currentRelease = release
-            store.putString("hotcodepush.nextRelease", stored.toString())
+            store.putString(key = "hotcodepush.nextRelease", value = stored.toString())
             assertNull(stored.toString(), state.nextRelease)
             assertNull(stored.toString(), state.currentRelease)
         }
@@ -171,11 +171,11 @@ class StateStoreTest {
     fun shouldDropAnIdentityKeyThatDoesNotParseAndKeepTheCache() {
         val store = InMemoryStore()
         val state = StateStore(store)
-        state.nextRelease = NextRelease(Release("r1", 1, "b1", "1", false), ApplyStrategy.NEXT_START)
-        store.putString("hotcodepush.channel", "not json")
+        state.nextRelease = NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START)
+        store.putString(key = "hotcodepush.channel", value = "not json")
         assertNull(state.channel)
         assertNull(store.getString("hotcodepush.channel"))
-        assertEquals(NextRelease(Release("r1", 1, "b1", "1", false), ApplyStrategy.NEXT_START), state.nextRelease)
+        assertEquals(NextRelease(Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false), ApplyStrategy.NEXT_START), state.nextRelease)
     }
 }
 
@@ -188,8 +188,8 @@ class FileStoreTest {
     @Test
     fun shouldCollectWhatNoKeptBundleLists() {
         val files = FileStore(Files.createTempDirectory("fs").toFile())
-        val kept = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File("a", Hashing.sha256Hex("a"), 1)), platforms = listOf("android"))
-        val gone = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File("b", Hashing.sha256Hex("b"), 1)), platforms = listOf("android"))
+        val kept = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File(path = "a", sha256 = Hashing.sha256Hex("a"), sizeBytes = 1)), platforms = listOf("android"))
+        val gone = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File(path = "b", sha256 = Hashing.sha256Hex("b"), sizeBytes = 1)), platforms = listOf("android"))
         files.writeManifest(kept, "kept")
         files.writeManifest(gone, "gone")
         files.writeFile("a".toByteArray(), Hashing.sha256Hex("a"))
@@ -206,7 +206,7 @@ class FileStoreTest {
         val files = FileStore(File(root, "store"))
         val embedded = InMemoryEmbeddedBundle().apply { this.files[Hashing.sha256Hex("embedded")] = "embedded".toByteArray() }
         files.writeFile("new".toByteArray(), Hashing.sha256Hex("new"))
-        val manifest = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File("index.html", Hashing.sha256Hex("new"), 3), BundleManifest.File("assets/logo.svg", Hashing.sha256Hex("embedded"), 8)), platforms = listOf("android"))
+        val manifest = BundleManifest(appId = "a", bundleVersion = "1", files = listOf(BundleManifest.File(path = "index.html", sha256 = Hashing.sha256Hex("new"), sizeBytes = 3), BundleManifest.File(path = "assets/logo.svg", sha256 = Hashing.sha256Hex("embedded"), sizeBytes = 8)), platforms = listOf("android"))
         val www = File(root, "www")
         BundleProjection.project(manifest, files, embedded, www)
         assertEquals("new", File(www, "index.html").readText())

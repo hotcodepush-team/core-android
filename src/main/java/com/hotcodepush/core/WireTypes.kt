@@ -68,7 +68,7 @@ data class IndexRelease(
     val manifestSha256: String,
     val sizeBytes: Long,
 ) {
-    val release: Release get() = Release(id, number, bundleId, bundleVersion, isMandatory)
+    val release: Release get() = Release(id = id, number = number, bundleId = bundleId, bundleVersion = bundleVersion, isMandatory = isMandatory)
 
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -142,7 +142,7 @@ sealed class Condition {
             "fingerprint" -> Fingerprint(json.getWireString("fingerprint", WireRule.NON_EMPTY))
             "os" -> Os(json.getWireString("range", WireRule.NON_EMPTY))
             "device" -> Device(json.getJSONArray("hashedIds").toWireStringList(WireRule.SHA256))
-            "attribute" -> Attribute(json.getWireString("key", WireRule.NON_EMPTY), json.getWireString("valueSha256", WireRule.SHA256))
+            "attribute" -> Attribute(key = json.getWireString("key", WireRule.NON_EMPTY), valueSha256 = json.getWireString("valueSha256", WireRule.SHA256))
             else -> Unknown(type)
         }
     }
@@ -159,7 +159,7 @@ data class ChannelsIndex(val schema: Int, val channels: List<Entry>) {
         fun fromJson(json: JSONObject): ChannelsIndex {
             val schema = json.getWireInt("schema", minimum = 0)
             if (schema != SCHEMA) throw JSONException("The channels index has schema $schema, this reader reads $SCHEMA")
-            return ChannelsIndex(schema, json.getJSONArray("channels").map { Entry(it.getWireString("id", WireRule.UUID), it.getWireString("name", WireRule.NON_EMPTY)) })
+            return ChannelsIndex(schema, json.getJSONArray("channels").map { Entry(id = it.getWireString("id", WireRule.UUID), name = it.getWireString("name", WireRule.NON_EMPTY)) })
         }
     }
 }
@@ -169,7 +169,7 @@ data class Signature(val keyId: String, val value: String) {
     fun toJson(): JSONObject = JSONObject().put("keyId", keyId).put("value", value)
 
     companion object {
-        fun fromJson(json: JSONObject) = Signature(json.getWireString("keyId", WireRule.NON_EMPTY), json.getWireString("value", WireRule.SIGNATURE_VALUE))
+        fun fromJson(json: JSONObject) = Signature(keyId = json.getWireString("keyId", WireRule.NON_EMPTY), value = json.getWireString("value", WireRule.SIGNATURE_VALUE))
     }
 }
 
@@ -198,7 +198,7 @@ data class ManifestEnvelope(
         fun toJson(): JSONObject = JSONObject().put("baseBundleId", baseBundleId).put("url", url).put("sizeBytes", sizeBytes)
 
         companion object {
-            fun fromJson(json: JSONObject) = Delta(json.getWireString("baseBundleId", WireRule.IDENTIFIER), json.getWireString("url", WireRule.URL), json.getWireLong("sizeBytes", minimum = 0))
+            fun fromJson(json: JSONObject) = Delta(baseBundleId = json.getWireString("baseBundleId", WireRule.IDENTIFIER), url = json.getWireString("url", WireRule.URL), sizeBytes = json.getWireLong("sizeBytes", minimum = 0))
         }
     }
 
@@ -245,7 +245,7 @@ data class BundleManifest(
         fun toJson(): JSONObject = JSONObject().put("path", path).put("sha256", sha256).put("sizeBytes", sizeBytes)
 
         companion object {
-            fun fromJson(json: JSONObject) = File(json.getWireString("path", WireRule.RELATIVE_PATH), json.getWireString("sha256", WireRule.SHA256), json.getWireLong("sizeBytes", minimum = 0))
+            fun fromJson(json: JSONObject) = File(path = json.getWireString("path", WireRule.RELATIVE_PATH), sha256 = json.getWireString("sha256", WireRule.SHA256), sizeBytes = json.getWireLong("sizeBytes", minimum = 0))
         }
     }
 
@@ -372,7 +372,7 @@ internal fun JSONObject.getWireLong(key: String, minimum: Long, maximum: Long = 
     return value
 }
 
-internal fun JSONObject.getWireInt(key: String, minimum: Int, maximum: Int = Int.MAX_VALUE): Int = getWireLong(key, minimum.toLong(), maximum.toLong()).toInt()
+internal fun JSONObject.getWireInt(key: String, minimum: Int, maximum: Int = Int.MAX_VALUE): Int = getWireLong(key = key, minimum = minimum.toLong(), maximum = maximum.toLong()).toInt()
 
 internal fun JSONObject.getTimestamp(key: String): Long = parseTimestamp(getWireString(key))
 

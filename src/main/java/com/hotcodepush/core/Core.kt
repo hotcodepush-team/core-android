@@ -67,7 +67,7 @@ class Core(
     private val log = SessionLog()
 
     // A task the core runs on its own logs its failure and never crashes the app.
-    private val failureHandler = CoroutineExceptionHandler { _, failure -> log.record(LogEntry(clock.now(), SyncStatus.FAILED.wire, "a task of the core stopped: $failure")) }
+    private val failureHandler = CoroutineExceptionHandler { _, failure -> log.record(LogEntry(at = clock.now(), code = SyncStatus.FAILED.wire, message = "a task of the core stopped: $failure")) }
 
     private var readyTimer: ScheduledTask? = null
     private var isReadyTimerPaused = false
@@ -141,11 +141,11 @@ class Core(
     suspend fun handleAppStart(isHeadless: Boolean = false): String? {
         val bundleId = lock.withLock {
             try {
-                applyStartRule(isHeadless)
+                applyStartRule(isHeadless = isHeadless)
             } catch (failure: Throwable) {
                 runEmbeddedBundleAfter(failure)
             }
-            runLogged("the start") { beginRun(isHeadless) }
+            runLogged("the start") { beginRun(isHeadless = isHeadless) }
             resolveStartBundleId()
         }
         launchTask(::deleteUnusedFiles)
@@ -156,10 +156,10 @@ class Core(
      * Runs `handleAppStart()` for a host that picks its bundle in synchronous code, waiting at most `START_TIMEOUT` seconds.
      * Without an answer in time it returns the embedded bundle, and the start reloads the host into the right bundle once it runs.
      */
-    fun handleAppStartBlocking(isHeadless: Boolean = false): String? = handleAppStartBlocking(isHeadless, START_TIMEOUT)
+    fun handleAppStartBlocking(isHeadless: Boolean = false): String? = handleAppStartBlocking(isHeadless = isHeadless, timeout = START_TIMEOUT)
 
     internal fun handleAppStartBlocking(isHeadless: Boolean, timeout: Double): String? {
-        val start = scope.async { handleAppStart(isHeadless) }
+        val start = scope.async { handleAppStart(isHeadless = isHeadless) }
         return runBlocking { withTimeoutOrNull((timeout * 1000).toLong()) { start.await() } }
     }
 
@@ -167,7 +167,7 @@ class Core(
     private fun applyStartRule(isHeadless: Boolean) {
         if (state.pendingRollbackEvent == null) state.lastRollback = null
         if (state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest()) dropStoredReleases()
-        if (isCurrentReleaseUnconfirmed()) rollbackCurrentRelease(RollbackReason.APP_CRASHED, null)
+        if (isCurrentReleaseUnconfirmed()) rollbackCurrentRelease(reason = RollbackReason.APP_CRASHED, detail = null)
         discardNextReleaseThatLeftTheIndex()
         val next = state.nextRelease
         if (!isHeadless && next != null && shouldSwitchAtStart(next)) switchToNextRelease()
@@ -175,7 +175,7 @@ class Core(
 
     // Dropping the stored releases, as a new binary does, keeps the state in line with the embedded bundle that now runs.
     private fun runEmbeddedBundleAfter(failure: Throwable) {
-        log.record(LogEntry(clock.now(), SyncStatus.FAILED.wire, "the start runs the embedded bundle after $failure"))
+        log.record(LogEntry(at = clock.now(), code = SyncStatus.FAILED.wire, message = "the start runs the embedded bundle after $failure"))
         runLogged("forgetting the stored releases", ::dropStoredReleases)
     }
 
@@ -197,7 +197,7 @@ class Core(
         try {
             block()
         } catch (failure: Throwable) {
-            log.record(LogEntry(clock.now(), SyncStatus.FAILED.wire, "$task failed: $failure"))
+            log.record(LogEntry(at = clock.now(), code = SyncStatus.FAILED.wire, message = "$task failed: $failure"))
         }
     }
 
@@ -230,13 +230,13 @@ class Core(
     suspend fun notifyReady(): NotifyReadyResult {
         val bundleLoadCountAtSignal = bundleLoadCount
         return lock.withLock {
-            if (hasLoadedBundleSince(bundleLoadCountAtSignal)) return NotifyReadyResult(state.currentRelease, null, false, null)
+            if (hasLoadedBundleSince(bundleLoadCountAtSignal)) return NotifyReadyResult(currentRelease = state.currentRelease, previousRelease = null, isRolledBack = false, rollbackReason = null)
             confirmCurrentRelease()
             val rollback = state.lastRollback
             state.lastRollback = null
             val previousRelease = rollback?.fromRelease ?: switchedFromRelease
             switchedFromRelease = null
-            val result = NotifyReadyResult(state.currentRelease, previousRelease, rollback != null, rollback?.reason)
+            val result = NotifyReadyResult(currentRelease = state.currentRelease, previousRelease = previousRelease, isRolledBack = rollback != null, rollbackReason = rollback?.reason)
             settleStart()
             result
         }
@@ -380,18 +380,18 @@ class Core(
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (failure: Throwable) {
-        SyncResult.failed(null, FailedReason.INDEX_INVALID, "The cycle stopped on $failure")
+        SyncResult.failed(release = null, reason = FailedReason.INDEX_INVALID, message = "The cycle stopped on $failure")
     }
 
     private suspend fun resolveCycle(cycle: Cycle): SyncResult {
         val current = state.currentRelease
-        if (isDisabledInThisBuild) return SyncResult.skipped(null, SkippedReason.BUILD_DEBUG)
+        if (isDisabledInThisBuild) return SyncResult.skipped(release = null, reason = SkippedReason.BUILD_DEBUG)
         val index = when (val fetch = fetchCycleIndex()) {
             is CycleIndex.Index -> fetch.index
             is CycleIndex.Failure -> return fetch.result
         }
         return when (val evaluation = Evaluator.evaluation(index, deviceInfo()).outcome) {
-            is Evaluation.UpToDate -> SyncResult.upToDate(current)
+            is Evaluation.UpToDate -> SyncResult.upToDate(release = current)
             is Evaluation.Available -> {
                 lock.withLock { recordChecked(evaluation.release, index, SyncStatus.AVAILABLE) }
                 update(evaluation.release, isMandatory = evaluation.isMandatory, cycle = cycle)
@@ -400,7 +400,7 @@ class Core(
                 leaveRevokedRelease(fallback = evaluation.release, cycle = cycle)
             } else {
                 evaluation.release?.let { release -> lock.withLock { recordChecked(release, index, SyncStatus.SKIPPED, evaluation.reason, evaluation.conditionType) } }
-                SyncResult.skipped(evaluation.release?.release, evaluation.reason, evaluation.conditionType)
+                SyncResult.skipped(release = evaluation.release?.release, reason = evaluation.reason, conditionType = evaluation.conditionType)
             }
         }
     }
@@ -408,54 +408,54 @@ class Core(
     private suspend fun fetchCycleIndex(): CycleIndex {
         val channelId = when (val resolution = resolveChannelId()) {
             is ChannelResolution.Id -> resolution.id
-            ChannelResolution.Offline -> return CycleIndex.Failure(SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channels index could not be fetched to resolve the channel name"))
-            ChannelResolution.Unknown -> return CycleIndex.Failure(SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, "The channel set at runtime is not in the app's channels index"))
-            ChannelResolution.Missing -> return CycleIndex.Failure(SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, MISSING_CHANNEL_MESSAGE))
-            is ChannelResolution.Invalid -> return CycleIndex.Failure(SyncResult.failed(null, FailedReason.INDEX_INVALID, resolution.message))
+            ChannelResolution.Offline -> return CycleIndex.Failure(SyncResult.failed(release = null, reason = FailedReason.DEVICE_OFFLINE, message = "The channels index could not be fetched to resolve the channel name"))
+            ChannelResolution.Unknown -> return CycleIndex.Failure(SyncResult.failed(release = null, reason = FailedReason.CHANNEL_UNKNOWN, message = "The channel set at runtime is not in the app's channels index"))
+            ChannelResolution.Missing -> return CycleIndex.Failure(SyncResult.failed(release = null, reason = FailedReason.CHANNEL_UNKNOWN, message = MISSING_CHANNEL_MESSAGE))
+            is ChannelResolution.Invalid -> return CycleIndex.Failure(SyncResult.failed(release = null, reason = FailedReason.INDEX_INVALID, message = resolution.message))
         }
         return when (val fetch = fetchChannelIndex(channelId)) {
             is IndexFetch.Index -> CycleIndex.Index(fetch.index)
-            IndexFetch.Offline -> CycleIndex.Failure(SyncResult.failed(null, FailedReason.DEVICE_OFFLINE, "The channel index could not be fetched and no cached copy exists"))
-            is IndexFetch.Invalid -> CycleIndex.Failure(SyncResult.failed(null, FailedReason.INDEX_INVALID, fetch.message))
-            IndexFetch.Missing -> CycleIndex.Failure(SyncResult.failed(null, FailedReason.CHANNEL_UNKNOWN, resolveMissingIndexMessage(channelId)))
+            IndexFetch.Offline -> CycleIndex.Failure(SyncResult.failed(release = null, reason = FailedReason.DEVICE_OFFLINE, message = "The channel index could not be fetched and no cached copy exists"))
+            is IndexFetch.Invalid -> CycleIndex.Failure(SyncResult.failed(release = null, reason = FailedReason.INDEX_INVALID, message = fetch.message))
+            IndexFetch.Missing -> CycleIndex.Failure(SyncResult.failed(release = null, reason = FailedReason.CHANNEL_UNKNOWN, message = resolveMissingIndexMessage(channelId)))
         }
     }
 
     private suspend fun leaveRevokedRelease(fallback: IndexRelease?, cycle: Cycle): SyncResult {
         if ((fallback?.bundleId ?: configuration.embeddedBundleId) == resolveRunningBundleId()) {
             lock.withLock { adoptInPlace(fallback?.release) }
-            return SyncResult.skipped(fallback?.release, SkippedReason.RELEASE_REVOKED)
+            return SyncResult.skipped(release = fallback?.release, reason = SkippedReason.RELEASE_REVOKED)
         }
-        if (cycle.stage == Stage.CHECK) return SyncResult.skipped(fallback?.release, SkippedReason.RELEASE_REVOKED)
+        if (cycle.stage == Stage.CHECK) return SyncResult.skipped(release = fallback?.release, reason = SkippedReason.RELEASE_REVOKED)
         if (fallback == null) {
             lock.withLock { revertToEmbedded() }
-            return SyncResult.skipped(null, SkippedReason.RELEASE_REVOKED)
+            return SyncResult.skipped(release = null, reason = SkippedReason.RELEASE_REVOKED)
         }
         val next = NextRelease(resolveRelease(fallback, isMandatory = true), ApplyStrategy.IMMEDIATE)
         val outcome = downloadAndApply(fallback, next, cycle.trigger)
-        return if (outcome.status == SyncStatus.FAILED) outcome else SyncResult.skipped(fallback.release, SkippedReason.RELEASE_REVOKED)
+        return if (outcome.status == SyncStatus.FAILED) outcome else SyncResult.skipped(release = fallback.release, reason = SkippedReason.RELEASE_REVOKED)
     }
 
     private suspend fun update(target: IndexRelease, isMandatory: Boolean, cycle: Cycle): SyncResult {
-        val release = resolveRelease(target, isMandatory)
+        val release = resolveRelease(target = target, isMandatory = isMandatory)
         // An adopted release already runs without a reload, so the cycle answers `up_to_date`.
         if (target.bundleId == resolveRunningBundleId()) {
             lock.withLock { adoptInPlace(release) }
-            return SyncResult.upToDate(release)
+            return SyncResult.upToDate(release = release)
         }
         // The call's strategy wins over the downloaded release's, so an automatic cycle never overrides the app's choice.
-        val requestedApplyStrategy = resolveRequestedApplyStrategy(isMandatory, cycle.options)
+        val requestedApplyStrategy = resolveRequestedApplyStrategy(isMandatory = isMandatory, options = cycle.options)
         val downloaded = readDownloadedRelease(target)
         if (downloaded != null) {
             if (cycle.stage == Stage.CHECK) return SyncResult.available(release, target.notes, resolveDownloadSizeBytes(target))
             return lock.withLock { applyDownloaded(NextRelease(release, requestedApplyStrategy ?: downloaded.applyStrategy), target.notes) }
         }
-        val applyStrategy = requestedApplyStrategy ?: resolveConfiguredApplyStrategy(isMandatory)
+        val applyStrategy = requestedApplyStrategy ?: resolveConfiguredApplyStrategy(isMandatory = isMandatory)
         listener.updateAvailable(UpdateAvailableEvent(release, target.notes, resolveDownloadSizeBytes(target), cycle.trigger))
         val next = NextRelease(release, applyStrategy)
         return when (resolveDownloadStrategy(target, cycle)) {
             DownloadStrategy.MANUAL -> SyncResult.available(release, target.notes, resolveDownloadSizeBytes(target))
-            DownloadStrategy.UNMETERED -> if (networkState.isConnectionMetered()) SyncResult.skipped(release, SkippedReason.CONNECTION_METERED) else downloadAndApply(target, next, cycle.trigger)
+            DownloadStrategy.UNMETERED -> if (networkState.isConnectionMetered()) SyncResult.skipped(release = release, reason = SkippedReason.CONNECTION_METERED) else downloadAndApply(target, next, cycle.trigger)
             DownloadStrategy.AUTO -> downloadAndApply(target, next, cycle.trigger)
         }
     }
@@ -468,7 +468,7 @@ class Core(
     private fun resolveDownloadStrategy(target: IndexRelease, cycle: Cycle): DownloadStrategy =
         if (isCarryingEmbeddedBundle(target.bundleId) && cycle.stage != Stage.CHECK) DownloadStrategy.AUTO else cycle.options.downloadStrategy ?: configuration.downloadStrategy
 
-    private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(target.id, target.number, target.bundleId, target.bundleVersion, isMandatory)
+    private fun resolveRelease(target: IndexRelease, isMandatory: Boolean) = Release(id = target.id, number = target.number, bundleId = target.bundleId, bundleVersion = target.bundleVersion, isMandatory = isMandatory)
 
     private fun resolveRequestedApplyStrategy(isMandatory: Boolean, options: SyncOptions): ApplyStrategy? =
         if (isMandatory) options.mandatoryApplyStrategy?.toApplyStrategy() else options.applyStrategy
@@ -494,18 +494,18 @@ class Core(
 
     private suspend fun downloadBundle(target: IndexRelease, release: Release): SyncResult? {
         try {
-            val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes, progressBytes, target.id)) }
+            val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes = downloadSizeBytes, progressBytes = progressBytes, releaseId = target.id)) }
             BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
             lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, outcome.bytes, outcome.packKind)) }
         } catch (failure: DownloadFailure) {
-            lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, failure.reason.wire)) }
-            return SyncResult.failed(release, failure.reason, failure.message ?: "")
+            lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(releaseId = target.id, reason = failure.reason.wire)) }
+            return SyncResult.failed(release = release, reason = failure.reason, message = failure.message ?: "")
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Throwable) {
             // An OutOfMemoryError on a large file fails the download, not the process.
-            lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(target.id, FailedReason.DOWNLOAD_FAILED.wire)) }
-            return SyncResult.failed(release, FailedReason.DOWNLOAD_FAILED, failure.message ?: failure.toString())
+            lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(releaseId = target.id, reason = FailedReason.DOWNLOAD_FAILED.wire)) }
+            return SyncResult.failed(release = release, reason = FailedReason.DOWNLOAD_FAILED, message = failure.message ?: failure.toString())
         }
         return null
     }
@@ -547,7 +547,7 @@ class Core(
             state.pendingRollbackEvent = null
             files.bundleIds().forEach(loader::deleteProjection)
             files.deleteEverything()
-            persistServedBundle(null)
+            persistServedBundle(release = null)
             reloadApp()
         }
     }
@@ -558,7 +558,7 @@ class Core(
     }
 
     /** Returns everything the debug screen shows: the device, the configuration, the state and this session's log. */
-    fun debugSnapshot(): DebugSnapshot = DebugSnapshot(clock.now(), getDevice(), configuration, device.isDebugBuild, getState(), log.entries())
+    fun debugSnapshot(): DebugSnapshot = DebugSnapshot(takenAt = clock.now(), device = getDevice(), configuration = configuration, isDebugBuild = device.isDebugBuild, state = getState(), log = log.entries())
 
     fun getState(): GetStateResult {
         val cached = state.cachedIndex
@@ -576,9 +576,9 @@ class Core(
     }
 
     fun getChannel(): GetChannelResult = when (val choice = state.channel) {
-        is ChannelChoice.Id -> GetChannelResult(choice.id, null, ChannelSource.RUNTIME)
-        is ChannelChoice.Name -> GetChannelResult(resolvedChannelName?.takeIf { it.first == choice.name }?.second, choice.name, ChannelSource.RUNTIME)
-        null -> GetChannelResult(configuration.channelId, null, ChannelSource.CONFIG)
+        is ChannelChoice.Id -> GetChannelResult(id = choice.id, name = null, source = ChannelSource.RUNTIME)
+        is ChannelChoice.Name -> GetChannelResult(id = resolvedChannelName?.takeIf { it.first == choice.name }?.second, name = choice.name, source = ChannelSource.RUNTIME)
+        null -> GetChannelResult(id = configuration.channelId, name = null, source = ChannelSource.CONFIG)
     }
 
     /**
@@ -591,13 +591,13 @@ class Core(
         state.cachedIndex = null
     }
 
-    fun getDevice(): GetDeviceResult = GetDeviceResult(state.deviceId, device.platform, device.binaryVersion, device.binaryBuild, device.osVersion, device.sdkVersion, configuration.fingerprint, getChannel(), state.attributes)
+    fun getDevice(): GetDeviceResult = GetDeviceResult(id = state.deviceId, platform = device.platform, binaryVersion = device.binaryVersion, binaryBuild = device.binaryBuild, osVersion = device.osVersion, sdkVersion = device.sdkVersion, fingerprint = configuration.fingerprint, channel = getChannel(), attributes = state.attributes)
 
     suspend fun setAttributes(changes: Map<String, String?>) = lock.withLock {
         val attributes = state.attributes.toMutableMap()
         for ((key, value) in changes) {
             if (value != null) {
-                AttributeRules.validate(key, value)
+                AttributeRules.validate(key = key, value = value)
                 attributes[key] = value
             } else {
                 attributes.remove(key)
@@ -623,7 +623,7 @@ class Core(
         state.lastRollback = null
         state.pendingRollbackEvent = null
         state.lastBuiltAt = configuration.builtAt
-        persistServedBundle(null)
+        persistServedBundle(release = null)
     }
 
     private fun discardNextReleaseThatLeftTheIndex() {
@@ -708,7 +708,7 @@ class Core(
 
     // One restart is held at most: the app's replaces a held one, the core's yields to it.
     private fun restartThroughGate(isAskedByApp: Boolean, restart: () -> Unit) {
-        if (isAskedByApp || queuedRestart == null) queuedRestart = QueuedRestart(isAskedByApp, restart)
+        if (isAskedByApp || queuedRestart == null) queuedRestart = QueuedRestart(isAskedByApp = isAskedByApp, restart = restart)
         runQueuedRestart()
     }
 
@@ -770,11 +770,11 @@ class Core(
         val fallback = resolveFallbackRelease()
         state.currentRelease = fallback
         state.nextRelease = null
-        val rollback = UpdateRolledBackEvent(current, fallback, reason)
+        val rollback = UpdateRolledBackEvent(fromRelease = current, toRelease = fallback, reason = reason)
         state.lastRollback = rollback
         state.pendingRollbackEvent = rollback
         hasAnnouncedRollback = false
-        enqueueDeviceEvent(DeviceEvent.failed(current.id, reason.wire, detail))
+        enqueueDeviceEvent(DeviceEvent.failed(releaseId = current.id, reason = reason.wire, detail = detail))
         log.record(LogEntry.ofRollback(rollback, clock.now()))
         persistServedBundle(fallback)
     }
@@ -791,7 +791,7 @@ class Core(
         stopReadyTimer()
         state.currentRelease = null
         state.nextRelease = null
-        persistServedBundle(null)
+        persistServedBundle(release = null)
         restartThroughGate(isAskedByApp = false) { reloadApp() }
     }
 
@@ -827,7 +827,7 @@ class Core(
         if (readyTimer == null || !isCurrentReleaseUnconfirmed()) return
         // Settling the start lets the rollback reload unless the app holds restarts.
         hasStartSettled = true
-        rollbackCurrentRelease(RollbackReason.READINESS_TIMED_OUT, null)
+        rollbackCurrentRelease(reason = RollbackReason.READINESS_TIMED_OUT, detail = null)
         restartThroughGate(isAskedByApp = false, ::reloadApp)
     }
 
@@ -932,7 +932,7 @@ class Core(
     private val isDisabledInThisBuild: Boolean
         get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
 
-    private fun deviceInfo() = DeviceInfo(state.attributes, device.binaryBuild, device.binaryVersion, configuration.builtAt, state.currentRelease, state.deviceId, state.failedBundleIds, configuration.fingerprint, device.osVersion, state.reportedAt)
+    private fun deviceInfo() = DeviceInfo(attributes = state.attributes, binaryBuild = device.binaryBuild, binaryVersion = device.binaryVersion, builtAt = configuration.builtAt, currentRelease = state.currentRelease, deviceId = state.deviceId, failedBundleIds = state.failedBundleIds, fingerprint = configuration.fingerprint, osVersion = device.osVersion, reportedAt = state.reportedAt)
 
     private fun recordChecked(release: IndexRelease, index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = null, conditionType: ConditionType? = null) {
         val checked = state.checkedReleaseIds.filter { id -> index.releases.any { it.id == id } }
@@ -956,13 +956,13 @@ class Core(
             val events = state.unsentEvents
             var report = buildDeviceReport()
             if (report?.isReadable == false) {
-                log.record(LogEntry(clock.now(), REPORT_UNREADABLE, "the device report stays unsent: a fact or an attribute is one the events endpoint refuses"))
+                log.record(LogEntry(at = clock.now(), code = REPORT_UNREADABLE, message = "the device report stays unsent: a fact or an attribute is one the events endpoint refuses"))
                 report = null
             }
             if (events.isEmpty() && report == null) return
             val request = DeviceEventsRequest(state.deviceId, events, device.platform, report, device.sdkVersion)
             if (!request.isReadable) {
-                log.record(LogEntry(clock.now(), REPORT_UNREADABLE, "${events.size} events kept: the device id, the SDK's version or the platform is one the events endpoint refuses"))
+                log.record(LogEntry(at = clock.now(), code = REPORT_UNREADABLE, message = "${events.size} events kept: the device id, the SDK's version or the platform is one the events endpoint refuses"))
                 return
             }
             isSendingDeviceEvents = true
@@ -977,7 +977,7 @@ class Core(
             when (answer) {
                 is BatchAnswer.Acknowledged -> {
                     dropBatchEvents()
-                    state.reportedAt = resolveKeptReportedAt(state.reportedAt, DeviceEventsAcknowledgement(request.report != null, answer.reportedAt))
+                    state.reportedAt = resolveKeptReportedAt(state.reportedAt, DeviceEventsAcknowledgement(hasReport = request.report != null, reportedAt = answer.reportedAt))
                     request.report?.let { state.acknowledgedReport = it }
                 }
                 is BatchAnswer.Refused -> dropBatchEvents()
@@ -995,7 +995,7 @@ class Core(
         val channel = getChannel()
         // A device without a channel id reports nothing, since a row for it would mislead.
         val channelId = channel.id ?: return null
-        val report = DeviceReport(state.attributes, device.binaryBuild, device.binaryVersion, channelId, channel.source, configuration.embeddedBundleId, configuration.fingerprint, device.osVersion, state.currentRelease?.id)
+        val report = DeviceReport(attributes = state.attributes, binaryBuild = device.binaryBuild, binaryVersion = device.binaryVersion, channelId = channelId, channelSource = channel.source, embeddedBundleId = configuration.embeddedBundleId, fingerprint = configuration.fingerprint, osVersion = device.osVersion, releaseId = state.currentRelease?.id)
         val reportedAt = state.reportedAt
         val isAcknowledged = report == state.acknowledgedReport && reportedAt != null && resolveUtcMonthNumber(reportedAt) == resolveUtcMonthNumber(clock.now())
         return if (isAcknowledged) null else report

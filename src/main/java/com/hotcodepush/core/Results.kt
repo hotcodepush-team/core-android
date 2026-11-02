@@ -209,7 +209,7 @@ data class UpdateRolledBackEvent(val fromRelease: Release, val toRelease: Releas
     fun toJson(): JSONObject = JSONObject().put("fromRelease", fromRelease.toJson()).put("toRelease", toRelease?.toJson() ?: JSONObject.NULL).put("reason", reason.wire)
 
     companion object {
-        fun fromJson(json: JSONObject) = UpdateRolledBackEvent(Release.fromJson(json.getJSONObject("fromRelease")), json.optJSONObject("toRelease")?.let(Release::fromJson), json.getWireEnum("reason", RollbackReason))
+        fun fromJson(json: JSONObject) = UpdateRolledBackEvent(fromRelease = Release.fromJson(json.getJSONObject("fromRelease")), toRelease = json.optJSONObject("toRelease")?.let(Release::fromJson), reason = json.getWireEnum("reason", RollbackReason))
     }
 }
 

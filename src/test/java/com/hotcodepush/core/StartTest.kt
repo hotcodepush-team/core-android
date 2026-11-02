@@ -60,7 +60,7 @@ class StartTest {
         val latch = holdTheNextStart(harness)
         assertNull(harness.core.handleAppStartBlocking(isHeadless = false, timeout = 0.05))
         latch.countDown()
-        runBlocking { assertEquals(NotifyReadyResult(v2.release.release, null, false, null), harness.core.notifyReady()) }
+        runBlocking { assertEquals(NotifyReadyResult(currentRelease = v2.release.release, previousRelease = null, isRolledBack = false, rollbackReason = null), harness.core.notifyReady()) }
         assertEquals(listOf("b2"), harness.loader.loaded)
     }
 
@@ -103,7 +103,7 @@ class StartTest {
         val embeddedReady = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) { harness.core.notifyReady() }
         latch.countDown()
         runBlocking {
-            assertEquals(NotifyReadyResult(v2.release.release, null, false, null), embeddedReady.await())
+            assertEquals(NotifyReadyResult(currentRelease = v2.release.release, previousRelease = null, isRolledBack = false, rollbackReason = null), embeddedReady.await())
             assertNull(harness.core.getState().fallbackRelease)
         }
     }
@@ -168,7 +168,7 @@ class StartTest {
     @Test
     fun shouldStartOnTheEmbeddedBundleWhenAStoredReleaseIsMissingAField() = runBlocking {
         val (harness, _) = harnessWithAWaitingRelease()
-        harness.store.putString("hotcodepush.nextRelease", JSONObject().put("id", "r1").put("bundleId", "b2").toString())
+        harness.store.putString(key = "hotcodepush.nextRelease", value = JSONObject().put("id", "r1").put("bundleId", "b2").toString())
         assertNull(harness.core.handleAppStart())
         assertNull(harness.core.getState().nextRelease)
         assertTrue(harness.uncaught.isEmpty())
@@ -177,7 +177,7 @@ class StartTest {
     @Test
     fun shouldStartOnTheEmbeddedBundleWhenTheStoreIsCorrupt() = runBlocking {
         val (harness, _) = harnessWithAWaitingRelease()
-        for (key in listOf("currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "pendingRollbackEvent", "lastBuiltAt")) harness.store.putString("hotcodepush.$key", "{not json")
+        for (key in listOf("currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "pendingRollbackEvent", "lastBuiltAt")) harness.store.putString(key = "hotcodepush.$key", value = "{not json")
         assertNull(harness.core.handleAppStart())
         assertNull(harness.core.getState().nextRelease)
     }

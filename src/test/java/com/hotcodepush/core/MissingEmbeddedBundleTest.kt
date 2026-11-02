@@ -10,7 +10,7 @@ import java.io.File
 
 class MissingEmbeddedBundleTest {
     private val v2Content = "<html>v2</html>".toByteArray()
-    private val skipped = SyncResult.skipped(null, SkippedReason.BUILD_DEBUG)
+    private val skipped = SyncResult.skipped(release = null, reason = SkippedReason.BUILD_DEBUG)
     private val withoutEmbeddedBundle: JSONObject = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").let { cases ->
         List(cases.length()) { cases.getJSONObject(it) }.single { it.isNull("embeddedBundleManifest") }
     }
@@ -120,9 +120,9 @@ class MissingEmbeddedBundleTest {
     fun shouldAnswerNothingToApplyAndNoRollbackWhenTheBuildEmbedsNoBundle() = runBlocking {
         val harness = harnessWithoutEmbeddedBundle()
         harness.core.handleAppStart()
-        assertEquals(ApplyUpdateResult(ApplyUpdateStatus.NOTHING_TO_APPLY, null), harness.core.applyUpdate())
-        assertEquals(NotifyReadyResult(null, null, false, null), harness.core.notifyReady())
-        harness.core.rollbackUpdate(null)
+        assertEquals(ApplyUpdateResult(status = ApplyUpdateStatus.NOTHING_TO_APPLY, release = null), harness.core.applyUpdate())
+        assertEquals(NotifyReadyResult(currentRelease = null, previousRelease = null, isRolledBack = false, rollbackReason = null), harness.core.notifyReady())
+        harness.core.rollbackUpdate(detail = null)
         assertTrue(harness.loader.loaded.isEmpty())
         assertTrue(harness.listener.rollbacks.isEmpty())
     }
