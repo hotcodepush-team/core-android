@@ -19,7 +19,7 @@ jobs:
   release-please:
     name: Release Please
     if: github.repository == 'hotcodepush-team/core-android' && inputs.tag == ''
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       issues: write
@@ -37,14 +37,15 @@ jobs:
     needs: release-please
     # A dispatch with a tag attaches the zip to that release again, so a failed upload never needs a new release.
     if: ${{ !cancelled() && (inputs.tag != '' || needs.release-please.outputs.release_created == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
       VERSION: ${{ inputs.tag || needs.release-please.outputs.version }}
-      ZIP: core-android-${{ inputs.tag || needs.release-please.outputs.version }}-maven.zip
+      # Not ZIP: Info-ZIP reads an environment variable of that name as its default options.
+      ARCHIVE: core-android-${{ inputs.tag || needs.release-please.outputs.version }}-maven.zip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,13 +58,12 @@ jobs:
       - run: ./gradlew publishReleasePublicationToMavenBranchRepository -Prelease -PmavenBranchDir="$RUNNER_TEMP/maven" --console=plain
       - name: Refuse a publication under another version than the tag's
         run: test -e "$RUNNER_TEMP/maven/com/hotcodepush/core-android/$VERSION/core-android-$VERSION.aar"
-      # Python's zipfile, since ubuntu-latest moved to 26.04 whose zip listed the entries and wrote no archive.
       - name: Zip the Maven layout into the workspace
         run: |
-          (cd "$RUNNER_TEMP/maven" && python3 -m zipfile -c "$GITHUB_WORKSPACE/$ZIP" com)
-          ls -l "$ZIP"
-      - run: gh release upload "$TAG" "$ZIP" --clobber
+          (cd "$RUNNER_TEMP/maven" && zip -r "$GITHUB_WORKSPACE/$ARCHIVE" com)
+          ls -l "$ARCHIVE"
+      - run: gh release upload "$TAG" "$ARCHIVE" --clobber
       - name: Write the checksum the bridges pin
         run: |
-          checksum=$(sha256sum "$ZIP" | cut -d ' ' -f 1)
+          checksum=$(sha256sum "$ARCHIVE" | cut -d ' ' -f 1)
           echo "SHA-256: \`$checksum\`" >> "$GITHUB_STEP_SUMMARY"
