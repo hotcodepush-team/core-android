@@ -102,7 +102,7 @@ configurations.matching { it.name == 'detekt' }.configureEach {
 }
 
 tasks.matching { it.name == 'lint' }.configureEach {
-    dependsOn('detekt')
+    dependsOn('detekt', 'spotlessCheck')
 }
 
 dependencies {

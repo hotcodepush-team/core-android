@@ -32,7 +32,7 @@ package.json                             private, only the pinned @hotcodepush/p
 | Command                               | Does                                                               |
 | ------------------------------------- | ------------------------------------------------------------------ |
 | `npm ci`                              | installs the protocol package the fixtures are read from           |
-| `npm run lint`                        | `./gradlew lint`, after detekt and its `detekt.yml`                |
+| `npm run lint`                        | `./gradlew lint`, after detekt and its `detekt.yml` and ktlint     |
 | `npm test`                            | `./gradlew test`                                                   |
 | `./gradlew spotlessApply`             | formats every Kotlin file with ktlint                              |
 | `npm run verify`                      | the lint, the tests and the release build                          |
