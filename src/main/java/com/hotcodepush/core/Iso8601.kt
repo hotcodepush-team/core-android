@@ -21,6 +21,9 @@ object Iso8601 {
         return parsed.time + fraction.padEnd(3, '0').take(3).toLong()
     }
 
+    /** The timestamp's month in UTC, `2026-09`, which orders as the months do. */
+    fun resolveUtcMonth(epochMillis: Long): String = format(epochMillis).take(7)
+
     /** A new formatter per call, since `SimpleDateFormat` is not thread-safe. */
     private fun formatter(pattern: String) = SimpleDateFormat(pattern, Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")

@@ -50,7 +50,7 @@ class CoreTest {
         val status = harness.core.getState()
         assertEquals(v2.release.release, status.nextRelease)
         assertNull(status.currentRelease)
-        assertEquals(1L, status.indexSequence)
+        assertEquals(1L, status.index?.sequence)
 
         harness.loader.served = "b2"
         harness.restart()
@@ -146,7 +146,7 @@ class CoreTest {
         harness.restart(Fixture.configuration(builtAt = Fixture.BUILT_AT + 60_000))
         harness.core.handleAppStart()
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(1_759_900_000_000L, harness.core.getState().indexSequence)
+        assertEquals(1_759_900_000_000L, harness.core.getState().index?.sequence)
         assertEquals(Fixture.indexUrl() to emptyMap<String, String>(), harness.http.requests.last())
     }
 
@@ -281,7 +281,7 @@ class CoreTest {
         harness.http.isOffline = false
         harness.publish(emptyList(), 4, etag = "\"e0\"")
         assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
-        assertEquals(5L, harness.core.getState().indexSequence)
+        assertEquals(5L, harness.core.getState().index?.sequence)
     }
 
     @Test
@@ -293,7 +293,7 @@ class CoreTest {
         harness.clock.now += 23 * 3_600_000L
         harness.publish(emptyList(), 4, etag = "\"e0\"")
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(5L, harness.core.getState().indexSequence)
+        assertEquals(5L, harness.core.getState().index?.sequence)
     }
 
     @Test
@@ -305,8 +305,8 @@ class CoreTest {
         harness.clock.now += 25 * 3_600_000L
         harness.publish(emptyList(), 4, etag = "\"e0\"")
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(4L, harness.core.getState().indexSequence)
-        assertEquals(harness.clock.now, harness.core.getState().indexFetchedAt)
+        assertEquals(4L, harness.core.getState().index?.sequence)
+        assertEquals(harness.clock.now, harness.core.getState().index?.fetchedAt)
     }
 
     @Test
@@ -320,7 +320,7 @@ class CoreTest {
         harness.core.sync(SyncTrigger.MANUAL)
         harness.publish(emptyList(), 1_759_900_000_000, etag = "\"e1\"")
         harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(1_759_900_000_001L, harness.core.getState().indexSequence)
+        assertEquals(1_759_900_000_001L, harness.core.getState().index?.sequence)
     }
 
     @Test
@@ -1078,7 +1078,7 @@ class CoreTest {
             harness.http.stubJson(Fixture.indexUrl(), other.toJson())
             val result = harness.core.sync(SyncTrigger.MANUAL)
             assertEquals(FailedReason.INDEX_INVALID.wire, result.reason)
-            assertNull(harness.core.getState().indexSequence)
+            assertNull(harness.core.getState().index?.sequence)
         }
     }
 

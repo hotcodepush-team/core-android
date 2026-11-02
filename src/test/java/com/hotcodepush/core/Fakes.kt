@@ -110,7 +110,7 @@ class FakeNetworkState : NetworkState {
 }
 
 // The interface's `isInForeground()` takes the property's getter name on the JVM.
-class FakeProcessState : ProcessState {
+class FakeAppState : AppState {
     var isInTheForeground = true
 
     override fun isInForeground(): Boolean = isInTheForeground
@@ -136,11 +136,11 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     val scope = CoroutineScope(SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, failure -> uncaught += failure })
 
     val network = FakeNetworkState()
-    val processState = FakeProcessState()
+    val appState = FakeAppState()
     var core: Core = build(configuration)
 
     private fun build(configuration: Configuration, scope: CoroutineScope = this.scope) =
-        Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"), networkState = network, processState = processState)
+        Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"), networkState = network, appState = appState)
 
     fun restart(configuration: Configuration = Fixture.configuration(), scope: CoroutineScope = this.scope) {
         core = build(configuration, scope)

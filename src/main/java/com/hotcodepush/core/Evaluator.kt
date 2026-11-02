@@ -38,7 +38,7 @@ object Evaluator {
     private const val EMBEDDED_RELEASE_NUMBER = 0
 
     // Major, minor and patch come before the build number.
-    private const val BINARY_VERSION_MIN_COMPONENTS = 3
+    private const val BINARY_VERSION_MINIMUM_COMPONENTS = 3
 
     fun evaluation(index: ChannelIndex, device: DeviceInfo): IndexEvaluation {
         if (isDeviceBeyondCap(index, device)) return IndexEvaluation(Evaluation.Skipped(release = null, reason = SkippedReason.SPENDING_CAP_REACHED), emptyList())
@@ -90,7 +90,7 @@ object Evaluator {
         val version = VersionRange.parseVersion(device.binaryVersion) ?: return null
         val build = VersionRange.parseVersion(device.binaryBuild)
         if (build == null || build.size != 1) return version
-        return version + List(maxOf(0, BINARY_VERSION_MIN_COMPONENTS - version.size)) { 0L } + build
+        return version + List(maxOf(0, BINARY_VERSION_MINIMUM_COMPONENTS - version.size)) { 0L } + build
     }
 
     internal fun isDeviceBeyondCap(index: ChannelIndex, device: DeviceInfo): Boolean {

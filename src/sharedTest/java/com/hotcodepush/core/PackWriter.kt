@@ -52,6 +52,6 @@ fun PackReader.entries(pack: ByteArray): List<PackedEntry> = buildList { forEach
 
 fun Gzip.compress(bytes: ByteArray): ByteArray = ByteArrayOutputStream().also { output -> GZIPOutputStream(output).use { it.write(bytes) } }.toByteArray()
 
-fun Gzip.decompress(bytes: ByteArray, maximumBytes: Long): ByteArray = inflate(bytes.inputStream(), maximumBytes).use { it.readBytes() }
+fun Gzip.decompress(bytes: ByteArray, maximumBytes: Long): ByteArray = decompress(bytes.inputStream(), maximumBytes).use { it.readBytes() }
 
 fun FileStore.writeFile(content: ByteArray, sha256: String) = writeFile(content.inputStream(), sha256)

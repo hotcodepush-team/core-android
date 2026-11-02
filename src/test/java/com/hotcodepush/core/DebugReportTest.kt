@@ -30,7 +30,7 @@ class DebugReportTest {
     fun shouldPrintEverySectionAsLabelsAndValues() {
         val running = Release(id = "r2", number = 2, bundleId = "b2", bundleVersion = "1.2.0", isMandatory = true)
         val device = GetDeviceResult(id = "d1", platform = "android", binaryVersion = "2.4.1", binaryBuild = "57", osVersion = "14", sdkVersion = "0.0.0", fingerprint = null, channel = GetChannelResult(id = "c2", name = "beta", source = ChannelSource.RUNTIME), attributes = mapOf("plan" to "pro", "cohort" to "a"))
-        val state = GetStateResult(currentRelease = running, nextRelease = null, fallbackRelease = running, embeddedBundleId = null, lastCheck = null, indexSequence = null, indexFetchedAt = null, failedBundleIds = listOf("b0", "b1"), reportedAt = null)
+        val state = GetStateResult(currentRelease = running, nextRelease = null, fallbackRelease = running, embeddedBundleId = null, lastCheck = null, index = null, failedBundleIds = listOf("b0", "b1"), reportedAt = null)
         val log = listOf(LogEntry(at = Fixture.BUILT_AT, code = "applied", message = "release r2 is the running release"))
         val expected = """
             HotCodePush debug report, 2023-11-14T22:13:21.000Z

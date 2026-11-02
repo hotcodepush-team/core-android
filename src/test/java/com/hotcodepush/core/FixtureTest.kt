@@ -113,7 +113,7 @@ class FixtureTest {
                 }
                 if (case.has("acknowledgements")) {
                     val acknowledgements = case.getJSONArray("acknowledgements").map(::acknowledgement)
-                    assertEquals(name, device.reportedAt, acknowledgements.fold(null, ::resolveKeptReportedAt))
+                    assertEquals(name, device.reportedAt, acknowledgements.fold(null as Long?) { held, acknowledgement -> acknowledgement.resolveKeptReportedAt(heldReportedAt = held) })
                     acknowledgedCount++
                 }
             }
@@ -239,7 +239,7 @@ class FixtureTest {
         for (case in cases(path = "device-events.json", key = "acknowledgements")) {
             val reportedAt = case.optNullableString("reportedAt")?.let(Iso8601::parse)
             val keptReportedAt = case.optNullableString("keptReportedAt")?.let(Iso8601::parse)
-            assertEquals(case.getString("name"), keptReportedAt, resolveKeptReportedAt(reportedAt, acknowledgement(case.getJSONObject("acknowledgement"))))
+            assertEquals(case.getString("name"), keptReportedAt, acknowledgement(case.getJSONObject("acknowledgement")).resolveKeptReportedAt(heldReportedAt = reportedAt))
         }
     }
 

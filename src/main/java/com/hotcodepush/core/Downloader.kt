@@ -34,7 +34,7 @@ sealed class DownloadFailure(message: String) : Exception(message) {
         }
 }
 
-data class DownloadOutcome(val manifest: BundleManifest, val bytes: Long, val packKind: PackKind)
+data class DownloadOutcome(val manifest: BundleManifest, val downloadSizeBytes: Long, val packKind: PackKind)
 
 internal data class PackSource(val url: String, val sizeBytes: Long?, val packBytesLimit: Long, val kind: PackKind)
 
@@ -55,22 +55,22 @@ class Downloader(
         val missing = resolveMissingFiles(manifest)
         val pack = resolvePackSource(envelope, baseBundleId, missing.size)
         verifyFreeSpace(missing.sumOf { it.sizeBytes } + (pack?.packBytesLimit ?: 0))
-        var bytes = 0L
+        var downloadSizeBytes = 0L
         var packKind = PackKind.FILES
         if (pack != null) {
             val outcome = downloadPack(pack, envelope, missing.associate { it.sha256 to it.sizeBytes }, progress)
-            bytes += outcome.bytes
+            downloadSizeBytes += outcome.bytes
             packKind = outcome.kind
         }
-        for (file in resolveMissingFiles(manifest)) bytes += downloadFile(file)
+        for (file in resolveMissingFiles(manifest)) downloadSizeBytes += downloadFile(file)
         files.writeManifest(manifest, envelope.bundleId)
-        return DownloadOutcome(manifest, bytes, packKind)
+        return DownloadOutcome(manifest = manifest, downloadSizeBytes = downloadSizeBytes, packKind = packKind)
     }
 
     internal suspend fun fetchBundleManifest(target: IndexRelease): Pair<ManifestEnvelope, BundleManifest> {
         val url = resolvePinnedUrl(target.manifestUrl)
         val body = try {
-            retryTransientFailures { fetchManifestEnvelope(url) }
+            fetchWithRetries { fetchManifestEnvelope(url) }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (refusal: HttpStatusException) {
@@ -163,7 +163,7 @@ class Downloader(
     private suspend fun downloadPackFile(source: PackSource, file: File, progress: (Long, Long) -> Unit) {
         val pinnedUrl = resolvePinnedUrl(source.url)
         try {
-            retryTransientFailures { http.download(pinnedUrl, file, source.packBytesLimit, progress) }
+            fetchWithRetries { http.download(pinnedUrl, file, source.packBytesLimit, progress) }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: DownloadFailure) {
@@ -182,7 +182,7 @@ class Downloader(
                     when (entry) {
                         is PackEntry.File -> {
                             val sizeBytes = wanted[entry.sha256] ?: return@forEachEntry
-                            Gzip.inflate(body, sizeBytes).use { content -> files.writeFile(content, entry.sha256) }
+                            Gzip.decompress(body, sizeBytes).use { content -> files.writeFile(content, entry.sha256) }
                         }
                         is PackEntry.Patch -> {
                             val sizeBytes = wanted[entry.toSha256] ?: return@forEachEntry
@@ -239,7 +239,7 @@ class Downloader(
         val temporary = File(temporaryDirectory, "${UUID.randomUUID()}.file")
         try {
             try {
-                retryTransientFailures {
+                fetchWithRetries {
                     // Decoded bytes match no `Range` offset, so each attempt starts again.
                     temporary.delete()
                     http.download(url, temporary, file.sizeBytes) { _, _ -> }
@@ -263,7 +263,7 @@ class Downloader(
     }
 
     // A refusal such as a 404 or 410 throws at once, since the object will not appear.
-    private suspend fun <T> retryTransientFailures(fetch: suspend () -> T): T {
+    private suspend fun <T> fetchWithRetries(fetch: suspend () -> T): T {
         for (pauseMillis in RETRY_PAUSES_MILLIS) {
             try {
                 return fetch()
