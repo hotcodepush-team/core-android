@@ -16,18 +16,26 @@ class InMemoryStore : KeyValueStore {
 
     override fun getString(key: String): String? = values[key]
 
-    override fun putString(key: String, value: String?) {
+    override fun putString(
+        key: String,
+        value: String?,
+    ) {
         if (value == null) values.remove(key) else values[key] = value
     }
 
     override fun getInt(key: String): Int? = integers[key]
 
-    override fun putInt(key: String, value: Int?) {
+    override fun putInt(
+        key: String,
+        value: Int?,
+    ) {
         if (value == null) integers.remove(key) else integers[key] = value
     }
 }
 
-class FakeLoader(private val root: File) : BundleLoader {
+class FakeLoader(
+    private val root: File,
+) : BundleLoader {
     var persisted: String? = null
     var hasPersisted = false
     val loaded = mutableListOf<String?>()
@@ -75,26 +83,42 @@ class FakeListener : CoreListener {
         available += event
     }
 
-    override fun updateDownloaded(event: UpdateDownloadedEvent) { downloaded += event }
+    override fun updateDownloaded(event: UpdateDownloadedEvent) {
+        downloaded += event
+    }
 
     override fun updateFailed(event: UpdateFailedEvent) {
         updateFailedFailure?.let { throw it }
         failed += event
     }
 
-    override fun downloadProgress(event: DownloadProgressEvent) { progress += event }
-    override fun updateRolledBack(event: UpdateRolledBackEvent) { rollbacks += event }
+    override fun downloadProgress(event: DownloadProgressEvent) {
+        progress += event
+    }
+
+    override fun updateRolledBack(event: UpdateRolledBackEvent) {
+        rollbacks += event
+    }
 }
 
 class ManualScheduler : Scheduler {
-    class Task(val seconds: Double, val block: () -> Unit) : ScheduledTask {
+    class Task(
+        val seconds: Double,
+        val block: () -> Unit,
+    ) : ScheduledTask {
         var isCancelled = false
-        override fun cancel() { isCancelled = true }
+
+        override fun cancel() {
+            isCancelled = true
+        }
     }
 
     val tasks = mutableListOf<Task>()
 
-    override fun schedule(afterSeconds: Double, block: () -> Unit): ScheduledTask = Task(afterSeconds, block).also { tasks += it }
+    override fun schedule(
+        afterSeconds: Double,
+        block: () -> Unit,
+    ): ScheduledTask = Task(afterSeconds, block).also { tasks += it }
 
     fun fire() {
         val pending = tasks.toList()
@@ -116,12 +140,27 @@ class FakeAppState : AppState {
     override fun isInForeground(): Boolean = isInTheForeground
 }
 
-class FixedClock(var now: Long) : Clock {
+class FixedClock(
+    var now: Long,
+) : Clock {
     override fun now(): Long = now
 }
 
 // A test's own `dispatcher` runs the core's pauses in virtual time.
-class Harness(configuration: Configuration = Fixture.configuration(), isDebugBuild: Boolean = false, private val device: DeviceFacts = DeviceFacts(platform = "android", binaryVersion = "2.4.1", binaryBuild = "57", osVersion = "14", sdkVersion = "0.0.0", isDebugBuild = isDebugBuild), dispatcher: CoroutineDispatcher = Dispatchers.Unconfined) {
+class Harness(
+    configuration: Configuration = Fixture.configuration(),
+    isDebugBuild: Boolean = false,
+    private val device: DeviceFacts =
+        DeviceFacts(
+            platform = "android",
+            binaryVersion = "2.4.1",
+            binaryBuild = "57",
+            osVersion = "14",
+            sdkVersion = "0.0.0",
+            isDebugBuild = isDebugBuild,
+        ),
+    dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
+) {
     val root: File = Files.createTempDirectory("hotcodepush-tests").toFile()
     val store = InMemoryStore()
     val http = FakeHttpClient()
@@ -131,6 +170,7 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     val embedded = InMemoryEmbeddedBundle().apply { files[Hashing.sha256Hex(Fixture.embeddedIndexHtml)] = Fixture.embeddedIndexHtml }
     val clock = FixedClock(Fixture.BUILT_AT + 3_600_000)
     val files = FileStore(File(root, "store"))
+
     // On a device, a failure that escapes to the scope crashes the process.
     val uncaught = mutableListOf<Throwable>()
     val scope = CoroutineScope(SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, failure -> uncaught += failure })
@@ -139,10 +179,30 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
     val appState = FakeAppState()
     var core: Core = build(configuration)
 
-    private fun build(configuration: Configuration, scope: CoroutineScope = this.scope) =
-        Core(configuration, device, store, files, embedded, http, loader, listener, scheduler, clock, scope, File(root, "tmp"), networkState = network, appState = appState)
+    private fun build(
+        configuration: Configuration,
+        scope: CoroutineScope = this.scope,
+    ) = Core(
+        configuration,
+        device,
+        store,
+        files,
+        embedded,
+        http,
+        loader,
+        listener,
+        scheduler,
+        clock,
+        scope,
+        File(root, "tmp"),
+        networkState = network,
+        appState = appState,
+    )
 
-    fun restart(configuration: Configuration = Fixture.configuration(), scope: CoroutineScope = this.scope) {
+    fun restart(
+        configuration: Configuration = Fixture.configuration(),
+        scope: CoroutineScope = this.scope,
+    ) {
         core = build(configuration, scope)
     }
 
@@ -150,8 +210,30 @@ class Harness(configuration: Configuration = Fixture.configuration(), isDebugBui
         http.stubJson(Fixture.eventsUrl(), JSONObject().put("reportedAt", reportedAt), status = 202)
     }
 
-    fun publish(releases: List<Fixture.Published>, sequence: Long, revoked: List<String> = emptyList(), pausedAt: Long? = null, cappedAt: Long? = null, etag: String = "\"e1\"") {
-        http.stubJson(Fixture.indexUrl(), Fixture.index(sequence = sequence, releases = releases.map { it.release }, revoked = revoked, pausedAt = pausedAt, cappedAt = cappedAt).toJson(), headers = mapOf("ETag" to etag))
+    fun publish(
+        releases: List<Fixture.Published>,
+        sequence: Long,
+        revoked: List<String> = emptyList(),
+        pausedAt: Long? = null,
+        cappedAt: Long? = null,
+        etag: String = "\"e1\"",
+    ) {
+        http.stubJson(
+            Fixture.indexUrl(),
+            Fixture
+                .index(
+                    sequence = sequence,
+                    releases =
+                    releases.map {
+                        it.release
+                    },
+                    revoked = revoked,
+                    pausedAt = pausedAt,
+                    cappedAt = cappedAt,
+                ).toJson(),
+            headers =
+            mapOf("ETag" to etag),
+        )
         for (entry in releases) {
             http.stubJson(entry.release.manifestUrl, entry.envelope.toJson())
             http.stub(entry.envelope.pack.url, body = entry.pack)

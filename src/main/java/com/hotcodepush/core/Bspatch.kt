@@ -2,7 +2,9 @@ package com.hotcodepush.core
 
 import java.io.File
 
-internal class BspatchException(val failure: Bspatch.Failure) : Exception("The patch did not apply: $failure")
+internal class BspatchException(
+    val failure: Bspatch.Failure,
+) : Exception("The patch did not apply: $failure")
 
 // FreeBSD's bspatch, the native library built from `src/main/cpp`.
 internal object Bspatch {
@@ -16,7 +18,12 @@ internal object Bspatch {
     // So only the hash of the result proves the patch was the right one.
     // The three files and the cap the C function takes, which callers name.
     @Suppress("LongParameterList")
-    fun apply(patch: File, old: File, new: File, maximumBytes: Long) {
+    fun apply(
+        patch: File,
+        old: File,
+        new: File,
+        maximumBytes: Long,
+    ) {
         when (applyPatch(oldPath = old.path, newPath = new.path, patchPath = patch.path, maximumBytes = maximumBytes)) {
             0 -> return
             1 -> throw BspatchException(Failure.CORRUPT_PATCH)
@@ -28,5 +35,10 @@ internal object Bspatch {
     // The JNI signature bspatch_jni.c implements.
     @Suppress("LongParameterList")
     @JvmStatic
-    private external fun applyPatch(oldPath: String, newPath: String, patchPath: String, maximumBytes: Long): Int
+    private external fun applyPatch(
+        oldPath: String,
+        newPath: String,
+        patchPath: String,
+        maximumBytes: Long,
+    ): Int
 }

@@ -23,8 +23,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyString
-import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
@@ -36,13 +36,26 @@ import java.nio.file.Files
 @Config(sdk = [35])
 class ContextWiringTest {
     private val application: Context = RuntimeEnvironment.getApplication()
-    private val resourceFile = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").getJSONObject(0).getJSONObject("resourceFile")
+    private val resourceFile =
+        JSONObject(
+            File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText(),
+        ).getJSONArray("cases").getJSONObject(0).getJSONObject("resourceFile")
 
     @Test
     fun shouldReadTheDeviceFactsFromThePackageManagerAndTheOs() {
         val facts = DeviceFacts.current(contextWithPackage(isDebuggable = false), "1.2.3")
 
-        assertEquals(DeviceFacts(platform = "android", binaryVersion = "2.4.1", binaryBuild = "57", osVersion = Build.VERSION.RELEASE, sdkVersion = "1.2.3", isDebugBuild = false), facts)
+        assertEquals(
+            DeviceFacts(
+                platform = "android",
+                binaryVersion = "2.4.1",
+                binaryBuild = "57",
+                osVersion = Build.VERSION.RELEASE,
+                sdkVersion = "1.2.3",
+                isDebugBuild = false,
+            ),
+            facts,
+        )
     }
 
     @Test
@@ -102,7 +115,14 @@ class ContextWiringTest {
     fun shouldKeepTheStoreInTheAppsDefaultPreferences() {
         SharedPreferencesStore(application).putString(key = "hotcodepush.deviceId", value = "d1")
 
-        assertEquals("d1", application.getSharedPreferences("${application.packageName}_preferences", Context.MODE_PRIVATE).getString("hotcodepush.deviceId", null))
+        assertEquals(
+            "d1",
+            application
+                .getSharedPreferences(
+                    "${application.packageName}_preferences",
+                    Context.MODE_PRIVATE,
+                ).getString("hotcodepush.deviceId", null),
+        )
     }
 
     @Test
@@ -112,7 +132,12 @@ class ContextWiringTest {
 
     @Test
     fun shouldCopyAListedFileFromUnderTheRootDirectory() {
-        val embedded = AssetsEmbeddedBundle(contextWithAssets(mapOf("public/index.html" to Fixture.embeddedIndexHtml)), Fixture.embeddedManifest(), "public")
+        val embedded =
+            AssetsEmbeddedBundle(
+                contextWithAssets(mapOf("public/index.html" to Fixture.embeddedIndexHtml)),
+                Fixture.embeddedManifest(),
+                "public",
+            )
         val sha256 = Hashing.sha256Hex(Fixture.embeddedIndexHtml)
         val destination = File(Files.createTempDirectory("hotcodepush-tests").toFile(), sha256)
 
@@ -124,18 +149,30 @@ class ContextWiringTest {
 
     @Test
     fun shouldHaveNoFileWhenTheBinaryLacksIt() {
-        val embedded = AssetsEmbeddedBundle(contextWithAssets(mapOf("www/index.html" to Fixture.embeddedIndexHtml)), Fixture.embeddedManifest(), "public")
+        val embedded =
+            AssetsEmbeddedBundle(
+                contextWithAssets(mapOf("www/index.html" to Fixture.embeddedIndexHtml)),
+                Fixture.embeddedManifest(),
+                "public",
+            )
 
         assertFalse(embedded.has(Hashing.sha256Hex(Fixture.embeddedIndexHtml)))
     }
 
     @Test
     fun shouldHaveNoFileWhenTheBuildCarriesNoManifest() {
-        val embedded = AssetsEmbeddedBundle(context = contextWithAssets(mapOf("public/index.html" to Fixture.embeddedIndexHtml)), manifest = null, assetDirectory = "public")
+        val embedded =
+            AssetsEmbeddedBundle(
+                context = contextWithAssets(mapOf("public/index.html" to Fixture.embeddedIndexHtml)),
+                manifest = null,
+                assetDirectory = "public",
+            )
         val sha256 = Hashing.sha256Hex(Fixture.embeddedIndexHtml)
 
         assertFalse(embedded.has(sha256))
-        assertThrows(PlainException::class.java) { embedded.copyFile(sha256, File(Files.createTempDirectory("hotcodepush-tests").toFile(), sha256)) }
+        assertThrows(PlainException::class.java) {
+            embedded.copyFile(sha256, File(Files.createTempDirectory("hotcodepush-tests").toFile(), sha256))
+        }
     }
 
     @Test
@@ -156,21 +193,53 @@ class ContextWiringTest {
     fun shouldKeepTheCoresStateInTheAppsDefaultPreferencesWhenWiredFromTheContext() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val root = Files.createTempDirectory("hotcodepush-tests").toFile()
-        val core = Core(application, Fixture.configuration(), DeviceFacts(platform = "android", binaryVersion = "2.4.1", binaryBuild = "57", osVersion = "14", sdkVersion = "0.0.0", isDebugBuild = false), InMemoryEmbeddedBundle(), FakeLoader(root), FakeListener(), scope, ManualScheduler())
+        val core =
+            Core(
+                application,
+                Fixture.configuration(),
+                DeviceFacts(
+                    platform = "android",
+                    binaryVersion = "2.4.1",
+                    binaryBuild = "57",
+                    osVersion = "14",
+                    sdkVersion = "0.0.0",
+                    isDebugBuild = false,
+                ),
+                InMemoryEmbeddedBundle(),
+                FakeLoader(root),
+                FakeListener(),
+                scope,
+                ManualScheduler(),
+            )
 
         val deviceId = core.getDevice().id
 
-        assertEquals(deviceId, application.getSharedPreferences("${application.packageName}_preferences", Context.MODE_PRIVATE).getString("hotcodepush.deviceId", null))
+        assertEquals(
+            deviceId,
+            application
+                .getSharedPreferences(
+                    "${application.packageName}_preferences",
+                    Context.MODE_PRIVATE,
+                ).getString("hotcodepush.deviceId", null),
+        )
         scope.cancel()
     }
 
     private fun contextWithPackage(isDebuggable: Boolean): Context {
-        val packageInfo = PackageInfo().apply {
-            versionName = "2.4.1"
-            longVersionCode = 57
-        }
-        val packageManager = mock(PackageManager::class.java).also { `when`(it.getPackageInfo(application.packageName, 0)).thenReturn(packageInfo) }
-        val applicationInfo = ApplicationInfo(application.applicationInfo).apply { flags = if (isDebuggable) flags or ApplicationInfo.FLAG_DEBUGGABLE else flags and ApplicationInfo.FLAG_DEBUGGABLE.inv() }
+        val packageInfo =
+            PackageInfo().apply {
+                versionName = "2.4.1"
+                longVersionCode = 57
+            }
+        val packageManager =
+            mock(
+                PackageManager::class.java,
+            ).also { `when`(it.getPackageInfo(application.packageName, 0)).thenReturn(packageInfo) }
+        val applicationInfo =
+            ApplicationInfo(application.applicationInfo).apply {
+                flags =
+                    if (isDebuggable) flags or ApplicationInfo.FLAG_DEBUGGABLE else flags and ApplicationInfo.FLAG_DEBUGGABLE.inv()
+            }
         return object : ContextWrapper(application) {
             override fun getPackageManager(): PackageManager = packageManager
 
@@ -180,13 +249,22 @@ class ContextWiringTest {
 
     private fun contextWithAssets(files: Map<String, ByteArray>): Context {
         val assets = mock(AssetManager::class.java)
-        `when`(assets.open(anyString())).thenAnswer { call -> files[call.getArgument(0)]?.inputStream() ?: throw FileNotFoundException(call.getArgument(0)) }
+        `when`(assets.open(anyString())).thenAnswer { call ->
+            files[call.getArgument(0)]?.inputStream()
+                ?: throw FileNotFoundException(call.getArgument(0))
+        }
         return object : ContextWrapper(application) {
             override fun getAssets(): AssetManager = assets
         }
     }
 
     private fun contextWithConnectivity(connectivity: ConnectivityManager?): Context = object : ContextWrapper(application) {
-        override fun getSystemService(name: String): Any? = if (name == Context.CONNECTIVITY_SERVICE) connectivity else super.getSystemService(name)
+        override fun getSystemService(name: String): Any? = if (name ==
+            Context.CONNECTIVITY_SERVICE
+        ) {
+            connectivity
+        } else {
+            super.getSystemService(name)
+        }
     }
 }

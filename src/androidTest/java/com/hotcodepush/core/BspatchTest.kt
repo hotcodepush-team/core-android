@@ -114,17 +114,28 @@ class BspatchTest {
 
     private fun fixture(name: String): ByteArray = context.assets.open("bspatch/$name").use { it.readBytes() }
 
-    private fun apply(patch: ByteArray, maximumBytes: Long = 1_000_000) {
+    private fun apply(
+        patch: ByteArray,
+        maximumBytes: Long = 1_000_000,
+    ) {
         val patchFile = File(directory, "patch").apply { writeBytes(patch) }
         Bspatch.apply(patch = patchFile, old = old, new = new, maximumBytes = maximumBytes)
     }
 
-    private fun assertRefused(patch: ByteArray, expected: Bspatch.Failure, maximumBytes: Long = 1_000_000) {
+    private fun assertRefused(
+        patch: ByteArray,
+        expected: Bspatch.Failure,
+        maximumBytes: Long = 1_000_000,
+    ) {
         assertEquals(expected, assertThrows(BspatchException::class.java) { apply(patch, maximumBytes) }.failure)
     }
 
     // bsdiff writes an offset as eight bytes little-endian, with the sign in the top bit.
-    private fun settingOffset(value: Long, offset: Int, patch: ByteArray): ByteArray {
+    private fun settingOffset(
+        value: Long,
+        offset: Int,
+        patch: ByteArray,
+    ): ByteArray {
         val magnitude = if (value < 0) -value else value
         for (index in 0 until 8) patch[offset + index] = (magnitude ushr (8 * index)).toByte()
         if (value < 0) patch[offset + 7] = (patch[offset + 7].toInt() or 0x80).toByte()

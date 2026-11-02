@@ -11,11 +11,17 @@ import java.io.File
 class MissingEmbeddedBundleTest {
     private val v2Content = "<html>v2</html>".toByteArray()
     private val skipped = SyncResult.skipped(release = null, reason = SkippedReason.BUILD_DEBUG)
-    private val withoutEmbeddedBundle: JSONObject = JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").let { cases ->
-        List(cases.length()) { cases.getJSONObject(it) }.single { it.isNull("embeddedBundleManifest") }
-    }
+    private val withoutEmbeddedBundle: JSONObject =
+        JSONObject(File("node_modules/@hotcodepush/protocol/fixtures/resource-files.json").readText()).getJSONArray("cases").let { cases ->
+            List(cases.length()) { cases.getJSONObject(it) }.single { it.isNull("embeddedBundleManifest") }
+        }
 
-    private fun configurationWithoutEmbeddedBundle(channelId: String? = Fixture.CHANNEL_ID) = Fixture.configuration(builtAt = Fixture.BUILT_AT + 86_400_000, channelId = channelId, hasEmbeddedBundle = false)
+    private fun configurationWithoutEmbeddedBundle(channelId: String? = Fixture.CHANNEL_ID) = Fixture.configuration(
+        builtAt =
+        Fixture.BUILT_AT + 86_400_000,
+        channelId = channelId,
+        hasEmbeddedBundle = false,
+    )
 
     private fun harnessWithoutEmbeddedBundle() = Harness(configurationWithoutEmbeddedBundle(), isDebugBuild = true).apply {
         acknowledgeEvents()
@@ -121,7 +127,10 @@ class MissingEmbeddedBundleTest {
         val harness = harnessWithoutEmbeddedBundle()
         harness.core.handleAppStart()
         assertEquals(ApplyUpdateResult(status = ApplyUpdateStatus.NOTHING_TO_APPLY, release = null), harness.core.applyUpdate())
-        assertEquals(NotifyReadyResult(currentRelease = null, previousRelease = null, isRolledBack = false, rollbackReason = null), harness.core.notifyReady())
+        assertEquals(
+            NotifyReadyResult(currentRelease = null, previousRelease = null, isRolledBack = false, rollbackReason = null),
+            harness.core.notifyReady(),
+        )
         harness.core.rollbackUpdate(detail = null)
         assertTrue(harness.loader.loaded.isEmpty())
         assertTrue(harness.listener.rollbacks.isEmpty())

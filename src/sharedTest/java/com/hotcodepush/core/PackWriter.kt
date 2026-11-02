@@ -3,11 +3,21 @@ package com.hotcodepush.core
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPOutputStream
 
-data class PackedEntry(val entry: PackEntry, val body: ByteArray) {
+data class PackedEntry(
+    val entry: PackEntry,
+    val body: ByteArray,
+) {
     companion object {
-        fun file(sha256: String, body: ByteArray) = PackedEntry(PackEntry.File(sha256), body)
+        fun file(
+            sha256: String,
+            body: ByteArray,
+        ) = PackedEntry(PackEntry.File(sha256), body)
 
-        fun patch(fromSha256: String, toSha256: String, body: ByteArray) = PackedEntry(PackEntry.Patch(fromSha256 = fromSha256, toSha256 = toSha256), body)
+        fun patch(
+            fromSha256: String,
+            toSha256: String,
+            body: ByteArray,
+        ) = PackedEntry(PackEntry.Patch(fromSha256 = fromSha256, toSha256 = toSha256), body)
     }
 }
 
@@ -25,13 +35,21 @@ object PackWriter {
         return output.toByteArray()
     }
 
-    private fun ByteArrayOutputStream.writeEntry(prefix: String, name: String, body: ByteArray) {
+    private fun ByteArrayOutputStream.writeEntry(
+        prefix: String,
+        name: String,
+        body: ByteArray,
+    ) {
         write(header(prefix = prefix, name = name, size = body.size.toLong()))
         write(body)
         write(ByteArray((512 - body.size % 512) % 512))
     }
 
-    fun header(prefix: String, name: String, size: Long): ByteArray {
+    fun header(
+        prefix: String,
+        name: String,
+        size: Long,
+    ): ByteArray {
         val header = ByteArray(512)
         name.toByteArray(Charsets.US_ASCII).copyInto(header, 0)
         // The writers set the ustar magic only beside a prefix.
@@ -48,10 +66,23 @@ object PackWriter {
 }
 
 // Reads every body whole, which only a test's small packs afford.
-fun PackReader.entries(pack: ByteArray): List<PackedEntry> = buildList { forEachEntry(pack.inputStream(), pack.size.toLong()) { entry, body -> add(PackedEntry(entry, body.readBytes())) } }
+fun PackReader.entries(pack: ByteArray): List<PackedEntry> = buildList {
+    forEachEntry(pack.inputStream(), pack.size.toLong()) { entry, body -> add(PackedEntry(entry, body.readBytes())) }
+}
 
-fun Gzip.compress(bytes: ByteArray): ByteArray = ByteArrayOutputStream().also { output -> GZIPOutputStream(output).use { it.write(bytes) } }.toByteArray()
+fun Gzip.compress(bytes: ByteArray): ByteArray = ByteArrayOutputStream()
+    .also { output ->
+        GZIPOutputStream(output).use {
+            it.write(bytes)
+        }
+    }.toByteArray()
 
-fun Gzip.decompress(bytes: ByteArray, maximumBytes: Long): ByteArray = decompress(bytes.inputStream(), maximumBytes).use { it.readBytes() }
+fun Gzip.decompress(
+    bytes: ByteArray,
+    maximumBytes: Long,
+): ByteArray = decompress(bytes.inputStream(), maximumBytes).use { it.readBytes() }
 
-fun FileStore.writeFile(content: ByteArray, sha256: String) = writeFile(content.inputStream(), sha256)
+fun FileStore.writeFile(
+    content: ByteArray,
+    sha256: String,
+) = writeFile(content.inputStream(), sha256)

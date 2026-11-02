@@ -13,7 +13,10 @@ object VersionRange {
      */
     const val COMPONENT_MAXIMUM = 9_007_199_254_740_991L
 
-    private data class Comparator(val op: String, val version: List<Long>)
+    private data class Comparator(
+        val op: String,
+        val version: List<Long>,
+    )
 
     /** A version's numeric components; `null` when the string is not a dotted number of components up to `COMPONENT_MAXIMUM`. */
     fun parseVersion(value: String): List<Long>? {
@@ -30,12 +33,19 @@ object VersionRange {
      * Whether the version satisfies the range: `null` when the range does not parse.
      * A comparator compares only as many components as it names, so `2.4.1` matches `2.4.1.57`.
      */
-    fun isVersionInRange(version: List<Long>, range: String): Boolean? {
+    fun isVersionInRange(
+        version: List<Long>,
+        range: String,
+    ): Boolean? {
         val alternatives = range.split("||").map { parseAlternative(it) ?: return null }
         return alternatives.any { comparators -> comparators.all { isSatisfied(version, it) } }
     }
 
-    private fun compare(left: List<Long>, right: List<Long>, length: Int): Int {
+    private fun compare(
+        left: List<Long>,
+        right: List<Long>,
+        length: Int,
+    ): Int {
         for (index in 0 until length) {
             val order = left.getOrElse(index) { 0 }.compareTo(right.getOrElse(index) { 0 })
             if (order != 0) return order
@@ -43,7 +53,10 @@ object VersionRange {
         return 0
     }
 
-    private fun isSatisfied(version: List<Long>, comparator: Comparator): Boolean {
+    private fun isSatisfied(
+        version: List<Long>,
+        comparator: Comparator,
+    ): Boolean {
         val order = compare(left = version, right = comparator.version, length = comparator.version.size)
         return when (comparator.op) {
             "<" -> order < 0
@@ -72,11 +85,18 @@ object VersionRange {
         return comparators
     }
 
-    private fun parseComparator(op: String?, version: String): List<Comparator>? {
+    private fun parseComparator(
+        op: String?,
+        version: String,
+    ): List<Comparator>? {
         val components = version.split('.')
         val wildcardIndex = components.indexOfFirst { it == "x" || it == "X" || it == "*" }
         if (wildcardIndex != -1 && op != null) return null
-        if (wildcardIndex == -1 && (op != null || components.size >= 3)) return parseComponents(components)?.let { listOf(Comparator(op ?: "=", it)) }
+        if (wildcardIndex == -1 &&
+            (op != null || components.size >= 3)
+        ) {
+            return parseComponents(components)?.let { listOf(Comparator(op ?: "=", it)) }
+        }
         return parseComponents(components.take(if (wildcardIndex == -1) components.size else wildcardIndex))?.let(::intervalComparators)
     }
 

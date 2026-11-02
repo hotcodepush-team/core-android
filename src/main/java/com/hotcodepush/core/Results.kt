@@ -4,33 +4,59 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class SyncTrigger(override val wire: String) : WireEnum {
-    START("start"), RESUME("resume"), INTERVAL("interval"), MANUAL("manual");
+    START("start"),
+    RESUME("resume"),
+    INTERVAL("interval"),
+    MANUAL("manual"),
+    ;
 
     companion object : WireEnumCompanion<SyncTrigger>({ entries })
 }
 
 enum class SyncStatus(override val wire: String) : WireEnum {
-    UP_TO_DATE("up_to_date"), AVAILABLE("available"), DOWNLOADED("downloaded"), APPLIED("applied"), SKIPPED("skipped"), FAILED("failed");
+    UP_TO_DATE("up_to_date"),
+    AVAILABLE("available"),
+    DOWNLOADED("downloaded"),
+    APPLIED("applied"),
+    SKIPPED("skipped"),
+    FAILED("failed"),
+    ;
 
     companion object : WireEnumCompanion<SyncStatus>({ entries })
 }
 
 enum class SkippedReason(val wire: String) {
-    BUILD_DEBUG("build_debug"), BUNDLE_FAILED_BEFORE("bundle_failed_before"), CHANNEL_PAUSED("channel_paused"),
-    CONDITION_UNSUPPORTED("condition_unsupported"), CONNECTION_METERED("connection_metered"), DEVICE_INCOMPATIBLE("device_incompatible"),
-    DEVICE_NOT_IN_ROLLOUT("device_not_in_rollout"), DEVICE_NOT_TARGETED("device_not_targeted"), RELEASE_OLDER_THAN_BINARY("release_older_than_binary"),
-    RELEASE_REVOKED("release_revoked"), SPENDING_CAP_REACHED("spending_cap_reached")
+    BUILD_DEBUG("build_debug"),
+    BUNDLE_FAILED_BEFORE("bundle_failed_before"),
+    CHANNEL_PAUSED("channel_paused"),
+    CONDITION_UNSUPPORTED("condition_unsupported"),
+    CONNECTION_METERED("connection_metered"),
+    DEVICE_INCOMPATIBLE("device_incompatible"),
+    DEVICE_NOT_IN_ROLLOUT("device_not_in_rollout"),
+    DEVICE_NOT_TARGETED("device_not_targeted"),
+    RELEASE_OLDER_THAN_BINARY("release_older_than_binary"),
+    RELEASE_REVOKED("release_revoked"),
+    SPENDING_CAP_REACHED("spending_cap_reached"),
 }
 
 enum class FailedReason(override val wire: String) : WireEnum {
-    CHANNEL_UNKNOWN("channel_unknown"), CONTENT_MISMATCHED("content_mismatched"), DEVICE_OFFLINE("device_offline"), DOWNLOAD_FAILED("download_failed"),
-    INDEX_INVALID("index_invalid"), MANIFEST_INVALID("manifest_invalid"), SIGNATURE_INVALID("signature_invalid");
+    CHANNEL_UNKNOWN("channel_unknown"),
+    CONTENT_MISMATCHED("content_mismatched"),
+    DEVICE_OFFLINE("device_offline"),
+    DOWNLOAD_FAILED("download_failed"),
+    INDEX_INVALID("index_invalid"),
+    MANIFEST_INVALID("manifest_invalid"),
+    SIGNATURE_INVALID("signature_invalid"),
+    ;
 
     companion object : WireEnumCompanion<FailedReason>({ entries })
 }
 
 enum class RollbackReason(override val wire: String) : WireEnum {
-    APP_CRASHED("app_crashed"), APP_REQUESTED("app_requested"), READINESS_TIMED_OUT("readiness_timed_out");
+    APP_CRASHED("app_crashed"),
+    APP_REQUESTED("app_requested"),
+    READINESS_TIMED_OUT("readiness_timed_out"),
+    ;
 
     companion object : WireEnumCompanion<RollbackReason>({ entries })
 }
@@ -52,9 +78,8 @@ data class SyncResult(
     val downloadSizeBytes: Long? = null,
     val message: String? = null,
 ) {
-    // A case table: one set of keys per status.
     /** Writes the keys of its status only: a nullable field as an explicit `null`, an optional one left out. */
-    @Suppress("CyclomaticComplexMethod")
+    @Suppress("CyclomaticComplexMethod") // A case table: one set of keys per status.
     fun toJson(): JSONObject {
         val json = JSONObject().put("status", status.wire).put("release", release?.toJson() ?: JSONObject.NULL)
         when (status) {
@@ -140,7 +165,9 @@ data class GetStateResult(
 }
 
 enum class ChannelSource(override val wire: String) : WireEnum {
-    RUNTIME("runtime"), CONFIG("config");
+    RUNTIME("runtime"),
+    CONFIG("config"),
+    ;
 
     companion object : WireEnumCompanion<ChannelSource>({ entries })
 }

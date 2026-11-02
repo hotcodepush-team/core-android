@@ -21,7 +21,13 @@ class Iso8601Test {
 
     @Test
     fun shouldRefuseWhatIsNotAnIso8601TimestampInUtc() {
-        for (value in listOf("2026-09-29T10:00:00+02:00", "2026-09-29T10:00:00", "2026-13-01T00:00:00Z", "2026-09-29T10:00:00ZZ", "yesterday")) {
+        for (value in listOf(
+            "2026-09-29T10:00:00+02:00",
+            "2026-09-29T10:00:00",
+            "2026-13-01T00:00:00Z",
+            "2026-09-29T10:00:00ZZ",
+            "yesterday",
+        )) {
             assertThrows(value, Exception::class.java) { Iso8601.parse(value) }
         }
     }

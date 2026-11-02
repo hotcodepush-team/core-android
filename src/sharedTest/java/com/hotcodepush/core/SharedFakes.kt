@@ -7,7 +7,11 @@ import org.json.JSONObject
 import java.io.File
 
 class FakeHttpClient : HttpClient {
-    data class Stub(val status: Int, val headers: Map<String, String>, val body: ByteArray)
+    data class Stub(
+        val status: Int,
+        val headers: Map<String, String>,
+        val body: ByteArray,
+    )
 
     val stubs = mutableMapOf<String, Stub>()
     val requests = mutableListOf<Pair<String, Map<String, String>>>()
@@ -21,17 +25,33 @@ class FakeHttpClient : HttpClient {
 
     var whilePosting: (suspend () -> Unit)? = null
 
-    fun failNextFetches(url: String, vararg failures: Throwable) {
+    fun failNextFetches(
+        url: String,
+        vararg failures: Throwable,
+    ) {
         fetchFailures.getOrPut(url) { ArrayDeque() } += failures
     }
 
-    fun stub(url: String, status: Int = 200, headers: Map<String, String> = emptyMap(), body: ByteArray) {
+    fun stub(
+        url: String,
+        status: Int = 200,
+        headers: Map<String, String> = emptyMap(),
+        body: ByteArray,
+    ) {
         stubs[url] = Stub(status, headers, body)
     }
 
-    fun stubJson(url: String, json: JSONObject, status: Int = 200, headers: Map<String, String> = emptyMap()) = stub(url, status, headers, json.toString().toByteArray())
+    fun stubJson(
+        url: String,
+        json: JSONObject,
+        status: Int = 200,
+        headers: Map<String, String> = emptyMap(),
+    ) = stub(url, status, headers, json.toString().toByteArray())
 
-    override suspend fun get(url: String, headers: Map<String, String>): HttpResponse {
+    override suspend fun get(
+        url: String,
+        headers: Map<String, String>,
+    ): HttpResponse {
         requests += url to headers
         requestThreads += Thread.currentThread()
         fetchFailures[url]?.removeFirstOrNull()?.let { throw it }
@@ -40,7 +60,11 @@ class FakeHttpClient : HttpClient {
         return HttpResponse(stub.status, stub.headers, stub.body)
     }
 
-    override suspend fun post(url: String, headers: Map<String, String>, body: ByteArray): HttpResponse {
+    override suspend fun post(
+        url: String,
+        headers: Map<String, String>,
+        body: ByteArray,
+    ): HttpResponse {
         posts += Triple(url, headers, body)
         whilePosting?.let { block ->
             whilePosting = null
@@ -52,14 +76,23 @@ class FakeHttpClient : HttpClient {
         return HttpResponse(stub.status, stub.headers, stub.body)
     }
 
-    override suspend fun download(url: String, file: File, maximumBytes: Long, progress: (Long, Long) -> Unit) {
+    override suspend fun download(
+        url: String,
+        file: File,
+        maximumBytes: Long,
+        progress: (Long, Long) -> Unit,
+    ) {
         requests += url to emptyMap()
         downloadGate?.await()
         fetchFailures[url]?.removeFirstOrNull()?.let { throw it }
         if (isOffline) throw java.io.IOException("offline")
         val stub = stubs[url] ?: throw HttpStatusException(404)
         if (stub.status != 200) throw HttpStatusException(stub.status)
-        if (stub.body.size > maximumBytes) throw DownloadFailure.DownloadFailed("${url.substringAfterLast('/')} is larger than its $maximumBytes bytes")
+        if (stub.body.size >
+            maximumBytes
+        ) {
+            throw DownloadFailure.DownloadFailed("${url.substringAfterLast('/')} is larger than its $maximumBytes bytes")
+        }
         file.parentFile?.mkdirs()
         file.writeBytes(stub.body)
         progress(stub.body.size.toLong(), stub.body.size.toLong())
@@ -71,7 +104,10 @@ class InMemoryEmbeddedBundle : EmbeddedBundle {
 
     override fun has(sha256: String): Boolean = files.containsKey(sha256)
 
-    override fun copyFile(sha256: String, destination: File) {
+    override fun copyFile(
+        sha256: String,
+        destination: File,
+    ) {
         destination.writeBytes(files.getValue(sha256))
     }
 }
@@ -84,30 +120,60 @@ object Fixture {
     const val BUILT_AT = 1_700_000_000_000L
     val embeddedIndexHtml = "<html>v1</html>".toByteArray()
 
-    data class Published(val release: IndexRelease, val manifest: BundleManifest, val envelope: ManifestEnvelope, val pack: ByteArray)
+    data class Published(
+        val release: IndexRelease,
+        val manifest: BundleManifest,
+        val envelope: ManifestEnvelope,
+        val pack: ByteArray,
+    )
 
-    fun embeddedManifest() = EmbeddedBundleManifest(appId = APP_ID, bundleVersion = "1.0.0", files = listOf(BundleManifest.File(path = "index.html", sha256 = Hashing.sha256Hex(embeddedIndexHtml), sizeBytes = embeddedIndexHtml.size.toLong())), platforms = listOf("android"))
+    fun embeddedManifest() = EmbeddedBundleManifest(
+        appId = APP_ID,
+        bundleVersion = "1.0.0",
+        files =
+        listOf(
+            BundleManifest.File(
+                path = "index.html",
+                sha256 = Hashing.sha256Hex(embeddedIndexHtml),
+                sizeBytes = embeddedIndexHtml.size.toLong(),
+            ),
+        ),
+        platforms = listOf("android"),
+    )
 
-    fun configuration(applyStrategy: ApplyStrategy = ApplyStrategy.NEXT_START, mandatoryApplyStrategy: MandatoryApplyStrategy = MandatoryApplyStrategy.IMMEDIATE, downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO, checkStrategy: CheckStrategy = CheckStrategy.MANUAL, readySignal: ReadySignal = ReadySignal.RENDER, publicKeys: List<DevicePublicKey> = emptyList(), fingerprint: String? = "fp1:abc", builtAt: Long = BUILT_AT, isEnabledInDebugBuilds: Boolean = true, channelId: String? = CHANNEL_ID, hasEmbeddedBundle: Boolean = true): Configuration {
-        val json = JSONObject()
-            .put("appId", APP_ID)
-            .put("channelId", channelId ?: JSONObject.NULL)
-            .put("checkStrategy", checkStrategy.wire)
-            .put("checkIntervalSeconds", 900)
-            .put("downloadStrategy", downloadStrategy.wire)
-            .put("applyStrategy", applyStrategy.wire)
-            .put("mandatoryApplyStrategy", mandatoryApplyStrategy.wire)
-            .put("nextResumeMinimumBackgroundSeconds", 300)
-            .put("readySignal", readySignal.wire)
-            .put("readyTimeoutSeconds", 10)
-            .put("isEnabledInDebugBuilds", isEnabledInDebugBuilds)
-            .put("publicKeys", JSONArray(publicKeys.map { JSONObject().put("der", it.der).put("keyId", it.keyId) }))
-            .put("builtAt", Iso8601.format(builtAt))
-            .put("fingerprint", fingerprint ?: JSONObject.NULL)
-            .put("embeddedBundleManifest", if (hasEmbeddedBundle) embeddedManifest().toJson() else JSONObject.NULL)
-            .put("embeddedBundleId", if (hasEmbeddedBundle) "embedded" else JSONObject.NULL)
-            .put("filesBaseUrl", FILES_BASE_URL)
-            .put("updatesBaseUrl", UPDATES_BASE_URL)
+    fun configuration(
+        applyStrategy: ApplyStrategy = ApplyStrategy.NEXT_START,
+        mandatoryApplyStrategy: MandatoryApplyStrategy = MandatoryApplyStrategy.IMMEDIATE,
+        downloadStrategy: DownloadStrategy = DownloadStrategy.AUTO,
+        checkStrategy: CheckStrategy = CheckStrategy.MANUAL,
+        readySignal: ReadySignal = ReadySignal.RENDER,
+        publicKeys: List<DevicePublicKey> = emptyList(),
+        fingerprint: String? = "fp1:abc",
+        builtAt: Long = BUILT_AT,
+        isEnabledInDebugBuilds: Boolean = true,
+        channelId: String? = CHANNEL_ID,
+        hasEmbeddedBundle: Boolean = true,
+    ): Configuration {
+        val json =
+            JSONObject()
+                .put("appId", APP_ID)
+                .put("channelId", channelId ?: JSONObject.NULL)
+                .put("checkStrategy", checkStrategy.wire)
+                .put("checkIntervalSeconds", 900)
+                .put("downloadStrategy", downloadStrategy.wire)
+                .put("applyStrategy", applyStrategy.wire)
+                .put("mandatoryApplyStrategy", mandatoryApplyStrategy.wire)
+                .put("nextResumeMinimumBackgroundSeconds", 300)
+                .put("readySignal", readySignal.wire)
+                .put("readyTimeoutSeconds", 10)
+                .put("isEnabledInDebugBuilds", isEnabledInDebugBuilds)
+                .put("publicKeys", JSONArray(publicKeys.map { JSONObject().put("der", it.der).put("keyId", it.keyId) }))
+                .put("builtAt", Iso8601.format(builtAt))
+                .put("fingerprint", fingerprint ?: JSONObject.NULL)
+                .put("embeddedBundleManifest", if (hasEmbeddedBundle) embeddedManifest().toJson() else JSONObject.NULL)
+                .put("embeddedBundleId", if (hasEmbeddedBundle) "embedded" else JSONObject.NULL)
+                .put("filesBaseUrl", FILES_BASE_URL)
+                .put("updatesBaseUrl", UPDATES_BASE_URL)
         return Configuration.decode(json.toString())
     }
 
@@ -115,43 +181,154 @@ object Fixture {
 
     fun eventsUrl() = "$UPDATES_BASE_URL/v1/apps/$APP_ID/events"
 
-    fun release(number: Int, bundleId: String, content: ByteArray, createdAt: Long = BUILT_AT + 60_000, rolloutPercent: Int = 100, conditions: List<Condition> = emptyList(), isMandatory: Boolean = false): Published {
+    fun release(
+        number: Int,
+        bundleId: String,
+        content: ByteArray,
+        createdAt: Long = BUILT_AT + 60_000,
+        rolloutPercent: Int = 100,
+        conditions: List<Condition> = emptyList(),
+        isMandatory: Boolean = false,
+    ): Published {
         val sha256 = Hashing.sha256Hex(content)
         val js = "js-$bundleId".toByteArray()
-        val pack = PackWriter.pack(listOf(PackedEntry.file(sha256, Gzip.compress(content)), PackedEntry.file(Hashing.sha256Hex(js), Gzip.compress(js))))
-        val manifest = BundleManifest(appId = APP_ID, bundleVersion = "1.$number.0", files = listOf(BundleManifest.File(path = "index.html", sha256 = sha256, sizeBytes = content.size.toLong()), BundleManifest.File(path = "assets/app.js", sha256 = Hashing.sha256Hex(js), sizeBytes = js.size.toLong())), platforms = listOf("android"))
+        val pack =
+            PackWriter.pack(
+                listOf(PackedEntry.file(sha256, Gzip.compress(content)), PackedEntry.file(Hashing.sha256Hex(js), Gzip.compress(js))),
+            )
+        val manifest =
+            BundleManifest(
+                appId = APP_ID,
+                bundleVersion = "1.$number.0",
+                files =
+                listOf(
+                    BundleManifest.File(path = "index.html", sha256 = sha256, sizeBytes = content.size.toLong()),
+                    BundleManifest.File(path = "assets/app.js", sha256 = Hashing.sha256Hex(js), sizeBytes = js.size.toLong()),
+                ),
+                platforms = listOf("android"),
+            )
         val manifestJson = manifest.toJson().toString()
-        val envelope = ManifestEnvelope(bundleId = bundleId, createdAt = createdAt, manifest = manifestJson, signature = null, pack = ManifestEnvelope.Pack("$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/pack", pack.size.toLong()), deltas = emptyList())
-        val release = IndexRelease(id = "r$number", number = number, createdAt = createdAt, isMandatory = isMandatory, notes = "notes $number", rolloutPercent = rolloutPercent, conditions = conditions, bundleId = bundleId, bundleVersion = manifest.bundleVersion, manifestUrl = "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json", manifestSha256 = Hashing.sha256Hex(manifestJson), sizeBytes = content.size.toLong())
+        val envelope =
+            ManifestEnvelope(
+                bundleId = bundleId,
+                createdAt = createdAt,
+                manifest = manifestJson,
+                signature = null,
+                pack = ManifestEnvelope.Pack("$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/pack", pack.size.toLong()),
+                deltas = emptyList(),
+            )
+        val release =
+            IndexRelease(
+                id = "r$number",
+                number = number,
+                createdAt = createdAt,
+                isMandatory = isMandatory,
+                notes = "notes $number",
+                rolloutPercent = rolloutPercent,
+                conditions = conditions,
+                bundleId = bundleId,
+                bundleVersion = manifest.bundleVersion,
+                manifestUrl = "$FILES_BASE_URL/apps/$APP_ID/bundles/$bundleId/manifest.json",
+                manifestSha256 = Hashing.sha256Hex(manifestJson),
+                sizeBytes = content.size.toLong(),
+            )
         return Published(release, manifest, envelope, pack)
     }
 
-    fun index(sequence: Long, releases: List<IndexRelease>, revoked: List<String> = emptyList(), pausedAt: Long? = null, cappedAt: Long? = null) =
-        ChannelIndex(schema = ChannelIndex.SCHEMA, sequence = sequence, appId = APP_ID, channelId = CHANNEL_ID, platform = "android", pausedAt = pausedAt, cappedAt = cappedAt, revokedReleaseIds = revoked, releases = releases)
+    fun index(
+        sequence: Long,
+        releases: List<IndexRelease>,
+        revoked: List<String> = emptyList(),
+        pausedAt: Long? = null,
+        cappedAt: Long? = null,
+    ) = ChannelIndex(
+        schema = ChannelIndex.SCHEMA,
+        sequence = sequence,
+        appId = APP_ID,
+        channelId = CHANNEL_ID,
+        platform = "android",
+        pausedAt = pausedAt,
+        cappedAt = cappedAt,
+        revokedReleaseIds = revoked,
+        releases = releases,
+    )
 }
 
-class DownloaderHarness(configuration: Configuration = Fixture.configuration()) {
-    data class Bundle(val manifest: BundleManifest, val pack: ByteArray)
+class DownloaderHarness(
+    configuration: Configuration = Fixture.configuration(),
+) {
+    data class Bundle(
+        val manifest: BundleManifest,
+        val pack: ByteArray,
+    )
 
-    val root: File = File.createTempFile("hotcodepush-tests", "").apply { delete(); mkdirs() }
+    val root: File =
+        File.createTempFile("hotcodepush-tests", "").apply {
+            delete()
+            mkdirs()
+        }
     val http = FakeHttpClient()
     val files = FileStore(File(root, "store"))
     val embedded = InMemoryEmbeddedBundle()
     val downloader = Downloader(configuration, "android", files, embedded, http, File(root, "tmp"))
 
-    fun publish(manifest: BundleManifest, pack: ByteArray? = null, packUrl: String = PACK_URL, packSizeBytes: Long? = null, bundleId: String = BUNDLE_ID, manifestUrl: String = MANIFEST_URL, deltas: Map<String, ByteArray> = emptyMap()): IndexRelease {
+    fun publish(
+        manifest: BundleManifest,
+        pack: ByteArray? = null,
+        packUrl: String = PACK_URL,
+        packSizeBytes: Long? = null,
+        bundleId: String = BUNDLE_ID,
+        manifestUrl: String = MANIFEST_URL,
+        deltas: Map<String, ByteArray> = emptyMap(),
+    ): IndexRelease {
         val json = manifest.toJson().toString()
-        val deltaEntries = deltas.map { (baseBundleId, delta) -> ManifestEnvelope.Delta(baseBundleId = baseBundleId, url = "$PACK_URL-from-$baseBundleId", sizeBytes = delta.size.toLong()) }
-        val envelope = ManifestEnvelope(bundleId = bundleId, createdAt = Fixture.BUILT_AT, manifest = json, signature = null, pack = ManifestEnvelope.Pack(packUrl, packSizeBytes ?: pack?.size?.toLong() ?: 0), deltas = deltaEntries)
+        val deltaEntries =
+            deltas.map { (baseBundleId, delta) ->
+                ManifestEnvelope.Delta(baseBundleId = baseBundleId, url = "$PACK_URL-from-$baseBundleId", sizeBytes = delta.size.toLong())
+            }
+        val envelope =
+            ManifestEnvelope(
+                bundleId = bundleId,
+                createdAt = Fixture.BUILT_AT,
+                manifest = json,
+                signature = null,
+                pack =
+                ManifestEnvelope.Pack(
+                    packUrl,
+                    packSizeBytes ?: pack?.size?.toLong() ?: 0,
+                ),
+                deltas = deltaEntries,
+            )
         http.stubJson(manifestUrl, envelope.toJson())
         if (pack != null) http.stub(packUrl, body = pack)
         for (entry in deltaEntries) http.stub(entry.url, body = deltas.getValue(entry.baseBundleId))
-        return IndexRelease(id = "r2", number = 2, createdAt = Fixture.BUILT_AT, isMandatory = false, notes = null, rolloutPercent = 100, conditions = emptyList(), bundleId = BUNDLE_ID, bundleVersion = manifest.bundleVersion, manifestUrl = manifestUrl, manifestSha256 = Hashing.sha256Hex(json), sizeBytes = 0)
+        return IndexRelease(
+            id = "r2",
+            number = 2,
+            createdAt = Fixture.BUILT_AT,
+            isMandatory = false,
+            notes = null,
+            rolloutPercent = 100,
+            conditions = emptyList(),
+            bundleId = BUNDLE_ID,
+            bundleVersion = manifest.bundleVersion,
+            manifestUrl = manifestUrl,
+            manifestSha256 = Hashing.sha256Hex(json),
+            sizeBytes = 0,
+        )
     }
 
-    fun download(release: IndexRelease, baseBundleId: String?): DownloadOutcome = runBlocking { downloader.downloadRelease(release, baseBundleId) { _, _ -> } }
+    fun download(
+        release: IndexRelease,
+        baseBundleId: String?,
+    ): DownloadOutcome = runBlocking {
+        downloader.downloadRelease(release, baseBundleId) { _, _ -> }
+    }
 
-    fun downloadFailure(release: IndexRelease, baseBundleId: String? = null): DownloadFailure? = runBlocking {
+    fun downloadFailure(
+        release: IndexRelease,
+        baseBundleId: String? = null,
+    ): DownloadFailure? = runBlocking {
         try {
             downloader.downloadRelease(release, baseBundleId) { _, _ -> }
             null
@@ -168,7 +345,10 @@ class DownloaderHarness(configuration: Configuration = Fixture.configuration()) 
         fun bundle(files: Map<String, ByteArray>): Bundle {
             val sorted = files.toSortedMap()
             val pack = PackWriter.pack(sorted.values.map { PackedEntry.file(Hashing.sha256Hex(it), Gzip.compress(it)) })
-            val entries = sorted.map { (path, content) -> BundleManifest.File(path = path, sha256 = Hashing.sha256Hex(content), sizeBytes = content.size.toLong()) }
+            val entries =
+                sorted.map { (path, content) ->
+                    BundleManifest.File(path = path, sha256 = Hashing.sha256Hex(content), sizeBytes = content.size.toLong())
+                }
             return Bundle(manifest(entries), pack)
         }
 

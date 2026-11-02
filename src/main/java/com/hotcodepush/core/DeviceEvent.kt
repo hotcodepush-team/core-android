@@ -27,17 +27,28 @@ data class DeviceEvent(
         .putIfNotNull("detail", detail)
 
     companion object {
-        fun checked(releaseId: String, status: SyncStatus, reason: SkippedReason? = null, conditionType: ConditionType? = null) =
-            DeviceEvent("checked", releaseId = releaseId, status = status.wire, reason = reason?.wire, conditionType = conditionType)
+        fun checked(
+            releaseId: String,
+            status: SyncStatus,
+            reason: SkippedReason? = null,
+            conditionType: ConditionType? = null,
+        ) = DeviceEvent("checked", releaseId = releaseId, status = status.wire, reason = reason?.wire, conditionType = conditionType)
 
-        fun downloaded(releaseId: String, downloadSizeBytes: Long, packKind: PackKind) =
-            DeviceEvent("downloaded", releaseId = releaseId, downloadSizeBytes = downloadSizeBytes, packKind = packKind.wire)
+        fun downloaded(
+            releaseId: String,
+            downloadSizeBytes: Long,
+            packKind: PackKind,
+        ) = DeviceEvent("downloaded", releaseId = releaseId, downloadSizeBytes = downloadSizeBytes, packKind = packKind.wire)
 
         fun applied(releaseId: String) = DeviceEvent("applied", releaseId = releaseId)
 
         fun confirmed(releaseId: String) = DeviceEvent("confirmed", releaseId = releaseId)
 
-        fun failed(releaseId: String, reason: String, detail: String? = null) = DeviceEvent("failed", releaseId = releaseId, reason = reason, detail = detail)
+        fun failed(
+            releaseId: String,
+            reason: String,
+            detail: String? = null,
+        ) = DeviceEvent("failed", releaseId = releaseId, reason = reason, detail = detail)
 
         fun fromJson(json: JSONObject) = DeviceEvent(
             type = json.getString("type"),
@@ -77,9 +88,10 @@ data class DeviceReport(
 
     // A report the endpoint refuses would cost the batch its events at every sync, so the device never sends one.
     internal val isReadable: Boolean
-        get() = listOfNotNull(binaryBuild, binaryVersion, channelId, osVersion, fingerprint).all(WireRule.PRINTABLE::accepts) &&
-            listOfNotNull(embeddedBundleId, releaseId).all(WireRule.IDENTIFIER::accepts) &&
-            attributes.all { (key, value) -> AttributeRules.isValidKey(key) && AttributeRules.isValidValue(value) }
+        get() =
+            listOfNotNull(binaryBuild, binaryVersion, channelId, osVersion, fingerprint).all(WireRule.PRINTABLE::accepts) &&
+                listOfNotNull(embeddedBundleId, releaseId).all(WireRule.IDENTIFIER::accepts) &&
+                attributes.all { (key, value) -> AttributeRules.isValidKey(key) && AttributeRules.isValidValue(value) }
 
     companion object {
         fun fromJson(json: JSONObject) = DeviceReport(
@@ -97,7 +109,13 @@ data class DeviceReport(
 }
 
 /** One batch to `POST /v1/apps/{appId}/events`: the outbox and, when it changed, the report. */
-data class DeviceEventsRequest(val deviceId: String, val events: List<DeviceEvent>, val platform: String, val report: DeviceReport?, val sdkVersion: String) {
+data class DeviceEventsRequest(
+    val deviceId: String,
+    val events: List<DeviceEvent>,
+    val platform: String,
+    val report: DeviceReport?,
+    val sdkVersion: String,
+) {
     fun toJson(): JSONObject = JSONObject()
         .put("deviceId", deviceId)
         .put("events", JSONArray(events.map { it.toJson() }))
@@ -106,8 +124,9 @@ data class DeviceEventsRequest(val deviceId: String, val events: List<DeviceEven
         .put("sdkVersion", sdkVersion)
 
     internal val isReadable: Boolean
-        get() = WireRule.UUID.accepts(deviceId) && WireRule.PRINTABLE.accepts(sdkVersion) && platform in ChannelIndex.PLATFORMS &&
-            events.size <= MAXIMUM_EVENT_COUNT && (report?.isReadable ?: true)
+        get() =
+            WireRule.UUID.accepts(deviceId) && WireRule.PRINTABLE.accepts(sdkVersion) && platform in ChannelIndex.PLATFORMS &&
+                events.size <= MAXIMUM_EVENT_COUNT && (report?.isReadable ?: true)
 
     companion object {
         /** The outbox cap and the largest batch a device sends; the events endpoint refuses a larger one. */
@@ -116,13 +135,18 @@ data class DeviceEventsRequest(val deviceId: String, val events: List<DeviceEven
 }
 
 /** The `202` answer: the server time the device keeps as `reportedAt`. */
-data class DeviceEventsResponse(val reportedAt: Long) {
+data class DeviceEventsResponse(
+    val reportedAt: Long,
+) {
     companion object {
         fun fromJson(json: JSONObject) = DeviceEventsResponse(Iso8601.parse(json.getString("reportedAt")))
     }
 }
 
-internal data class DeviceEventsAcknowledgement(val hasReport: Boolean, val reportedAt: Long) {
+internal data class DeviceEventsAcknowledgement(
+    val hasReport: Boolean,
+    val reportedAt: Long,
+) {
     // Only a batch that carried the report moves the stamp, and only into a later UTC month.
     // So the device compares with `cappedAt` the same stamp the consumer counted it by.
     fun resolveKeptReportedAt(heldReportedAt: Long?): Long? {
@@ -133,19 +157,45 @@ internal data class DeviceEventsAcknowledgement(val hasReport: Boolean, val repo
 }
 
 internal sealed class BatchAnswer {
-    data class Acknowledged(val reportedAt: Long) : BatchAnswer()
-    data class Refused(val status: Int) : BatchAnswer()
+    data class Acknowledged(
+        val reportedAt: Long,
+    ) : BatchAnswer()
+
+    data class Refused(
+        val status: Int,
+    ) : BatchAnswer()
 
     // A null status means the endpoint could not be reached.
-    data class Failed(val status: Int?) : BatchAnswer()
+    data class Failed(
+        val status: Int?,
+    ) : BatchAnswer()
 
     companion object {
         fun of(response: HttpResponse?): BatchAnswer = when (val status = response?.status) {
-            null -> Failed(status = null)
-            202 -> runCatching { DeviceEventsResponse.fromJson(parseJsonObject(response.body)) }.getOrNull()?.let { Acknowledged(it.reportedAt) } ?: Failed(status)
-            408, 429 -> Failed(status)
-            in 400..499 -> Refused(status)
-            else -> Failed(status)
+            null -> {
+                Failed(status = null)
+            }
+
+            202 -> {
+                runCatching {
+                    DeviceEventsResponse.fromJson(
+                        parseJsonObject(response.body),
+                    )
+                }.getOrNull()?.let { Acknowledged(it.reportedAt) }
+                    ?: Failed(status)
+            }
+
+            408, 429 -> {
+                Failed(status)
+            }
+
+            in 400..499 -> {
+                Refused(status)
+            }
+
+            else -> {
+                Failed(status)
+            }
         }
     }
 }

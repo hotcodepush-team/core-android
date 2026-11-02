@@ -23,9 +23,20 @@ data class DeviceFacts(
 ) {
     companion object {
         /** Reads the running binary's facts: version and build from the package manager, the OS version, and whether the app is debuggable. */
-        fun current(context: Context, sdkVersion: String): DeviceFacts {
+        fun current(
+            context: Context,
+            sdkVersion: String,
+        ): DeviceFacts {
             val info = context.packageManager.getPackageInfo(context.packageName, 0)
-            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+            val versionCode =
+                if (Build.VERSION.SDK_INT >=
+                    Build.VERSION_CODES.P
+                ) {
+                    info.longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    info.versionCode.toLong()
+                }
             return DeviceFacts(
                 platform = "android",
                 binaryVersion = info.versionName ?: "",
@@ -59,9 +70,13 @@ interface BundleLoader {
 /** The five events, named by what happened to the update; a cycle's start and end fire nothing. */
 interface CoreListener {
     fun updateAvailable(event: UpdateAvailableEvent)
+
     fun updateDownloaded(event: UpdateDownloadedEvent)
+
     fun updateFailed(event: UpdateFailedEvent)
+
     fun downloadProgress(event: DownloadProgressEvent)
+
     fun updateRolledBack(event: UpdateRolledBackEvent)
 }
 
@@ -70,14 +85,20 @@ fun interface ScheduledTask {
 }
 
 fun interface Scheduler {
-    fun schedule(afterSeconds: Double, block: () -> Unit): ScheduledTask
+    fun schedule(
+        afterSeconds: Double,
+        block: () -> Unit,
+    ): ScheduledTask
 }
 
 /** The core's timers on the main looper; `cancelAll()` drops every one still pending, for a host that goes away. */
 class HandlerScheduler : Scheduler {
     private val handler = Handler(Looper.getMainLooper())
 
-    override fun schedule(afterSeconds: Double, block: () -> Unit): ScheduledTask {
+    override fun schedule(
+        afterSeconds: Double,
+        block: () -> Unit,
+    ): ScheduledTask {
         val runnable = Runnable(block)
         handler.postDelayed(runnable, (afterSeconds * 1000).toLong())
         return ScheduledTask { handler.removeCallbacks(runnable) }
@@ -110,9 +131,10 @@ fun interface NetworkState {
 }
 
 /** The active network as the connectivity manager reports it. */
-class NetworkMonitor(private val context: Context) : NetworkState {
-    override fun isConnectionMetered(): Boolean =
-        (context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager)?.isActiveNetworkMetered ?: false
+class NetworkMonitor(
+    private val context: Context,
+) : NetworkState {
+    override fun isConnectionMetered(): Boolean = (context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager)?.isActiveNetworkMetered ?: false
 }
 
 // The first resume is the start, not a return from the background, unless the process started in the background.
@@ -130,11 +152,17 @@ internal class AppLifecycleObserver(
         if (hasPaused) onResume()
     }
 
-    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+    override fun onActivityCreated(
+        activity: Activity,
+        savedInstanceState: Bundle?,
+    ) = Unit
 
     override fun onActivityDestroyed(activity: Activity) = Unit
 
-    override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+    override fun onActivitySaveInstanceState(
+        activity: Activity,
+        outState: Bundle,
+    ) = Unit
 
     override fun onActivityStarted(activity: Activity) = Unit
 
@@ -142,20 +170,35 @@ internal class AppLifecycleObserver(
 }
 
 /** The two programming mistakes the SDK reports with a plain error: nothing an app handles. */
-class PlainException(message: String) : Exception(message)
+class PlainException(
+    message: String,
+) : Exception(message)
 
 object AttributeRules {
     private const val VALUE_MAXIMUM_CODE_POINTS = 256
     private val keyPattern = Regex("^[A-Za-z0-9_.-]{1,64}$")
 
-    fun validate(key: String, value: String) {
-        if (!isValidKey(key)) throw PlainException("An attribute key is an identifier of letters, digits, '_', '-' and '.', at most 64 characters: $key")
+    fun validate(
+        key: String,
+        value: String,
+    ) {
+        if (!isValidKey(
+                key,
+            )
+        ) {
+            throw PlainException("An attribute key is an identifier of letters, digits, '_', '-' and '.', at most 64 characters: $key")
+        }
         validate(value)
     }
 
     /** The value rule alone, shared with the app's rollback reason. */
     fun validate(value: String) {
-        if (!isValidValue(value)) throw PlainException("A value is at most $VALUE_MAXIMUM_CODE_POINTS Unicode code points without a control character")
+        if (!isValidValue(
+                value,
+            )
+        ) {
+            throw PlainException("A value is at most $VALUE_MAXIMUM_CODE_POINTS Unicode code points without a control character")
+        }
     }
 
     fun isValidKey(key: String): Boolean = keyPattern.matches(key)

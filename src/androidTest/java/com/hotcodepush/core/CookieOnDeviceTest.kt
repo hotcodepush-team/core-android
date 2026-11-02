@@ -22,7 +22,10 @@ class CookieOnDeviceTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().addHeader("Set-Cookie", "session=s1; Path=/").setBody("first"))
             server.enqueue(MockResponse().setBody("second"))
-            val client = OkHttpClientAdapter(OkHttpClient.Builder().cookieJar(JavaNetCookieJar(CookieManager(null, CookiePolicy.ACCEPT_ALL))).build())
+            val client =
+                OkHttpClientAdapter(
+                    OkHttpClient.Builder().cookieJar(JavaNetCookieJar(CookieManager(null, CookiePolicy.ACCEPT_ALL))).build(),
+                )
             // An address, not localhost: Android 6's CookieManager matches a cookie of a host without a dot to `.local` alone.
             val url = "http://127.0.0.1:${server.port}/index.json"
             assertEquals("first", String(client.get(url, emptyMap()).body))

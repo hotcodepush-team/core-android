@@ -4,36 +4,102 @@ package com.hotcodepush.core
  * One line of this session's log: when, the code from the catalog, and the sentence behind it. The log lives in memory
  * behind the debug screen, never on disk and never on the wire.
  */
-data class LogEntry(val at: Long, val code: String, val message: String) {
+data class LogEntry(
+    val at: Long,
+    val code: String,
+    val message: String,
+) {
     companion object {
         const val CAPACITY = 200
 
         /** A cycle's result: the status, the reason and the condition type as the code, the trigger and the release in the sentence. */
-        fun ofCycle(result: SyncResult, trigger: SyncTrigger, at: Long): LogEntry {
+        fun ofCycle(
+            result: SyncResult,
+            trigger: SyncTrigger,
+            at: Long,
+        ): LogEntry {
             val code = listOfNotNull(result.status.wire, result.reason, result.conditionType?.wire).joinToString(" ")
             return LogEntry(at = at, code = code, message = "${trigger.wire}: ${resolveCycleSentence(result)}")
         }
 
         // A case table: one line per event type.
+
         /** An outcome event as it enters the outbox; a check event is the cycle's line already. */
         @Suppress("CyclomaticComplexMethod")
-        fun ofDeviceEvent(event: DeviceEvent, at: Long): LogEntry? = when (event.type) {
-            "downloaded" -> LogEntry(at = at, code = "downloaded", message = "release ${event.releaseId ?: ""}: ${event.downloadSizeBytes ?: 0} bytes as ${event.packKind ?: ""} pack")
-            "applied" -> LogEntry(at = at, code = "applied", message = "release ${event.releaseId ?: ""} is the running release")
-            "confirmed" -> LogEntry(at = at, code = "confirmed", message = "release ${event.releaseId ?: ""} passed the readiness gate")
-            "failed" -> LogEntry(at = at, code = "failed ${event.reason ?: ""}", message = "release ${event.releaseId ?: ""}" + (event.detail?.let { ": $it" } ?: ""))
-            else -> null
+        fun ofDeviceEvent(
+            event: DeviceEvent,
+            at: Long,
+        ): LogEntry? = when (event.type) {
+            "downloaded" -> {
+                LogEntry(
+                    at = at,
+                    code = "downloaded",
+                    message = "release ${event.releaseId ?: ""}: ${event.downloadSizeBytes ?: 0} bytes as ${event.packKind ?: ""} pack",
+                )
+            }
+
+            "applied" -> {
+                LogEntry(at = at, code = "applied", message = "release ${event.releaseId ?: ""} is the running release")
+            }
+
+            "confirmed" -> {
+                LogEntry(at = at, code = "confirmed", message = "release ${event.releaseId ?: ""} passed the readiness gate")
+            }
+
+            "failed" -> {
+                LogEntry(
+                    at = at,
+                    code = "failed ${event.reason ?: ""}",
+                    message =
+                    "release ${event.releaseId ?: ""}" + (event.detail?.let { ": $it" } ?: ""),
+                )
+            }
+
+            else -> {
+                null
+            }
         }
 
-        fun ofRollback(rollback: UpdateRolledBackEvent, at: Long): LogEntry =
-            LogEntry(at = at, code = "rolled_back", message = "release ${rollback.fromRelease.id} rolled back to ${rollback.toRelease?.id ?: "the embedded bundle"}")
+        fun ofRollback(
+            rollback: UpdateRolledBackEvent,
+            at: Long,
+        ): LogEntry = LogEntry(
+            at = at,
+            code = "rolled_back",
+            message = "release ${rollback.fromRelease.id} rolled back to ${rollback.toRelease?.id ?: "the embedded bundle"}",
+        )
 
-        internal fun ofBatch(answer: BatchAnswer, eventCount: Int, at: Long): LogEntry = when (answer) {
-            is BatchAnswer.Acknowledged -> LogEntry(at = at, code = "reported", message = "$eventCount events acknowledged")
-            is BatchAnswer.Refused -> LogEntry(at = at, code = "report_refused", message = "$eventCount events dropped: HTTP ${answer.status}")
-            is BatchAnswer.Failed -> when (answer.status) {
-                null -> LogEntry(at = at, code = "report_failed", message = "$eventCount events kept for the next sync: the events endpoint could not be reached")
-                else -> LogEntry(at = at, code = "report_failed", message = "$eventCount events kept for the next sync: HTTP ${answer.status}")
+        internal fun ofBatch(
+            answer: BatchAnswer,
+            eventCount: Int,
+            at: Long,
+        ): LogEntry = when (answer) {
+            is BatchAnswer.Acknowledged -> {
+                LogEntry(at = at, code = "reported", message = "$eventCount events acknowledged")
+            }
+
+            is BatchAnswer.Refused -> {
+                LogEntry(at = at, code = "report_refused", message = "$eventCount events dropped: HTTP ${answer.status}")
+            }
+
+            is BatchAnswer.Failed -> {
+                when (answer.status) {
+                    null -> {
+                        LogEntry(
+                            at = at,
+                            code = "report_failed",
+                            message = "$eventCount events kept for the next sync: the events endpoint could not be reached",
+                        )
+                    }
+
+                    else -> {
+                        LogEntry(
+                            at = at,
+                            code = "report_failed",
+                            message = "$eventCount events kept for the next sync: HTTP ${answer.status}",
+                        )
+                    }
+                }
             }
         }
 

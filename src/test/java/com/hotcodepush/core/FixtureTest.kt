@@ -16,12 +16,44 @@ import java.util.Base64
 class FixtureTest {
     private val fixturesDirectory = File("node_modules/@hotcodepush/protocol/fixtures").canonicalFile
 
-    private data class Expected(val status: String, val releaseId: String?, val isMandatory: Boolean?, val reason: String?, val conditionType: String?) {
+    private data class Expected(
+        val status: String,
+        val releaseId: String?,
+        val isMandatory: Boolean?,
+        val reason: String?,
+        val conditionType: String?,
+    ) {
         companion object {
             fun of(evaluation: Evaluation) = when (evaluation) {
-                is Evaluation.UpToDate -> Expected(status = SyncStatus.UP_TO_DATE.wire, releaseId = evaluation.release?.id, isMandatory = null, reason = null, conditionType = null)
-                is Evaluation.Available -> Expected(status = SyncStatus.AVAILABLE.wire, releaseId = evaluation.release.id, isMandatory = evaluation.isMandatory, reason = null, conditionType = null)
-                is Evaluation.Skipped -> Expected(status = SyncStatus.SKIPPED.wire, releaseId = evaluation.release?.id, isMandatory = null, reason = evaluation.reason.wire, conditionType = evaluation.conditionType?.wire)
+                is Evaluation.UpToDate -> {
+                    Expected(
+                        status = SyncStatus.UP_TO_DATE.wire,
+                        releaseId = evaluation.release?.id,
+                        isMandatory = null,
+                        reason = null,
+                        conditionType = null,
+                    )
+                }
+
+                is Evaluation.Available -> {
+                    Expected(
+                        status = SyncStatus.AVAILABLE.wire,
+                        releaseId = evaluation.release.id,
+                        isMandatory = evaluation.isMandatory,
+                        reason = null,
+                        conditionType = null,
+                    )
+                }
+
+                is Evaluation.Skipped -> {
+                    Expected(
+                        status = SyncStatus.SKIPPED.wire,
+                        releaseId = evaluation.release?.id,
+                        isMandatory = null,
+                        reason = evaluation.reason.wire,
+                        conditionType = evaluation.conditionType?.wire,
+                    )
+                }
             }
 
             fun fromJson(json: JSONObject) = Expected(
@@ -34,20 +66,41 @@ class FixtureTest {
         }
     }
 
-    private data class ExpectedVerdict(val releaseId: String, val isEligible: Boolean, val reason: String?, val conditionType: String?) {
+    private data class ExpectedVerdict(
+        val releaseId: String,
+        val isEligible: Boolean,
+        val reason: String?,
+        val conditionType: String?,
+    ) {
         companion object {
-            fun of(verdict: ReleaseVerdict) = ExpectedVerdict(releaseId = verdict.release.id, isEligible = verdict.isEligible, reason = verdict.reason?.wire, conditionType = verdict.conditionType?.wire)
+            fun of(verdict: ReleaseVerdict) = ExpectedVerdict(
+                releaseId = verdict.release.id,
+                isEligible = verdict.isEligible,
+                reason = verdict.reason?.wire,
+                conditionType = verdict.conditionType?.wire,
+            )
 
-            fun fromJson(json: JSONObject) = ExpectedVerdict(releaseId = json.getString("releaseId"), isEligible = json.getBoolean("isEligible"), reason = json.optNullableString("reason"), conditionType = json.optNullableString("conditionType"))
+            fun fromJson(json: JSONObject) = ExpectedVerdict(
+                releaseId = json.getString("releaseId"),
+                isEligible = json.getBoolean("isEligible"),
+                reason = json.optNullableString("reason"),
+                conditionType = json.optNullableString("conditionType"),
+            )
         }
     }
 
     private fun deviceInfo(json: JSONObject) = DeviceInfo(
-        attributes = json.getJSONObject("attributes").let { attributes -> attributes.keys().asSequence().associateWith { attributes.getString(it) } },
+        attributes =
+        json.getJSONObject("attributes").let { attributes ->
+            attributes.keys().asSequence().associateWith { attributes.getString(it) }
+        },
         binaryBuild = json.getString("binaryBuild"),
         binaryVersion = json.getString("binaryVersion"),
         builtAt = Iso8601.parse(json.getString("builtAt")),
-        currentRelease = json.optJSONObject("currentRelease")?.let { Release(id = it.getString("id"), number = it.getInt("number"), bundleId = "", bundleVersion = "", isMandatory = false) },
+        currentRelease =
+        json.optJSONObject("currentRelease")?.let {
+            Release(id = it.getString("id"), number = it.getInt("number"), bundleId = "", bundleVersion = "", isMandatory = false)
+        },
         deviceId = json.getString("deviceId"),
         failedBundleIds = json.getJSONArray("failedBundleIds").toStringList(),
         fingerprint = json.optNullableString("fingerprint"),
@@ -55,11 +108,16 @@ class FixtureTest {
         reportedAt = json.optNullableString("reportedAt")?.let(Iso8601::parse),
     )
 
-    private fun acknowledgement(json: JSONObject) =
-        DeviceEventsAcknowledgement(hasReport = json.getBoolean("hasReport"), reportedAt = DeviceEventsResponse.fromJson(JSONObject().put("reportedAt", json.getString("reportedAt"))).reportedAt)
+    private fun acknowledgement(json: JSONObject) = DeviceEventsAcknowledgement(
+        hasReport = json.getBoolean("hasReport"),
+        reportedAt = DeviceEventsResponse.fromJson(JSONObject().put("reportedAt", json.getString("reportedAt"))).reportedAt,
+    )
 
     // A production build leaves a `null` base out of its resource file.
-    private fun configuration(case: JSONObject, appId: String? = null): Configuration {
+    private fun configuration(
+        case: JSONObject,
+        appId: String? = null,
+    ): Configuration {
         val json = JSONObject(cases(path = "resource-files.json", key = "cases").first().getJSONObject("resourceFile").toString())
         appId?.let { json.put("appId", it) }
         for (key in listOf("filesBaseUrl", "updatesBaseUrl")) if (case.isNull(key)) json.remove(key) else json.put(key, case.getString(key))
@@ -68,13 +126,20 @@ class FixtureTest {
 
     private fun load(path: String): JSONObject = JSONObject(File(fixturesDirectory, path).readText())
 
-    private fun cases(path: String, key: String): List<JSONObject> {
+    private fun cases(
+        path: String,
+        key: String,
+    ): List<JSONObject> {
         val cases = load(path).getJSONArray(key)
         assertTrue(key, cases.length() > 0)
         return List(cases.length()) { cases.getJSONObject(it) }
     }
 
-    private fun assertAccepted(path: String, key: String, decode: (JSONObject) -> Any) {
+    private fun assertAccepted(
+        path: String,
+        key: String,
+        decode: (JSONObject) -> Any,
+    ) {
         for (case in cases(path = path, key = key)) {
             try {
                 decode(case)
@@ -84,7 +149,11 @@ class FixtureTest {
         }
     }
 
-    private fun assertRefused(path: String, key: String, decode: (JSONObject) -> Any) {
+    private fun assertRefused(
+        path: String,
+        key: String,
+        decode: (JSONObject) -> Any,
+    ) {
         for (case in cases(path = path, key = key)) {
             assertThrows("$key: ${case.getString("name")}", JSONException::class.java) { decode(case) }
         }
@@ -92,7 +161,8 @@ class FixtureTest {
 
     @Test
     fun shouldMatchEveryEvaluationFixture() {
-        val files = File(fixturesDirectory, "evaluation").listFiles { file -> file.name.endsWith(".json") }?.sortedBy { it.name } ?: emptyList()
+        val files =
+            File(fixturesDirectory, "evaluation").listFiles { file -> file.name.endsWith(".json") }?.sortedBy { it.name } ?: emptyList()
         assertTrue("no evaluation fixtures at $fixturesDirectory", files.isNotEmpty())
         var count = 0
         var verdictCount = 0
@@ -107,13 +177,22 @@ class FixtureTest {
                 assertEquals(name, Expected.fromJson(case.getJSONObject("expected")), Expected.of(evaluation.outcome))
                 count++
                 if (case.has("verdicts")) {
-                    val verdicts = case.getJSONArray("verdicts").let { array -> List(array.length()) { ExpectedVerdict.fromJson(array.getJSONObject(it)) } }
+                    val verdicts =
+                        case.getJSONArray("verdicts").let { array ->
+                            List(array.length()) { ExpectedVerdict.fromJson(array.getJSONObject(it)) }
+                        }
                     assertEquals(name, verdicts, evaluation.verdicts.map(ExpectedVerdict::of))
                     verdictCount++
                 }
                 if (case.has("acknowledgements")) {
                     val acknowledgements = case.getJSONArray("acknowledgements").map(::acknowledgement)
-                    assertEquals(name, device.reportedAt, acknowledgements.fold(null as Long?) { held, acknowledgement -> acknowledgement.resolveKeptReportedAt(heldReportedAt = held) })
+                    assertEquals(
+                        name,
+                        device.reportedAt,
+                        acknowledgements.fold(
+                            null as Long?,
+                        ) { held, acknowledgement -> acknowledgement.resolveKeptReportedAt(heldReportedAt = held) },
+                    )
                     acknowledgedCount++
                 }
             }
@@ -126,7 +205,10 @@ class FixtureTest {
     @Test
     fun shouldAcceptEveryAcceptedWireRulesFixture() {
         assertAccepted(path = "wire-rules.json", key = "acceptedIndexes") { ChannelIndex.fromJson(it.getJSONObject("index")) }
-        assertAccepted(path = "wire-rules.json", key = "acceptedChannelsIndexes") { ChannelsIndex.fromJson(it.getJSONObject("channelsIndex")) }
+        assertAccepted(
+            path = "wire-rules.json",
+            key = "acceptedChannelsIndexes",
+        ) { ChannelsIndex.fromJson(it.getJSONObject("channelsIndex")) }
         assertAccepted(path = "wire-rules.json", key = "acceptedManifests") { BundleManifest.fromJson(it.getJSONObject("manifest")) }
         assertAccepted(path = "wire-rules.json", key = "acceptedEnvelopes") { ManifestEnvelope.fromJson(it.getJSONObject("envelope")) }
     }
@@ -134,7 +216,10 @@ class FixtureTest {
     @Test
     fun shouldRefuseEveryRefusedWireRulesFixture() {
         assertRefused(path = "wire-rules.json", key = "refusedIndexes") { ChannelIndex.fromJson(it.getJSONObject("index")) }
-        assertRefused(path = "wire-rules.json", key = "refusedChannelsIndexes") { ChannelsIndex.fromJson(it.getJSONObject("channelsIndex")) }
+        assertRefused(
+            path = "wire-rules.json",
+            key = "refusedChannelsIndexes",
+        ) { ChannelsIndex.fromJson(it.getJSONObject("channelsIndex")) }
         assertRefused(path = "wire-rules.json", key = "refusedManifests") { BundleManifest.fromJson(it.getJSONObject("manifest")) }
         assertRefused(path = "wire-rules.json", key = "refusedEnvelopes") { ManifestEnvelope.fromJson(it.getJSONObject("envelope")) }
     }
@@ -144,14 +229,22 @@ class FixtureTest {
         for (case in cases(path = "version-ranges.json", key = "cases")) {
             val version = VersionRange.parseVersion(case.getString("version"))!!
             val expected = if (case.isNull("satisfied")) null else case.getBoolean("satisfied")
-            assertEquals("${case.getString("version")} in ${case.getString("range")}", expected, VersionRange.isVersionInRange(version, case.getString("range")))
+            assertEquals(
+                "${case.getString("version")} in ${case.getString("range")}",
+                expected,
+                VersionRange.isVersionInRange(version, case.getString("range")),
+            )
         }
     }
 
     @Test
     fun shouldMatchEveryRolloutBucketFixture() {
         for (case in cases(path = "rollout-buckets.json", key = "cases")) {
-            assertEquals(case.toString(), case.getInt("bucket"), Hashing.rolloutBucket(deviceId = case.getString("deviceId"), releaseId = case.getString("releaseId")))
+            assertEquals(
+                case.toString(),
+                case.getInt("bucket"),
+                Hashing.rolloutBucket(deviceId = case.getString("deviceId"), releaseId = case.getString("releaseId")),
+            )
         }
     }
 
@@ -159,7 +252,11 @@ class FixtureTest {
     fun shouldReadEveryResourceFileFixture() {
         for (case in cases(path = "resource-files.json", key = "cases")) {
             val configuration = Configuration.fromJson(case.getJSONObject("resourceFile"))
-            assertEquals(case.getString("name"), case.getNullableObject("embeddedBundleManifest")?.let(EmbeddedBundleManifest::fromJson), configuration.embeddedBundleManifest)
+            assertEquals(
+                case.getString("name"),
+                case.getNullableObject("embeddedBundleManifest")?.let(EmbeddedBundleManifest::fromJson),
+                configuration.embeddedBundleManifest,
+            )
         }
     }
 
@@ -174,7 +271,12 @@ class FixtureTest {
             assertEquals(name, file.optString("downloadStrategy", "auto"), configuration.downloadStrategy.wire)
             assertEquals(name, file.optString("applyStrategy", "next_start"), configuration.applyStrategy.wire)
             assertEquals(name, file.optString("mandatoryApplyStrategy", "immediate"), configuration.mandatoryApplyStrategy.wire)
-            assertEquals(name, file.optDouble("nextResumeMinimumBackgroundSeconds", 300.0), configuration.nextResumeMinimumBackgroundSeconds, 0.0)
+            assertEquals(
+                name,
+                file.optDouble("nextResumeMinimumBackgroundSeconds", 300.0),
+                configuration.nextResumeMinimumBackgroundSeconds,
+                0.0,
+            )
             assertEquals(name, file.optString("readySignal", "render"), configuration.readySignal.wire)
             assertEquals(name, file.optDouble("readyTimeoutSeconds", 10.0), configuration.readyTimeoutSeconds, 0.0)
             assertEquals(name, file.optBoolean("isEnabledInDebugBuilds", true), configuration.isEnabledInDebugBuilds)
@@ -183,14 +285,21 @@ class FixtureTest {
 
     @Test
     fun shouldRefuseEveryRefusedResourceFileFixture() {
-        assertRefused(path = "resource-files.json", key = "refusedResourceFiles") { Configuration.fromJson(it.getJSONObject("resourceFile")) }
+        assertRefused(
+            path = "resource-files.json",
+            key = "refusedResourceFiles",
+        ) { Configuration.fromJson(it.getJSONObject("resourceFile")) }
     }
 
     @Test
     fun shouldMatchEveryManifestIdentityFixture() {
         for (case in cases(path = "manifest-identity.json", key = "cases")) {
             val manifest = BundleManifest.fromJson(case.getJSONObject("manifest"))
-            assertEquals(case.getString("name"), case.getBoolean("isForDevice"), manifest.isForDevice(appId = case.getString("appId"), platform = case.getString("platform")))
+            assertEquals(
+                case.getString("name"),
+                case.getBoolean("isForDevice"),
+                manifest.isForDevice(appId = case.getString("appId"), platform = case.getString("platform")),
+            )
         }
     }
 
@@ -204,7 +313,11 @@ class FixtureTest {
     @Test
     fun shouldMatchEveryConfiguredHostsFixture() {
         for (case in cases(path = "configured-hosts.json", key = "cases")) {
-            assertEquals(case.getString("name"), case.getBoolean("isOnConfiguredHost"), configuration(case).isUrlOnConfiguredHost(case.getString("url")))
+            assertEquals(
+                case.getString("name"),
+                case.getBoolean("isOnConfiguredHost"),
+                configuration(case).isUrlOnConfiguredHost(case.getString("url")),
+            )
         }
     }
 
@@ -215,10 +328,18 @@ class FixtureTest {
             val skipped = case.getJSONArray("skippedEventIndexes").let { array -> List(array.length()) { array.getInt(it) } }
             val events = batch.getJSONArray("events").map { it }.filterIndexed { index, _ -> index !in skipped }
             val report = batch.getNullableObject("report")
-            val written = DeviceEventsRequest(batch.getString("deviceId"), events.map(DeviceEvent::fromJson), batch.getString("platform"), report?.let(DeviceReport::fromJson), batch.getString("sdkVersion")).toJson()
-            val expected = retainKeys(batch, BATCH_KEYS)
-                .put("events", JSONArray(events.map { retainKeys(it, EVENT_KEYS) }))
-                .put("report", report?.let { retainKeys(it, REPORT_KEYS) } ?: JSONObject.NULL)
+            val written =
+                DeviceEventsRequest(
+                    batch.getString("deviceId"),
+                    events.map(DeviceEvent::fromJson),
+                    batch.getString("platform"),
+                    report?.let(DeviceReport::fromJson),
+                    batch.getString("sdkVersion"),
+                ).toJson()
+            val expected =
+                retainKeys(batch, BATCH_KEYS)
+                    .put("events", JSONArray(events.map { retainKeys(it, EVENT_KEYS) }))
+                    .put("report", report?.let { retainKeys(it, REPORT_KEYS) } ?: JSONObject.NULL)
             assertEquals(case.getString("name"), resolveComparable(expected), resolveComparable(written))
         }
     }
@@ -227,9 +348,16 @@ class FixtureTest {
     fun shouldEncodeNoRefusedBatchOfTheDeviceEventsFixture() {
         for (case in cases(path = "device-events.json", key = "refusedBatches")) {
             val batch = case.getJSONObject("batch")
-            val request = runCatching {
-                DeviceEventsRequest(batch.getString("deviceId"), batch.getJSONArray("events").map(DeviceEvent::fromJson), batch.getString("platform"), batch.getNullableObject("report")?.let(DeviceReport::fromJson), batch.getString("sdkVersion"))
-            }.getOrNull() ?: continue
+            val request =
+                runCatching {
+                    DeviceEventsRequest(
+                        batch.getString("deviceId"),
+                        batch.getJSONArray("events").map(DeviceEvent::fromJson),
+                        batch.getString("platform"),
+                        batch.getNullableObject("report")?.let(DeviceReport::fromJson),
+                        batch.getString("sdkVersion"),
+                    )
+                }.getOrNull() ?: continue
             if (request.isReadable) assertFalse(case.getString("name"), resolveComparable(request.toJson()) == resolveComparable(batch))
         }
     }
@@ -239,22 +367,34 @@ class FixtureTest {
         for (case in cases(path = "device-events.json", key = "acknowledgements")) {
             val reportedAt = case.optNullableString("reportedAt")?.let(Iso8601::parse)
             val keptReportedAt = case.optNullableString("keptReportedAt")?.let(Iso8601::parse)
-            assertEquals(case.getString("name"), keptReportedAt, acknowledgement(case.getJSONObject("acknowledgement")).resolveKeptReportedAt(heldReportedAt = reportedAt))
+            assertEquals(
+                case.getString("name"),
+                keptReportedAt,
+                acknowledgement(case.getJSONObject("acknowledgement")).resolveKeptReportedAt(heldReportedAt = reportedAt),
+            )
         }
     }
 
-    private data class PackDownloadOutcome(val packKind: String?, val requests: List<PackSource>)
+    private data class PackDownloadOutcome(
+        val packKind: String?,
+        val requests: List<PackSource>,
+    )
 
-    private fun resolvePackDownloadOutcome(downloader: Downloader, case: JSONObject): PackDownloadOutcome {
+    private fun resolvePackDownloadOutcome(
+        downloader: Downloader,
+        case: JSONObject,
+    ): PackDownloadOutcome {
         val envelope = ManifestEnvelope.fromJson(case.getJSONObject("envelope"))
         val requests = mutableListOf<PackSource>()
-        var source = downloader.resolvePackSource(envelope, case.optNullableString("baseBundleId"), case.getInt("missingFileCount"))
-            ?: return PackDownloadOutcome(PackKind.FILES.wire, requests)
+        var source =
+            downloader.resolvePackSource(envelope, case.optNullableString("baseBundleId"), case.getInt("missingFileCount"))
+                ?: return PackDownloadOutcome(PackKind.FILES.wire, requests)
         val statuses = case.getJSONArray("statuses").let { array -> List(array.length()) { array.getInt(it) } }
         for (status in statuses) {
             requests += source
             if (status == 200 || status == 206) return PackDownloadOutcome(source.kind.wire, requests)
-            source = downloader.resolveFallbackPackSource(envelope, source) ?: return PackDownloadOutcome(packKind = null, requests = requests)
+            source =
+                downloader.resolveFallbackPackSource(envelope, source) ?: return PackDownloadOutcome(packKind = null, requests = requests)
         }
         throw AssertionError("The case answers fewer requests than the download makes")
     }
@@ -272,7 +412,11 @@ class FixtureTest {
             val name = case.getString("name")
             val configuration = configuration(case, case.getString("appId"))
             val outcome = resolvePackDownloadOutcome(DownloaderHarness(configuration).downloader, case)
-            assertEquals(name, PackDownloadOutcome(case.optNullableString("packKind"), case.getJSONArray("requests").map(::packSource)), outcome)
+            assertEquals(
+                name,
+                PackDownloadOutcome(case.optNullableString("packKind"), case.getJSONArray("requests").map(::packSource)),
+                outcome,
+            )
             for (request in outcome.requests) assertTrue(name, configuration.isUrlOnConfiguredHost(request.url))
         }
     }
@@ -307,7 +451,21 @@ class FixtureTest {
         val bounds = load("bounds.json")
         val hashedIds = (0..bounds.getInt("deviceConditionHashedIdCountLimit")).map { Hashing.sha256Hex("device-$it") }
         val conditions = (0..bounds.getInt("releaseConditionCountLimit")).map { Condition.Device(hashedIds) }
-        val release = IndexRelease(id = "r1", number = 1, createdAt = Fixture.BUILT_AT, isMandatory = false, notes = null, rolloutPercent = 100, conditions = conditions, bundleId = "b1", bundleVersion = "1.0.0", manifestUrl = "${Fixture.FILES_BASE_URL}/manifest.json", manifestSha256 = Hashing.sha256Hex("manifest"), sizeBytes = 1)
+        val release =
+            IndexRelease(
+                id = "r1",
+                number = 1,
+                createdAt = Fixture.BUILT_AT,
+                isMandatory = false,
+                notes = null,
+                rolloutPercent = 100,
+                conditions = conditions,
+                bundleId = "b1",
+                bundleVersion = "1.0.0",
+                manifestUrl = "${Fixture.FILES_BASE_URL}/manifest.json",
+                manifestSha256 = Hashing.sha256Hex("manifest"),
+                sizeBytes = 1,
+            )
         val index = Fixture.index(1, listOf(release))
         assertEquals(index, ChannelIndex.fromJson(index.toJson()))
     }
@@ -363,7 +521,19 @@ class FixtureTest {
         }
     }
 
-    private fun retainKeys(json: JSONObject, keys: Set<String>): JSONObject = JSONObject(json.toString()).apply { json.keys().asSequence().filter { it !in keys }.toList().forEach(::remove) }
+    private fun retainKeys(
+        json: JSONObject,
+        keys: Set<String>,
+    ): JSONObject = JSONObject(json.toString()).apply {
+        json
+            .keys()
+            .asSequence()
+            .filter {
+                it !in
+                    keys
+            }.toList()
+            .forEach(::remove)
+    }
 
     // org.json holds a whole number as an Int or a Long, so both compare as a Long.
     private fun resolveComparable(value: Any?): Any? = when (value) {
@@ -376,6 +546,17 @@ class FixtureTest {
     private companion object {
         val BATCH_KEYS = setOf("deviceId", "events", "platform", "report", "sdkVersion")
         val EVENT_KEYS = setOf("type", "releaseId", "status", "reason", "conditionType", "downloadSizeBytes", "packKind", "detail")
-        val REPORT_KEYS = setOf("attributes", "binaryBuild", "binaryVersion", "channelId", "channelSource", "embeddedBundleId", "fingerprint", "osVersion", "releaseId")
+        val REPORT_KEYS =
+            setOf(
+                "attributes",
+                "binaryBuild",
+                "binaryVersion",
+                "channelId",
+                "channelSource",
+                "embeddedBundleId",
+                "fingerprint",
+                "osVersion",
+                "releaseId",
+            )
     }
 }

@@ -128,8 +128,7 @@ class Downloader(
     private fun resolveFullPackSource(envelope: ManifestEnvelope) = PackSource(url = envelope.pack.url, sizeBytes = envelope.pack.sizeBytes, packBytesLimit = envelope.pack.sizeBytes, kind = PackKind.FULL)
 
     // Its length is known only as it arrives, and it never exceeds the full pack, whose entries it shares.
-    private fun resolveStreamedPackSource(envelope: ManifestEnvelope, baseBundleId: String) =
-        PackSource(url = "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/bundles/${envelope.bundleId}/deltas/$baseBundleId", sizeBytes = null, packBytesLimit = envelope.pack.sizeBytes, kind = PackKind.STREAMED)
+    private fun resolveStreamedPackSource(envelope: ManifestEnvelope, baseBundleId: String) = PackSource(url = "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/bundles/${envelope.bundleId}/deltas/$baseBundleId", sizeBytes = null, packBytesLimit = envelope.pack.sizeBytes, kind = PackKind.STREAMED)
 
     internal fun verifyFreeSpace(requiredBytes: Long) {
         val availableBytes = files.availableBytes()
@@ -184,6 +183,7 @@ class Downloader(
                             val sizeBytes = wanted[entry.sha256] ?: return@forEachEntry
                             Gzip.decompress(body, sizeBytes).use { content -> files.writeFile(content, entry.sha256) }
                         }
+
                         is PackEntry.Patch -> {
                             val sizeBytes = wanted[entry.toSha256] ?: return@forEachEntry
                             applyPatch(entry, body, sizeBytes)

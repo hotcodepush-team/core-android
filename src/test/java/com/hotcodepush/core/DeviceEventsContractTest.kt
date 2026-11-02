@@ -9,18 +9,19 @@ import java.util.concurrent.TimeUnit
 
 // The endpoint answers 400 for an absent required key, so a nullable key travels as `null` and only an optional one is left out.
 class DeviceEventsContractTest {
-    private val events = listOf(
-        DeviceEvent.checked("r2", SyncStatus.AVAILABLE),
-        DeviceEvent.checked("r3", SyncStatus.SKIPPED, SkippedReason.DEVICE_INCOMPATIBLE, ConditionType.BINARY),
-        DeviceEvent.checked("r4", SyncStatus.SKIPPED, SkippedReason.CONDITION_UNSUPPORTED),
-        DeviceEvent.downloaded("r2", 2048, PackKind.STREAMED),
-        DeviceEvent.applied("r2"),
-        DeviceEvent.confirmed("r2"),
-        DeviceEvent.failed(releaseId = "r2", reason = FailedReason.SIGNATURE_INVALID.wire),
-        DeviceEvent.failed(releaseId = "r2", reason = FailedReason.MANIFEST_INVALID.wire),
-        DeviceEvent.failed(releaseId = "r2", reason = FailedReason.CONTENT_MISMATCHED.wire),
-        DeviceEvent.failed(releaseId = "r2", reason = RollbackReason.APP_REQUESTED.wire, detail = "checkout broke"),
-    )
+    private val events =
+        listOf(
+            DeviceEvent.checked("r2", SyncStatus.AVAILABLE),
+            DeviceEvent.checked("r3", SyncStatus.SKIPPED, SkippedReason.DEVICE_INCOMPATIBLE, ConditionType.BINARY),
+            DeviceEvent.checked("r4", SyncStatus.SKIPPED, SkippedReason.CONDITION_UNSUPPORTED),
+            DeviceEvent.downloaded("r2", 2048, PackKind.STREAMED),
+            DeviceEvent.applied("r2"),
+            DeviceEvent.confirmed("r2"),
+            DeviceEvent.failed(releaseId = "r2", reason = FailedReason.SIGNATURE_INVALID.wire),
+            DeviceEvent.failed(releaseId = "r2", reason = FailedReason.MANIFEST_INVALID.wire),
+            DeviceEvent.failed(releaseId = "r2", reason = FailedReason.CONTENT_MISMATCHED.wire),
+            DeviceEvent.failed(releaseId = "r2", reason = RollbackReason.APP_REQUESTED.wire, detail = "checkout broke"),
+        )
 
     @Test
     fun shouldRoundTripEveryEventKindThroughTheOutbox() {
@@ -41,7 +42,14 @@ class DeviceEventsContractTest {
         harness.core.handleReadyTimeout()
         harness.acknowledgeEvents()
         harness.core.sync(SyncTrigger.MANUAL)
-        val batch = JSONObject(String(harness.http.posts.last().third))
+        val batch =
+            JSONObject(
+                String(
+                    harness.http.posts
+                        .last()
+                        .third,
+                ),
+            )
         val sent = batch.getJSONArray("events").map { it }
         assertEquals(listOf("checked", "downloaded", "applied", "failed"), sent.map { it.getString("type") })
         assertEquals(RollbackReason.READINESS_TIMED_OUT.wire, sent.last().getString("reason"))
@@ -50,13 +58,14 @@ class DeviceEventsContractTest {
     }
 
     private fun resolveSchemaIssues(batch: JSONObject): String {
-        val script = """
+        val script =
+            """
             import { DeviceEventsRequestSchema } from '@hotcodepush/protocol';
             let input = '';
             for await (const chunk of process.stdin) input += chunk;
             const result = DeviceEventsRequestSchema.safeParse(JSON.parse(input));
             process.stdout.write(result.success ? '' : JSON.stringify(result.error.issues));
-        """.trimIndent()
+            """.trimIndent()
         val process = ProcessBuilder("node", "--input-type=module", "-e", script).redirectErrorStream(true).start()
         process.outputStream.use { it.write(batch.toString().toByteArray()) }
         val output = process.inputStream.bufferedReader().readText()

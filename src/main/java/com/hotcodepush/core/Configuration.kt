@@ -7,28 +7,39 @@ import java.io.FileNotFoundException
 
 /** When a downloaded update is applied. */
 enum class ApplyStrategy(override val wire: String) : WireEnum {
-    IMMEDIATE("immediate"), MANUAL("manual"), NEXT_RESUME("next_resume"), NEXT_START("next_start");
+    IMMEDIATE("immediate"),
+    MANUAL("manual"),
+    NEXT_RESUME("next_resume"),
+    NEXT_START("next_start"),
+    ;
 
     companion object : WireEnumCompanion<ApplyStrategy>({ entries })
 }
 
 /** Whether the SDK checks on its own, at start, on resume and at the interval; `manual` leaves every cycle to the app's `sync()`. */
 enum class CheckStrategy(override val wire: String) : WireEnum {
-    AUTO("auto"), MANUAL("manual");
+    AUTO("auto"),
+    MANUAL("manual"),
+    ;
 
     companion object : WireEnumCompanion<CheckStrategy>({ entries })
 }
 
 /** When an update the check found is downloaded; `manual` stops the cycle after the check. */
 enum class DownloadStrategy(override val wire: String) : WireEnum {
-    AUTO("auto"), MANUAL("manual"), UNMETERED("unmetered");
+    AUTO("auto"),
+    MANUAL("manual"),
+    UNMETERED("unmetered"),
+    ;
 
     companion object : WireEnumCompanion<DownloadStrategy>({ entries })
 }
 
 /** When a mandatory update is applied; `next_start` is excluded, since it would make the flag mean nothing. */
 enum class MandatoryApplyStrategy(override val wire: String) : WireEnum {
-    IMMEDIATE("immediate"), MANUAL("manual");
+    IMMEDIATE("immediate"),
+    MANUAL("manual"),
+    ;
 
     companion object : WireEnumCompanion<MandatoryApplyStrategy>({ entries })
 }
@@ -40,7 +51,9 @@ internal fun MandatoryApplyStrategy.toApplyStrategy(): ApplyStrategy = when (thi
 
 /** What ends the readiness gate: the first render, or an explicit `notifyReady()`. */
 enum class ReadySignal(override val wire: String) : WireEnum {
-    MANUAL("manual"), RENDER("render");
+    MANUAL("manual"),
+    RENDER("render"),
+    ;
 
     companion object : WireEnumCompanion<ReadySignal>({ entries })
 }
@@ -116,8 +129,7 @@ data class Configuration(
         }
 
         /** The message for an SDK that runs without a core because the reader refused the resource file. */
-        fun resolveRefusedMessage(refusal: Exception): String =
-            "HotCodePush is not configured: the app's hotcodepush.json was refused: ${refusal.message}. Check the project's hotcodepush.json and build the app again."
+        fun resolveRefusedMessage(refusal: Exception): String = "HotCodePush is not configured: the app's hotcodepush.json was refused: ${refusal.message}. Check the project's hotcodepush.json and build the app again."
 
         /** Reads the resource file like `read`, and answers the message an SDK logs when there is none or the reader refused it. */
         fun load(context: Context, assetPath: String = "hotcodepush.json"): ConfigurationLoadResult = try {

@@ -3,9 +3,9 @@ package com.hotcodepush.core
 import android.content.SharedPreferences
 import org.junit.Test
 import org.mockito.Mockito.RETURNS_SELF
-import org.mockito.Mockito.`when`
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 // Robolectric's `apply()` waits for the disk like `commit()`, so a recorded editor tells the two writes apart.
 class SharedPreferencesStoreTest {
