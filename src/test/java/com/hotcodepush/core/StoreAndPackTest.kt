@@ -113,10 +113,12 @@ class StateStoreTest {
             key = "hotcodepush.currentRelease",
             value = Release(id = "r1", number = 1, bundleId = "b1", bundleVersion = "1", isMandatory = false).toJson().toString(),
         )
+        store.putString(key = "hotcodepush.servedBundleId", value = "b1")
         store.putString(key = "hotcodepush.deviceId", value = "device-1")
         val state = StateStore(store)
         assertEquals("device-1", state.deviceId)
         assertNull(state.currentRelease)
+        assertNull(store.getString("hotcodepush.servedBundleId"))
         assertEquals(StateStore.STATE_VERSION, store.getInt("hotcodepush.stateVersion"))
     }
 
