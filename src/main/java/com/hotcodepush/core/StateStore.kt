@@ -201,6 +201,7 @@ class StateStore(
                 "lastRollback",
                 "pendingRollbackEvent",
                 "lastSyncAt",
+                "servedBundleId",
             )
     }
 }
