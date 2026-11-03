@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/hotcodepush-team/core-android/compare/0.2.0...0.2.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* deleteCacheKeys() drops hotcodepush.servedBundleId ([7dfc54a](https://github.com/hotcodepush-team/core-android/commit/7dfc54a07908c10bf8924811567b30fba60a2fc8))
+
 ## [0.2.0](https://github.com/hotcodepush-team/core-android/compare/0.1.1...0.2.0) (2026-11-02)
 
 
