@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/hotcodepush-team/core-android/compare/0.2.1...0.2.2) (2026-11-09)
+
+
+### Features
+
+* publish the library to Maven Central ([#50](https://github.com/hotcodepush-team/core-android/issues/50)) ([d035453](https://github.com/hotcodepush-team/core-android/commit/d035453d7927100b7064351c01f88f9d6327b489))
+
 ## [0.2.1](https://github.com/hotcodepush-team/core-android/compare/0.2.0...0.2.1) (2026-11-03)
 
 
