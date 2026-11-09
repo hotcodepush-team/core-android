@@ -42,7 +42,7 @@ package.json                             private, only the pinned @hotcodepush/p
 Once the lint, the tests and the build pass on a push to `main`, `ci.yml` calls `publish.yml`, which commits the publication onto the `maven` branch; a version is published once and never rewritten, and the branch is never force-pushed.
 A dispatch of `publish.yml` with a full sha publishes an earlier commit whose `build.gradle` already carries the publication.
 `release.yml` runs release-please, which bumps `gradle.properties` and tags the release without a `v`; merging its pull request creates the release, and the job builds the publication at the tag under `-Prelease` into a directory, zips that Maven layout and attaches it as `core-android-<version>-maven.zip`, with the SHA-256 the bridges pin in the job summary.
-Beside it, the `maven-central` job signs the same publication and uploads it to the Sonatype Central Portal as `com.hotcodepush:core-android:<version>`, where it waits until a maintainer publishes it. The SDKs do not read it yet.
+Beside it, the `maven-central` job signs the same publication and publishes it to Maven Central as `com.hotcodepush:core-android:<version>`. A version on Central can never be deleted. The SDKs do not read it yet.
 The fixtures and `catalog.json` move with `package.json`'s pin: a protocol change is a bump of that sha, and the cases and the values the new build adds fail here until the Kotlin follows.
 
 ## Rules

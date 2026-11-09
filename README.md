@@ -5,7 +5,21 @@ It is held to the same fixture suite as the [JavaScript](https://github.com/hotc
 
 ## Installation
 
-The library is not on Maven Central yet. CI publishes every commit on `main` to this repository's `maven` branch, versioned by the commit's full sha; pin one commit and bump it deliberately.
+Every release is on Maven Central:
+
+```groovy
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.hotcodepush:core-android:<version>'
+}
+```
+
+The versions are listed under [Releases](https://github.com/hotcodepush-team/core-android/releases).
+
+CI also publishes every commit on `main` to this repository's `maven` branch, versioned by the commit's full sha. Use it to test a commit before its release.
 
 ```groovy
 repositories {
