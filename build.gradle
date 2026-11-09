@@ -1,3 +1,4 @@
+import com.vanniktech.maven.publish.AndroidSingleVariantLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 buildscript {
@@ -11,16 +12,16 @@ buildscript {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
         classpath 'io.gitlab.arturbosch.detekt:detekt-gradle-plugin:1.23.8'
         classpath 'com.diffplug.spotless:spotless-plugin-gradle:8.10.4'
+        classpath 'com.vanniktech:gradle-maven-publish-plugin:0.37.0'
     }
 }
 
 apply plugin: 'com.android.library'
 apply plugin: 'org.jetbrains.kotlin.android'
-apply plugin: 'maven-publish'
+apply plugin: 'com.vanniktech.maven.publish'
 apply plugin: 'io.gitlab.arturbosch.detekt'
 apply plugin: 'com.diffplug.spotless'
 
-group = 'com.hotcodepush'
 // A release build, -Prelease, keeps the version release-please writes into gradle.properties.
 // Every other build is versioned by the full sha of its commit, the pin the maven branch serves.
 if (!providers.gradleProperty('release').present) {
@@ -58,9 +59,6 @@ android {
     }
     lint {
         abortOnError = true
-    }
-    publishing {
-        singleVariant('release')
     }
     testOptions {
         unitTests.returnDefaultValues = true
@@ -127,22 +125,50 @@ tasks.withType(Test).configureEach {
     inputs.dir('node_modules/@hotcodepush/protocol').withPropertyName('protocolPackage').withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
-// The release AAR as a Maven publication; CI publishes it into its checkout of the maven branch, the directory -PmavenBranchDir names.
-afterEvaluate {
-    publishing {
-        publications {
-            release(MavenPublication) {
-                from components.release
-                artifactId = 'core-android'
+// The release AAR as one publication for the maven branch, the release zip and Maven Central.
+// The Central job alone passes -PmavenCentralPublishing and -PsignAllPublications, so the other two stay unsigned.
+mavenPublishing {
+    // Central requires a javadoc jar and AGP's javadoc task fails on Kotlin sources, so the default empty one ships.
+    configure(new AndroidSingleVariantLibrary())
+    coordinates('com.hotcodepush', 'core-android', version.toString())
+    pom {
+        name = 'HotCodePush Core for Android'
+        description = 'The HotCodePush update protocol client every HotCodePush SDK on Android runs.'
+        inceptionYear = '2026'
+        url = 'https://hotcodepush.com'
+        organization {
+            name = 'HotCodePush'
+            url = 'https://hotcodepush.com'
+        }
+        licenses {
+            license {
+                name = 'MIT License'
+                url = 'https://opensource.org/licenses/MIT'
             }
         }
-        def mavenBranchDir = findProperty('mavenBranchDir')
-        if (mavenBranchDir) {
-            repositories {
-                maven {
-                    name = 'mavenBranch'
-                    url = file(mavenBranchDir)
-                }
+        developers {
+            developer {
+                id = 'hotcodepush-team'
+                name = 'HotCodePush'
+                url = 'https://hotcodepush.com'
+            }
+        }
+        scm {
+            url = 'https://github.com/hotcodepush-team/core-android'
+            connection = 'scm:git:git://github.com/hotcodepush-team/core-android.git'
+            developerConnection = 'scm:git:ssh://git@github.com/hotcodepush-team/core-android.git'
+        }
+    }
+}
+
+// CI publishes into its checkout of the maven branch, the directory -PmavenBranchDir names.
+def mavenBranchDir = findProperty('mavenBranchDir')
+if (mavenBranchDir) {
+    publishing {
+        repositories {
+            maven {
+                name = 'mavenBranch'
+                url = file(mavenBranchDir)
             }
         }
     }
