@@ -1,6 +1,10 @@
 package com.hotcodepush.core
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,6 +26,8 @@ class FakeHttpClient : HttpClient {
     private val fetchFailures = mutableMapOf<String, ArrayDeque<Throwable>>()
 
     var downloadGate: CompletableDeferred<Unit>? = null
+
+    var sendGate: CompletableDeferred<Unit>? = null
 
     var whilePosting: (suspend () -> Unit)? = null
 
@@ -76,6 +82,13 @@ class FakeHttpClient : HttpClient {
         return HttpResponse(stub.status, stub.headers, stub.body)
     }
 
+    override suspend fun send(url: String) {
+        requests += url to emptyMap()
+        sendGate?.await()
+        fetchFailures[url]?.removeFirstOrNull()?.let { throw it }
+        if (isOffline) throw java.io.IOException("offline")
+    }
+
     override suspend fun download(
         url: String,
         file: File,
@@ -91,7 +104,7 @@ class FakeHttpClient : HttpClient {
         if (stub.body.size >
             maximumBytes
         ) {
-            throw DownloadFailure.DownloadFailed("${url.substringAfterLast('/')} is larger than its $maximumBytes bytes")
+            throw DownloadFailure.ContentMismatched("${url.substringAfterLast('/')} is larger than its $maximumBytes bytes")
         }
         file.parentFile?.mkdirs()
         file.writeBytes(stub.body)
@@ -254,8 +267,11 @@ object Fixture {
     )
 }
 
+// Unconfined, the default, starts the request to the updates host at once, so the fake records it before the download goes on.
+// A test's own `dispatcher` runs that request in virtual time.
 class DownloaderHarness(
     configuration: Configuration = Fixture.configuration(),
+    dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
 ) {
     data class Bundle(
         val manifest: BundleManifest,
@@ -270,7 +286,19 @@ class DownloaderHarness(
     val http = FakeHttpClient()
     val files = FileStore(File(root, "store"))
     val embedded = InMemoryEmbeddedBundle()
-    val downloader = Downloader(configuration, "android", files, embedded, http, File(root, "tmp"))
+
+    val uncaught = mutableListOf<Throwable>()
+
+    val downloader =
+        Downloader(
+            configuration = configuration,
+            platform = "android",
+            files = files,
+            embedded = embedded,
+            http = http,
+            temporaryDirectory = File(root, "tmp"),
+            scope = CoroutineScope(dispatcher + CoroutineExceptionHandler { _, failure -> uncaught += failure }),
+        )
 
     fun publish(
         manifest: BundleManifest,
@@ -351,8 +379,6 @@ class DownloaderHarness(
                 }
             return Bundle(manifest(entries), pack)
         }
-
-        fun fileUrl(sha256: String) = "${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/files/$sha256"
 
         fun manifest(files: List<BundleManifest.File>) = BundleManifest(appId = Fixture.APP_ID, bundleVersion = "1.2.0", files = files, platforms = listOf("android"))
     }

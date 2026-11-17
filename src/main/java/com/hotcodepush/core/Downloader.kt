@@ -1,7 +1,9 @@
 package com.hotcodepush.core
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -11,7 +13,7 @@ import java.util.UUID
 private val RETRY_PAUSES_MILLIS = listOf(1_000L, 3_000L)
 
 sealed class DownloadFailure(message: String) : Exception(message) {
-    /** A downloaded file or pack differs from what the manifest promised: a hash, the pack length, an entry size or the archive form. */
+    /** The full pack differs from what the manifest promised: a hash, the pack length, an entry size, the archive form or a listed file it lacks. */
     class ContentMismatched(message: String) : DownloadFailure(message)
 
     class DownloadFailed(message: String) : DownloadFailure(message)
@@ -34,14 +36,21 @@ sealed class DownloadFailure(message: String) : Exception(message) {
         }
 }
 
-data class DownloadOutcome(val manifest: BundleManifest, val downloadSizeBytes: Long, val packKind: PackKind)
+/** What a download brought: `packKind` is null when no file was missing, so no pack was requested. */
+data class DownloadOutcome(val manifest: BundleManifest, val downloadSizeBytes: Long, val packKind: PackKind?)
 
-internal data class PackSource(val url: String, val sizeBytes: Long?, val packBytesLimit: Long, val kind: PackKind)
+internal data class PackSource(val url: String, val sizeBytes: Long, val kind: PackKind)
 
-// The kind is the one that finally arrived, since a streamed pack may give way to the full pack.
+// The kind is the one that finally arrived, since a delta may give way to the full pack.
 internal data class PackOutcome(val bytes: Long, val kind: PackKind)
 
-/** Downloads a release: the manifest and its signature, the pack and the missing files. */
+// A pack that failed, with the failure it ends the download with when no pack follows it.
+internal class PackFailure(val downloadFailure: DownloadFailure) : Exception(downloadFailure.message)
+
+/**
+ * Downloads a release: the manifest and its signature, then the pack of the files the device lacks.
+ * `scope` runs the request to the updates host, which no download waits for.
+ */
 class Downloader(
     private val configuration: Configuration,
     private val platform: String,
@@ -49,22 +58,19 @@ class Downloader(
     private val embedded: EmbeddedBundle,
     private val http: HttpClient,
     private val temporaryDirectory: File,
+    private val scope: CoroutineScope,
 ) {
+    private enum class UnpackFailureKind { CONTENT, DEVICE, MEMORY, STORAGE }
+
     suspend fun downloadRelease(target: IndexRelease, baseBundleId: String?, progress: (Long, Long) -> Unit): DownloadOutcome {
         val (envelope, manifest) = fetchBundleManifest(target)
-        val missing = resolveMissingFiles(manifest)
-        val pack = resolvePackSource(envelope, baseBundleId, missing.size)
-        verifyFreeSpace(missing.sumOf { it.sizeBytes } + (pack?.packBytesLimit ?: 0))
-        var downloadSizeBytes = 0L
-        var packKind = PackKind.FILES
-        if (pack != null) {
-            val outcome = downloadPack(pack, envelope, missing.associate { it.sha256 to it.sizeBytes }, progress)
-            downloadSizeBytes += outcome.bytes
-            packKind = outcome.kind
-        }
-        for (file in resolveMissingFiles(manifest)) downloadSizeBytes += downloadFile(file)
+        val missingFiles = resolveMissingFiles(manifest)
+        val sources = resolvePackSources(envelope, baseBundleId, missingFiles.size)
+        verifyFreeSpace(missingFiles.sumOf { it.sizeBytes } + (sources.maxOfOrNull { it.sizeBytes } ?: 0))
+        resolveDeltaRouteUrl(envelope, baseBundleId, missingFiles.size)?.let { url -> scope.launch { fetchDeltaRoute(url) } }
+        val outcome = if (sources.isEmpty()) null else downloadPack(sources, envelope.bundleId, missingFiles, progress)
         files.writeManifest(manifest, envelope.bundleId)
-        return DownloadOutcome(manifest = manifest, downloadSizeBytes = downloadSizeBytes, packKind = packKind)
+        return DownloadOutcome(manifest = manifest, downloadSizeBytes = outcome?.bytes ?: 0, packKind = outcome?.kind)
     }
 
     internal suspend fun fetchBundleManifest(target: IndexRelease): Pair<ManifestEnvelope, BundleManifest> {
@@ -83,7 +89,13 @@ class Downloader(
         verifyManifestSignature(envelope, target.manifestSha256)
         if (envelope.bundleId != target.bundleId) throw DownloadFailure.ManifestInvalid("The manifest names another bundle")
         if (!manifest.isForDevice(appId = configuration.appId, platform = platform)) throw DownloadFailure.ManifestInvalid("The manifest is for another app or does not list $platform")
+        verifyPackUrlsPinned(envelope)
         return envelope to manifest
+    }
+
+    // Every pack a download may turn to is checked before a byte is written.
+    private fun verifyPackUrlsPinned(envelope: ManifestEnvelope) {
+        for (url in listOf(envelope.pack.url) + envelope.deltas.map { it.url }) resolvePinnedUrl(url)
     }
 
     private suspend fun fetchManifestEnvelope(url: String): ByteArray {
@@ -110,156 +122,175 @@ class Downloader(
 
     internal fun resolveMissingFiles(manifest: BundleManifest): List<BundleManifest.File> = manifest.files.filter { !files.hasFile(it.sha256) && !embedded.has(it.sha256) }
 
-    // A device with a base takes a delta even for one missing file, so the main bundle arrives as a patch.
-    // Only the deltas the envelope lists exist; for any other base the updates host streams one, never a guessed URL.
-    internal fun resolvePackSource(envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int): PackSource? {
-        if (missingFileCount == 0) return null
-        if (baseBundleId == null) return resolveFullPackSource(envelope)
-        val listedDelta = envelope.deltas.firstOrNull { it.baseBundleId == baseBundleId } ?: return resolveStreamedPackSource(envelope, baseBundleId)
-        return PackSource(url = listedDelta.url, sizeBytes = listedDelta.sizeBytes, packBytesLimit = listedDelta.sizeBytes, kind = PackKind.DELTA)
+    // A device with a base tries the delta the envelope lists for that base first, even for one missing file, so the main bundle can arrive as a patch.
+    internal fun resolvePackSources(envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int): List<PackSource> {
+        if (missingFileCount == 0) return emptyList()
+        val fullPackSource = resolveFullPackSource(envelope)
+        val listedDelta = resolveListedDelta(envelope, baseBundleId) ?: return listOf(fullPackSource)
+        return listOf(PackSource(url = listedDelta.url, sizeBytes = listedDelta.sizeBytes, kind = PackKind.DELTA), fullPackSource)
     }
 
-    // Only the streamed pack gives way to the full pack. A download follows no redirect, so the host's redirect lands here too.
-    internal fun resolveFallbackPackSource(envelope: ManifestEnvelope, source: PackSource): PackSource? = when (source.kind) {
-        PackKind.DELTA, PackKind.FILES, PackKind.FULL -> null
-        PackKind.STREAMED -> resolveFullPackSource(envelope)
+    internal fun resolveDeltaRouteUrl(envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int): String? {
+        if (missingFileCount == 0 || baseBundleId == null || resolveListedDelta(envelope, baseBundleId) != null) return null
+        return "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/bundles/${envelope.bundleId}/deltas/$baseBundleId"
     }
 
-    private fun resolveFullPackSource(envelope: ManifestEnvelope) = PackSource(url = envelope.pack.url, sizeBytes = envelope.pack.sizeBytes, packBytesLimit = envelope.pack.sizeBytes, kind = PackKind.FULL)
+    private fun resolveListedDelta(envelope: ManifestEnvelope, baseBundleId: String?) = envelope.deltas.firstOrNull { it.baseBundleId == baseBundleId }
 
-    // Its length is known only as it arrives, and it never exceeds the full pack, whose entries it shares.
-    private fun resolveStreamedPackSource(envelope: ManifestEnvelope, baseBundleId: String) = PackSource(url = "${configuration.updatesBaseUrl}/v1/apps/${configuration.appId}/bundles/${envelope.bundleId}/deltas/$baseBundleId", sizeBytes = null, packBytesLimit = envelope.pack.sizeBytes, kind = PackKind.STREAMED)
+    private fun resolveFullPackSource(envelope: ManifestEnvelope) = PackSource(url = envelope.pack.url, sizeBytes = envelope.pack.sizeBytes, kind = PackKind.FULL)
 
     internal fun verifyFreeSpace(requiredBytes: Long) {
         val availableBytes = files.availableBytes()
         if (availableBytes < requiredBytes) throw DownloadFailure.DownloadFailed("The download needs $requiredBytes bytes and $availableBytes are free")
     }
 
+    // No answer and no failure of this request changes the download.
+    private suspend fun fetchDeltaRoute(url: String) {
+        try {
+            http.send(url)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (ignored: Exception) {
+        }
+    }
+
+    // A failure of the device itself, a write of its storage or memory that runs out while a file inflates, ends the download at once.
     // Three arguments and the trailing progress callback, as HttpClient.download takes.
     @Suppress("LongParameterList")
-    internal suspend fun downloadPack(source: PackSource, envelope: ManifestEnvelope, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): PackOutcome = try {
-        PackOutcome(downloadPackEntries(source, envelope.bundleId, wanted, progress), source.kind)
-    } catch (refusal: HttpStatusException) {
-        val fallback = resolveFallbackPackSource(envelope, source) ?: throw DownloadFailure.DownloadFailed("HTTP ${refusal.status} for the pack")
-        downloadPack(fallback, envelope, wanted, progress)
+    internal suspend fun downloadPack(sources: List<PackSource>, bundleId: String, missingFiles: List<BundleManifest.File>, progress: (Long, Long) -> Unit): PackOutcome {
+        // Each pack takes away what it stored, so a file the device loses meanwhile is never the pack's fault.
+        val missingFilesByHash = missingFiles.associateByTo(mutableMapOf()) { it.sha256 }
+        var lastFailure: PackFailure? = null
+        for (source in sources) {
+            try {
+                return PackOutcome(downloadPackEntries(source, bundleId, missingFilesByHash, progress), source.kind)
+            } catch (packFailure: PackFailure) {
+                lastFailure = packFailure
+                if (source.kind == PackKind.DELTA) resolvePackFile(bundleId = bundleId, url = source.url).delete()
+            }
+        }
+        throw checkNotNull(lastFailure) { "A download needs a pack source" }.downloadFailure
     }
 
     // Three arguments and the trailing progress callback, as HttpClient.download takes.
     @Suppress("LongParameterList")
-    internal suspend fun downloadPackEntries(source: PackSource, bundleId: String, wanted: Map<String, Long>, progress: (Long, Long) -> Unit): Long {
-        // A name stable per URL lets a later attempt resume the pack.
-        val file = File(temporaryDirectory, "$bundleId-${Hashing.sha256Hex(source.url).take(16)}.pack")
+    internal suspend fun downloadPackEntries(source: PackSource, bundleId: String, missingFilesByHash: MutableMap<String, BundleManifest.File>, progress: (Long, Long) -> Unit): Long {
+        val file = resolvePackFile(bundleId = bundleId, url = source.url)
         downloadPackFile(source, file, progress)
         try {
-            if (source.sizeBytes != null && file.length() != source.sizeBytes) throw DownloadFailure.ContentMismatched("The pack holds ${file.length()} of its ${source.sizeBytes} bytes")
-            writePackEntries(file, wanted)
-            return file.length()
+            // The path answers a length of zero for a file the system removed, as a cleared cache does.
+            if (!file.isFile) throw resolveUnpackFailure(UnpackFailureKind.DEVICE, FileNotFoundException("the pack file is gone"))
+            val packBytes = file.length()
+            if (packBytes != source.sizeBytes) throw DownloadFailure.ContentMismatched("The pack holds $packBytes of its ${source.sizeBytes} bytes")
+            writePackEntries(file, packBytes, missingFilesByHash)
+            verifyNoFileMissing(missingFilesByHash)
+            return packBytes
+        } catch (mismatch: DownloadFailure.ContentMismatched) {
+            throw PackFailure(mismatch)
         } finally {
             file.delete()
         }
     }
 
+    // A name stable per URL lets a later attempt resume the pack.
+    internal fun resolvePackFile(bundleId: String, url: String) = File(temporaryDirectory, "$bundleId-${Hashing.sha256Hex(url).take(16)}.pack")
+
+    private fun verifyNoFileMissing(missingFilesByHash: Map<String, BundleManifest.File>) {
+        val missingFile = missingFilesByHash.values.minByOrNull { it.path } ?: return
+        throw DownloadFailure.ContentMismatched("The pack lacks the file ${missingFile.path}")
+    }
+
     private suspend fun downloadPackFile(source: PackSource, file: File, progress: (Long, Long) -> Unit) {
-        val pinnedUrl = resolvePinnedUrl(source.url)
         try {
-            fetchWithRetries { http.download(pinnedUrl, file, source.packBytesLimit, progress) }
+            fetchWithRetries { http.download(source.url, file, source.sizeBytes, progress) }
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (failure: DownloadFailure) {
-            throw failure
+        } catch (deviceFailure: DownloadFailure.DownloadFailed) {
+            throw deviceFailure
+        } catch (mismatch: DownloadFailure.ContentMismatched) {
+            throw PackFailure(mismatch)
         } catch (refusal: HttpStatusException) {
-            throw refusal
-        } catch (exception: Exception) {
-            throw DownloadFailure.DownloadFailed("The pack could not be downloaded: ${exception.message}")
+            throw PackFailure(DownloadFailure.DownloadFailed("HTTP ${refusal.status} for the pack"))
+        } catch (unanswered: Exception) {
+            throw PackFailure(DownloadFailure.DownloadFailed("The pack could not be downloaded: ${unanswered.message}"))
         }
     }
 
-    private fun writePackEntries(file: File, wanted: Map<String, Long>) {
+    private fun writePackEntries(file: File, packBytes: Long, missingFilesByHash: MutableMap<String, BundleManifest.File>) {
         try {
-            file.inputStream().buffered().use { input ->
-                PackReader.forEachEntry(input, file.length()) { entry, body ->
-                    when (entry) {
-                        is PackEntry.File -> {
-                            val sizeBytes = wanted[entry.sha256] ?: return@forEachEntry
-                            Gzip.decompress(body, sizeBytes).use { content -> files.writeFile(content, entry.sha256) }
-                        }
-
-                        is PackEntry.Patch -> {
-                            val sizeBytes = wanted[entry.toSha256] ?: return@forEachEntry
-                            applyPatch(entry, body, sizeBytes)
-                        }
-                    }
-                }
+            PackFileInputStream(readFromStorage { file.inputStream() }).buffered().use { input ->
+                PackReader.forEachEntry(input, packBytes) { entry, body -> writePackEntry(entry, body, missingFilesByHash) }
             }
-        } catch (failure: DownloadFailure) {
-            throw failure
-        } catch (exception: Exception) {
-            throw DownloadFailure.ContentMismatched("The pack did not verify: ${exception.message}")
-        }
-    }
-
-    // A failed patch leaves its file to the single-file fetch after the pack, so an update never fails because of a patch.
-    internal fun applyPatch(entry: PackEntry.Patch, body: InputStream, maximumBytes: Long) {
-        try {
-            writePatchedFile(entry, body, maximumBytes)
         } catch (failure: Throwable) {
-            val isPatchFailure = failure is Exception || failure is LinkageError || failure is OutOfMemoryError
-            if (!isPatchFailure) throw failure
+            throw resolveUnpackFailure(resolveUnpackFailureKind(failure), failure)
         }
     }
 
-    private fun writePatchedFile(entry: PackEntry.Patch, body: InputStream, maximumBytes: Long) {
+    private fun writePackEntry(entry: PackEntry, body: InputStream, missingFilesByHash: MutableMap<String, BundleManifest.File>) {
+        when (entry) {
+            is PackEntry.File -> {
+                val missingFile = missingFilesByHash[entry.sha256] ?: return
+                Gzip.decompress(body, missingFile.sizeBytes).use { content -> files.writeFile(content, entry.sha256) }
+                missingFilesByHash.remove(entry.sha256)
+            }
+
+            is PackEntry.Patch -> {
+                val missingFile = missingFilesByHash[entry.toSha256] ?: return
+                if (applyPatch(entry, body, missingFile.sizeBytes)) missingFilesByHash.remove(entry.toSha256)
+            }
+        }
+    }
+
+    private fun resolveUnpackFailureKind(failure: Throwable) = when {
+        failure is OutOfMemoryError -> UnpackFailureKind.MEMORY
+        isContentFailure(failure) -> UnpackFailureKind.CONTENT
+        failure is IOException -> UnpackFailureKind.STORAGE
+        else -> UnpackFailureKind.DEVICE
+    }
+
+    private fun isContentFailure(failure: Throwable) = failure is PackFormatException || failure is GzipFormatException || failure is GzipSizeException || failure is HashMismatchException
+
+    private fun resolveUnpackFailure(kind: UnpackFailureKind, cause: Throwable): DownloadFailure = when (kind) {
+        UnpackFailureKind.CONTENT -> DownloadFailure.ContentMismatched("The pack did not verify: ${cause.message}")
+        UnpackFailureKind.MEMORY -> DownloadFailure.DownloadFailed("The device ran out of memory while it unpacked the pack")
+        UnpackFailureKind.STORAGE -> DownloadFailure.DownloadFailed("The pack could not be written to the device's storage: ${cause.message}")
+        UnpackFailureKind.DEVICE -> DownloadFailure.DownloadFailed("The device failed while it unpacked the pack: ${cause.message}")
+    }
+
+    internal fun applyPatch(entry: PackEntry.Patch, body: InputStream, maximumBytes: Long): Boolean = try {
+        writePatchedFile(entry, body, maximumBytes)
+    } catch (failure: Throwable) {
+        if (!isPatchFailure(failure)) throw failure
+        false
+    }
+
+    // Every failure of the patch code means the patch does not apply, a native library missing for the ABI and memory that runs out included.
+    private fun isPatchFailure(failure: Throwable) = failure is Exception || failure is LinkageError || failure is OutOfMemoryError
+
+    private fun writePatchedFile(entry: PackEntry.Patch, body: InputStream, maximumBytes: Long): Boolean {
         val directory = File(temporaryDirectory, "${UUID.randomUUID()}.patching")
         directory.mkdirs()
         try {
-            val base = preparePatchBase(entry.fromSha256, directory)
+            val base = preparePatchBase(entry.fromSha256, directory) ?: return false
             val patch = File(directory, "patch").apply { outputStream().use { body.copyTo(it) } }
             val patched = File(directory, "patched")
             Bspatch.apply(patch = patch, old = base, new = patched, maximumBytes = maximumBytes)
             patched.inputStream().use { content -> files.writeFile(content, entry.toSha256) }
+            return true
         } finally {
             directory.deleteRecursively()
         }
     }
 
-    private fun preparePatchBase(sha256: String, directory: File): File {
+    private fun preparePatchBase(sha256: String, directory: File): File? {
         if (files.hasFile(sha256)) return files.file(sha256)
-        if (!embedded.has(sha256)) throw FileNotFoundException("The patch's base $sha256 is not held")
+        if (!embedded.has(sha256)) return null
         return File(directory, "base").also { embedded.copyFile(sha256, it) }
     }
 
     internal fun resolvePinnedUrl(url: String): String {
         if (!configuration.isUrlOnConfiguredHost(url)) throw DownloadFailure.ManifestInvalid("$url is not on a configured host")
         return url
-    }
-
-    // The HTTP client already decodes the gzip the bucket serves, so the body is the file content.
-    internal suspend fun downloadFile(file: BundleManifest.File): Long {
-        val url = "${configuration.filesBaseUrl}/apps/${configuration.appId}/files/${file.sha256}"
-        val temporary = File(temporaryDirectory, "${UUID.randomUUID()}.file")
-        try {
-            try {
-                fetchWithRetries {
-                    // Decoded bytes match no `Range` offset, so each attempt starts again.
-                    temporary.delete()
-                    http.download(url, temporary, file.sizeBytes) { _, _ -> }
-                }
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (failure: DownloadFailure) {
-                throw failure
-            } catch (exception: Exception) {
-                throw DownloadFailure.DownloadFailed("The file ${file.path} could not be downloaded: ${exception.message}")
-            }
-            try {
-                temporary.inputStream().use { content -> files.writeFile(content, file.sha256) }
-            } catch (exception: HashMismatchException) {
-                throw DownloadFailure.ContentMismatched("The file ${file.path} did not match its hash")
-            }
-            return temporary.length()
-        } finally {
-            temporary.delete()
-        }
     }
 
     // A refusal such as a 404 or 410 throws at once, since the object will not appear.
@@ -276,4 +307,23 @@ class Downloader(
     }
 
     private fun isTransientFailure(failure: Exception): Boolean = failure is IOException || (failure is HttpStatusException && failure.status in 500..599)
+}
+
+// A failed read of the pack file is the device's, so the streams above it never take it for bytes that do not inflate.
+private class PackFileInputStream(private val input: InputStream) : InputStream() {
+    override fun read(): Int = readFromStorage { input.read() }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int = readFromStorage { input.read(buffer, offset, length) }
+
+    override fun skip(count: Long): Long = readFromStorage { input.skip(count) }
+
+    override fun close() = input.close()
+}
+
+private class PackFileReadException(cause: IOException) : Exception(cause.message, cause)
+
+private inline fun <T> readFromStorage(read: () -> T): T = try {
+    read()
+} catch (exception: IOException) {
+    throw PackFileReadException(exception)
 }

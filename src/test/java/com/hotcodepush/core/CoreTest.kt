@@ -1183,6 +1183,17 @@ class CoreTest {
     }
 
     @Test
+    fun shouldDownloadTheBundleAgainAtTheNextCheckWhenItsFullPackFailedItsCheck() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.stub(v2.envelope.pack.url, body = v2.pack.copyOf(v2.pack.size - 512))
+        assertEquals(FailedReason.CONTENT_MISMATCHED.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
+        harness.http.stub(v2.envelope.pack.url, body = v2.pack)
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
+    }
+
+    @Test
     fun shouldDownloadOnceWhenTwoDownloadsAndASyncRunAtOnce() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
@@ -1199,8 +1210,8 @@ class CoreTest {
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), sync.await())
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), secondDownload.await())
         assertEquals(SyncResult.available(v2.release.release, "notes 1", v2.release.sizeBytes), check.await())
-        val streamedUrl = "${Fixture.UPDATES_BASE_URL}/v1/apps/${Fixture.APP_ID}/bundles/b2/deltas/embedded"
-        assertEquals(listOf(streamedUrl), harness.http.requests.map { it.first }.filter { it.contains("/deltas/") })
+        val routeUrl = "${Fixture.UPDATES_BASE_URL}/v1/apps/${Fixture.APP_ID}/bundles/b2/deltas/embedded"
+        assertEquals(listOf(routeUrl), harness.http.requests.map { it.first }.filter { it.contains("/deltas/") })
         assertEquals(1, harness.http.requests.count { it.first == v2.envelope.pack.url })
     }
 
@@ -1871,7 +1882,7 @@ class CoreTest {
     }
 
     @Test
-    fun shouldTakeTheStreamedDeltaWhenTheDeviceIsTwoReleasesBehind() = runBlocking {
+    fun shouldAskTheUpdatesHostForTheRunningBaseAndTakeTheFullPackWhenTheDeviceIsTwoReleasesBehind() = runBlocking {
         val harness = Harness(Fixture.configuration(applyStrategy = ApplyStrategy.IMMEDIATE))
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
@@ -1881,14 +1892,37 @@ class CoreTest {
         harness.core.notifyReady()
         val v3 = Fixture.release(2, "b3", "<html>v3</html>".toByteArray())
         val v4 = Fixture.release(3, "b4", "<html>v4</html>".toByteArray())
-        val streamedUrl = "${Fixture.UPDATES_BASE_URL}/v1/apps/${Fixture.APP_ID}/bundles/b4/deltas/b2"
+        val routeUrl = "${Fixture.UPDATES_BASE_URL}/v1/apps/${Fixture.APP_ID}/bundles/b4/deltas/b2"
         harness.publish(listOf(v4, v3, v2), 2, etag = "\"e2\"")
         harness.http.stubJson(v4.release.manifestUrl, v4.envelope.copy(deltas = listOf(ManifestEnvelope.Delta(baseBundleId = "b3", url = "${v4.envelope.pack.url}-delta-b3", sizeBytes = v4.pack.size.toLong()))).toJson())
-        harness.http.stub(streamedUrl, body = v4.pack)
         assertEquals(SyncStatus.APPLIED, harness.core.sync(SyncTrigger.MANUAL).status)
-        assertTrue(harness.http.requests.any { it.first == streamedUrl })
-        assertTrue(harness.http.requests.none { it.first == v4.envelope.pack.url })
-        assertEquals(PackKind.STREAMED.wire, StateStore(harness.store).unsentEvents.last { it.type == "downloaded" }.packKind)
+        assertEquals(1, harness.http.requests.count { it.first == routeUrl })
+        assertTrue(harness.http.requests.any { it.first == v4.envelope.pack.url })
+        assertEquals(PackKind.FULL.wire, StateStore(harness.store).unsentEvents.last { it.type == "downloaded" }.packKind)
+    }
+
+    @Test
+    fun shouldLogAnErrorOfTheRequestToTheUpdatesHostAndLetNothingEscape() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.failNextFetches("${Fixture.UPDATES_BASE_URL}/v1/apps/${Fixture.APP_ID}/bundles/b2/deltas/embedded", OutOfMemoryError("the request to the updates host"))
+        assertEquals(SyncStatus.DOWNLOADED, harness.core.sync(SyncTrigger.MANUAL).status)
+        assertTrue(harness.uncaught.isEmpty())
+        assertTrue(harness.core.debugSnapshot().log.any { it.message.contains("the request to the updates host") })
+    }
+
+    @Test
+    fun shouldAskNothingAndSendNoDownloadedEventWhenNoFileIsMissing() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        val appJs = "js-b2".toByteArray()
+        harness.files.writeFile(v2Content, Hashing.sha256Hex(v2Content))
+        harness.files.writeFile(appJs, Hashing.sha256Hex(appJs))
+        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
+        assertEquals(listOf(Fixture.indexUrl(), v2.release.manifestUrl), harness.http.requests.map { it.first })
+        assertTrue(StateStore(harness.store).unsentEvents.none { it.type == "downloaded" })
     }
 
     @Test

@@ -1,15 +1,19 @@
 package com.hotcodepush.core
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -18,8 +22,6 @@ import java.io.IOException
 class DownloaderTest {
     private val indexHtml = "<html>v2</html>".toByteArray()
     private val appJs = "console.log('v2')".toByteArray()
-
-    private val emptyPack = PackWriter.pack(emptyList())
 
     @Test
     fun shouldRefuseAManifestUrlOffTheConfiguredHosts() {
@@ -34,14 +36,54 @@ class DownloaderTest {
     }
 
     @Test
-    fun shouldRefuseAPackUrlOffTheConfiguredHosts() {
+    fun shouldRefuseAFullPackUrlOffTheConfiguredHostsBeforeTheDeltaIsRequested() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
-        assertEquals(
-            FailedReason.MANIFEST_INVALID,
-            harness.downloadFailure(harness.publish(bundle.manifest, bundle.pack, packUrl = "https://elsewhere.test/pack"))?.reason,
-        )
+        val release = harness.publish(bundle.manifest, bundle.pack, packUrl = "https://elsewhere.test/pack", deltas = mapOf("b1" to bundle.pack))
+        assertEquals(FailedReason.MANIFEST_INVALID, harness.downloadFailure(release, "b1")?.reason)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
+    }
+
+    @Test
+    fun shouldRefuseAListedDeltaUrlOffTheConfiguredHostsBeforeAnyPackIsRequested() {
+        val harness = DownloaderHarness()
+        val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
+        val release = harness.publish(bundle.manifest, bundle.pack)
+        val offHostDelta = ManifestEnvelope.Delta(baseBundleId = "b1", url = "https://elsewhere.test/delta", sizeBytes = bundle.pack.size.toLong())
+        val envelope =
+            ManifestEnvelope(
+                bundleId = DownloaderHarness.BUNDLE_ID,
+                createdAt = Fixture.BUILT_AT,
+                manifest = bundle.manifest.toJson().toString(),
+                signature = null,
+                pack = ManifestEnvelope.Pack(DownloaderHarness.PACK_URL, bundle.pack.size.toLong()),
+                deltas = listOf(offHostDelta),
+            )
+        harness.http.stubJson(DownloaderHarness.MANIFEST_URL, envelope.toJson())
+        assertEquals(FailedReason.MANIFEST_INVALID, harness.downloadFailure(release)?.reason)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
+    }
+
+    @Test
+    fun shouldFailWithDownloadFailedWhenThePackFileIsGoneBeforeItIsRead() {
+        val harness = DownloaderHarness()
+        val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
+        val release = harness.publish(bundle.manifest, bundle.pack)
+        val packFile = harness.downloader.resolvePackFile(bundleId = DownloaderHarness.BUNDLE_ID, url = DownloaderHarness.PACK_URL)
+        val failure = runBlocking { runCatching { harness.downloader.downloadRelease(release, baseBundleId = null) { _, _ -> packFile.delete() } }.exceptionOrNull() }
+        assertEquals(FailedReason.DOWNLOAD_FAILED, (failure as? DownloadFailure)?.reason)
+    }
+
+    @Test
+    fun shouldTakeTheFullPackWhenAFileTheDeviceHeldVanishesWhileThePackIsRead() {
+        val harness = DownloaderHarness()
+        val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
+        val heldSha256 = Hashing.sha256Hex(appJs)
+        harness.files.writeFile(appJs, heldSha256)
+        val release = harness.publish(bundle.manifest, bundle.pack)
+        val outcome = runBlocking { harness.downloader.downloadRelease(release, baseBundleId = null) { _, _ -> harness.files.file(heldSha256).delete() } }
+        assertEquals(PackKind.FULL, outcome.packKind)
+        assertTrue(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
     }
 
     @Test
@@ -96,6 +138,15 @@ class DownloaderTest {
     }
 
     @Test
+    fun shouldFailADownloadWhoseFullPackDoesNotFitInTheFreeSpaceWhenASmallerDeltaComesFirst() {
+        val harness = DownloaderHarness()
+        val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
+        val release = harness.publish(bundle.manifest, bundle.pack, packSizeBytes = Long.MAX_VALUE / 2, deltas = mapOf("b1" to bundle.pack))
+        assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(release, "b1")?.reason)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL), harness.http.requests.map { it.first })
+    }
+
+    @Test
     fun shouldRefuseAPackEntryThatInflatesPastItsFileSize() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
@@ -124,17 +175,13 @@ class DownloaderTest {
     }
 
     @Test
-    fun shouldStoreASingleFileThatIsItselfGzipAsItArrives() {
+    fun shouldFailWithContentMismatchedWhenTheFullPackLacksAListedFile() {
         val harness = DownloaderHarness()
-        val archive = Gzip.compress("console.log('precompressed')".toByteArray())
-        val sha256 = Hashing.sha256Hex(archive)
-        val manifest =
-            DownloaderHarness.manifest(
-                listOf(BundleManifest.File(path = "assets/app.js.gz", sha256 = sha256, sizeBytes = archive.size.toLong())),
-            )
-        harness.http.stub("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/files/$sha256", body = archive)
-        assertNull(harness.downloadFailure(harness.publish(manifest, emptyPack)))
-        assertArrayEquals(archive, harness.files.file(sha256).readBytes())
+        val manifest = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs)).manifest
+        val failure = harness.downloadFailure(harness.publish(manifest, DownloaderHarness.bundle(mapOf("app.js" to appJs)).pack))
+        assertEquals(FailedReason.CONTENT_MISMATCHED, failure?.reason)
+        assertEquals("The pack lacks the file index.html", failure?.message)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
     }
 
     @Test
@@ -145,26 +192,6 @@ class DownloaderTest {
         assertEquals(FailedReason.CONTENT_MISMATCHED, harness.downloadFailure(harness.publish(manifest, pack))?.reason)
         assertFalse(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
     }
-
-    @Test
-    fun shouldRefuseASingleFileLargerThanItsSize() {
-        val harness = DownloaderHarness()
-        val sha256 = Hashing.sha256Hex(indexHtml)
-        val manifest =
-            DownloaderHarness.manifest(
-                listOf(
-                    BundleManifest.File(
-                        path = "index.html",
-                        sha256 = sha256,
-                        sizeBytes =
-                        indexHtml.size - 1L,
-                    ),
-                ),
-            )
-        harness.http.stub("${Fixture.FILES_BASE_URL}/apps/${Fixture.APP_ID}/files/$sha256", body = indexHtml)
-        assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(harness.publish(manifest, emptyPack))?.reason)
-        assertFalse(harness.files.hasFile(sha256))
-    }
 }
 
 class DeltaTest {
@@ -172,7 +199,7 @@ class DeltaTest {
     private val appJs = "console.log('v3')".toByteArray()
     private val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
     private val listedUrl = "${DownloaderHarness.PACK_URL}-from-b1"
-    private val streamedUrl = "${Fixture.UPDATES_BASE_URL}/v1/apps/${Fixture.APP_ID}/bundles/${DownloaderHarness.BUNDLE_ID}/deltas/b1"
+    private val routeUrl = "${Fixture.UPDATES_BASE_URL}/v1/apps/${Fixture.APP_ID}/bundles/${DownloaderHarness.BUNDLE_ID}/deltas/b1"
 
     @Test
     fun shouldTakeTheDeltaTheEnvelopeListsWhenTheDeviceHoldingABaseLacksASingleFile() {
@@ -185,115 +212,143 @@ class DeltaTest {
     }
 
     @Test
-    fun shouldAskTheUpdatesHostDirectlyWhenTheEnvelopeListsNoDeltaForTheBase() {
+    fun shouldAskTheUpdatesHostOnceAndTakeTheFullPackWhenTheEnvelopeListsNoDeltaForTheBase() {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b0" to bundle.pack))
-        harness.http.stub(streamedUrl, body = bundle.pack)
-        assertEquals(PackKind.STREAMED, harness.download(release, "b1").packKind)
-        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, streamedUrl), harness.http.requests.map { it.first })
+        assertEquals(PackKind.FULL, harness.download(release, "b1").packKind)
+        assertEquals(1, harness.http.requests.count { it.first == routeUrl })
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first }.filter { it != routeUrl })
         assertTrue(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
     }
 
     @Test
-    fun shouldFailTheDownloadWhenTheDeltaTheEnvelopeListsAnswers404() {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun shouldAskTheUpdatesHostOnceAndTakeTheFullPackWhenThatRequestGetsNoAnswer() = runTest {
+        val harness = DownloaderHarness(dispatcher = UnconfinedTestDispatcher(testScheduler))
+        val release = harness.publish(bundle.manifest, bundle.pack)
+        harness.http.failNextFetches(routeUrl, IOException("connection reset"), IOException("connection reset"), IOException("connection reset"))
+        assertEquals(PackKind.FULL, harness.downloader.downloadRelease(release, "b1") { _, _ -> }.packKind)
+        advanceUntilIdle()
+        assertEquals(1, harness.http.requests.count { it.first == routeUrl })
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first }.filter { it != routeUrl })
+        assertTrue(harness.uncaught.isEmpty())
+    }
+
+    @Test
+    fun shouldFinishTheDownloadWhileTheUpdatesHostHasNotAnswered() = runBlocking {
+        val harness = DownloaderHarness()
+        val release = harness.publish(bundle.manifest, bundle.pack)
+        val routeAnswer = CompletableDeferred<Unit>()
+        harness.http.sendGate = routeAnswer
+        val download = async(Dispatchers.Unconfined) { harness.downloader.downloadRelease(release, "b1") { _, _ -> } }
+        val isFinishedBeforeTheAnswer = download.isCompleted
+        routeAnswer.complete(Unit)
+        assertTrue(isFinishedBeforeTheAnswer)
+        assertEquals(PackKind.FULL, download.await().packKind)
+        assertEquals(1, harness.http.requests.count { it.first == routeUrl })
+    }
+
+    @Test
+    fun shouldTakeTheFullPackWhenTheDeltaTheEnvelopeListsIsRefused() {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to bundle.pack))
         harness.http.stubs.remove(listedUrl)
-        harness.http.stub(streamedUrl, body = bundle.pack)
-        assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(release, "b1")?.reason)
-        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl), harness.http.requests.map { it.first })
-    }
-
-    @Test
-    fun shouldTakeTheFullPackWhenTheStreamedDeltaRedirects() {
-        val harness = DownloaderHarness()
-        val release = harness.publish(bundle.manifest, bundle.pack)
-        harness.http.stub(streamedUrl, status = 302, headers = mapOf("Location" to "https://elsewhere.test/pack"), body = ByteArray(0))
         assertEquals(PackKind.FULL, harness.download(release, "b1").packKind)
-        assertEquals(
-            listOf(DownloaderHarness.MANIFEST_URL, streamedUrl, DownloaderHarness.PACK_URL),
-            harness.http.requests.map { it.first },
-        )
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
+        assertTrue(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
     }
 
     @Test
-    fun shouldTakeTheFullPackAfterThreeAttemptsWhenTheUpdatesHostAnswersTheStreamedDelta503EachTime() = runTest {
+    fun shouldTakeTheFullPackWhenAnEntryOfTheDeltaDoesNotVerify() {
         val harness = DownloaderHarness()
-        val release = harness.publish(bundle.manifest, bundle.pack)
-        harness.http.stub(streamedUrl, status = 503, body = ByteArray(0))
-        assertEquals(PackKind.FULL, harness.downloader.downloadRelease(release, "b1") { _, _ -> }.packKind)
-        assertEquals(
-            listOf(DownloaderHarness.MANIFEST_URL) +
-                List(3) {
-                    streamedUrl
-                } + DownloaderHarness.PACK_URL,
-            harness.http.requests.map { it.first },
-        )
+        val delta = PackWriter.pack(listOf(PackedEntry.file(Hashing.sha256Hex(appJs), Gzip.compress(appJs)), PackedEntry.file(Hashing.sha256Hex(indexHtml), indexHtml)))
+        val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to delta))
+        assertEquals(PackKind.FULL, harness.download(release, "b1").packKind)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
+        assertTrue(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
     }
 
     @Test
-    fun shouldFailTheDownloadWhenTheFullPackTheStreamedDeltaGaveWayToAnswersAnError() {
+    fun shouldTakeTheFullPackWhenTheNativePatchLibraryIsMissing() {
         val harness = DownloaderHarness()
-        val release = harness.publish(bundle.manifest)
-        assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(release, "b1")?.reason)
-        assertEquals(
-            listOf(DownloaderHarness.MANIFEST_URL, streamedUrl, DownloaderHarness.PACK_URL),
-            harness.http.requests.map { it.first },
-        )
+        val base = "<html>v2</html>".toByteArray()
+        harness.files.writeFile(base, Hashing.sha256Hex(base))
+        val corruptPatch = PackedEntry.patch(fromSha256 = Hashing.sha256Hex(base), toSha256 = Hashing.sha256Hex(indexHtml), body = "BSDIFF40".toByteArray())
+        val delta = PackWriter.pack(listOf(PackedEntry.file(Hashing.sha256Hex(appJs), Gzip.compress(appJs)), corruptPatch))
+        val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to delta))
+        assertEquals(PackKind.FULL, harness.download(release, "b1").packKind)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
+        assertTrue(harness.files.hasFile(Hashing.sha256Hex(indexHtml)))
     }
 
     @Test
-    fun shouldFailTheDownloadWhenTheDeltaTheEnvelopeListsAnswersARedirect() {
+    fun shouldTakeTheFullPackWhenNoAttemptOfTheDeltaGetsAnAnswer() = runTest {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to bundle.pack))
-        harness.http.stub(listedUrl, status = 302, headers = mapOf("Location" to DownloaderHarness.PACK_URL), body = ByteArray(0))
-        assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(release, "b1")?.reason)
-        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl), harness.http.requests.map { it.first })
+        harness.http.failNextFetches(listedUrl, IOException("connection reset"), IOException("connection reset"), IOException("connection reset"))
+        assertEquals(PackKind.FULL, harness.downloader.downloadRelease(release, "b1") { _, _ -> }.packKind)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL) + List(3) { listedUrl } + DownloaderHarness.PACK_URL, harness.http.requests.map { it.first })
     }
 
     @Test
-    fun shouldFetchTheFilesADeltaDidNotCarryOneByOne() {
+    fun shouldTakeTheFullPackWhenTheDeltaRequestFailsWithAnErrorThatIsNoIOException() {
+        val harness = DownloaderHarness()
+        val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to bundle.pack))
+        harness.http.failNextFetches(listedUrl, IllegalArgumentException("unexpected answer"))
+        assertEquals(PackKind.FULL, harness.download(release, "b1").packKind)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
+    }
+
+    @Test
+    fun shouldRemoveThePartialFileOfTheDeltaWhenTheDownloadMovesOnToTheFullPack() = runTest {
+        val harness = DownloaderHarness()
+        val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to bundle.pack))
+        val partialDelta = harness.downloader.resolvePackFile(bundleId = DownloaderHarness.BUNDLE_ID, url = listedUrl).apply {
+            parentFile?.mkdirs()
+            writeBytes(ByteArray(512))
+        }
+        harness.http.failNextFetches(listedUrl, IOException("connection reset"), IOException("connection reset"), IOException("connection reset"))
+        assertEquals(PackKind.FULL, harness.downloader.downloadRelease(release, "b1") { _, _ -> }.packKind)
+        assertFalse(partialDelta.exists())
+    }
+
+    @Test
+    fun shouldFailWithTheFullPacksOwnReasonWhenItGetsNoAnswerAfterADeltaLeftAFileMissing() = runTest {
         val harness = DownloaderHarness()
         val delta = PackWriter.pack(listOf(PackedEntry.file(Hashing.sha256Hex(indexHtml), Gzip.compress(indexHtml))))
         val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to delta))
-        val fileUrl = DownloaderHarness.fileUrl(Hashing.sha256Hex(appJs))
-        harness.http.stub(fileUrl, body = appJs)
-        assertEquals(PackKind.DELTA, harness.download(release, "b1").packKind)
-        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl, fileUrl), harness.http.requests.map { it.first })
+        harness.http.failNextFetches(DownloaderHarness.PACK_URL, IOException("connection reset"), IOException("connection reset"), IOException("connection reset"))
+        val failure = runCatching { harness.downloader.downloadRelease(release, "b1") { _, _ -> } }.exceptionOrNull()
+        assertEquals(FailedReason.DOWNLOAD_FAILED, (failure as? DownloadFailure)?.reason)
+    }
+
+    @Test
+    fun shouldFailTheDownloadWithoutTheFullPackWhenTheDevicesStorageFails() {
+        val harness = DownloaderHarness()
+        val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to bundle.pack))
+        harness.files.rootDirectory.mkdirs()
+        harness.files.filesDirectory.writeBytes(ByteArray(0))
+        assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(release, "b1")?.reason)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl), harness.http.requests.map { it.first })
+    }
+
+    @Test
+    fun shouldTakeTheFullPackAndCountItsBytesAloneWhenAFileIsStillMissingAfterADelta() {
+        val harness = DownloaderHarness()
+        val delta = PackWriter.pack(listOf(PackedEntry.file(Hashing.sha256Hex(indexHtml), Gzip.compress(indexHtml))))
+        val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to delta))
+        val outcome = harness.download(release, "b1")
+        assertEquals(PackKind.FULL, outcome.packKind)
+        assertEquals(bundle.pack.size.toLong(), outcome.downloadSizeBytes)
+        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
         assertTrue(harness.files.hasFile(Hashing.sha256Hex(appJs)))
     }
 
     @Test
-    fun shouldRefuseADeltaLargerThanTheSizeTheEnvelopeLists() {
-        val harness = DownloaderHarness()
-        val release = harness.publish(bundle.manifest, bundle.pack, deltas = mapOf("b1" to bundle.pack))
-        harness.http.stub(listedUrl, body = bundle.pack + ByteArray(1))
-        assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(release, "b1")?.reason)
-        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, listedUrl), harness.http.requests.map { it.first })
-    }
-
-    @Test
-    fun shouldRefuseAStreamedDeltaLargerThanTheFullPack() {
-        val harness = DownloaderHarness()
-        val release = harness.publish(bundle.manifest, bundle.pack)
-        harness.http.stub(streamedUrl, body = bundle.pack + ByteArray(1))
-        assertEquals(FailedReason.DOWNLOAD_FAILED, harness.downloadFailure(release, "b1")?.reason)
-        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, streamedUrl), harness.http.requests.map { it.first })
-    }
-
-    @Test
-    fun shouldTakeTheFullPackOnAFreshInstallWithoutABase() {
+    fun shouldTakeTheFullPackWhenTheDeviceHoldsNoBase() {
         val harness = DownloaderHarness()
         val release = harness.publish(bundle.manifest, bundle.pack)
         assertEquals(PackKind.FULL, harness.download(release, baseBundleId = null).packKind)
-        assertEquals(listOf(DownloaderHarness.MANIFEST_URL, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
-    }
-
-    @Test
-    fun shouldTakeTheFullPackWhenTheDeviceHoldsNoBaseAndLacksASingleFile() {
-        val harness = DownloaderHarness()
-        val single = DownloaderHarness.bundle(mapOf("index.html" to indexHtml))
-        assertEquals(PackKind.FULL, harness.download(harness.publish(single.manifest, single.pack), baseBundleId = null).packKind)
         assertEquals(listOf(DownloaderHarness.MANIFEST_URL, DownloaderHarness.PACK_URL), harness.http.requests.map { it.first })
     }
 }
@@ -311,19 +366,6 @@ class FetchRetryTest {
         assertEquals(PackKind.FULL, harness.downloader.downloadRelease(target = release, baseBundleId = null) { _, _ -> }.packKind)
         assertEquals(List(3) { DownloaderHarness.MANIFEST_URL } + DownloaderHarness.PACK_URL, harness.http.requests.map { it.first })
         assertEquals(4_000L, currentTime)
-    }
-
-    @Test
-    fun shouldStoreASingleFileWhenItsDownloadDropsTwiceAndTheThirdAttemptArrives() = runTest {
-        val harness = DownloaderHarness()
-        val release = harness.publish(bundle.manifest, PackWriter.pack(emptyList()))
-        val sha256 = Hashing.sha256Hex(indexHtml)
-        val fileUrl = DownloaderHarness.fileUrl(sha256)
-        harness.http.stub(fileUrl, body = indexHtml)
-        harness.http.failNextFetches(fileUrl, IOException("connection reset"), IOException("connection reset"))
-        harness.downloader.downloadRelease(target = release, baseBundleId = null) { _, _ -> }
-        assertEquals(3, harness.http.requests.count { it.first == fileUrl })
-        assertArrayEquals(indexHtml, harness.files.file(sha256).readBytes())
     }
 
     @Test

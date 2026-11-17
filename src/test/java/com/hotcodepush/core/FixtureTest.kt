@@ -375,34 +375,9 @@ class FixtureTest {
         }
     }
 
-    private data class PackDownloadOutcome(
-        val packKind: String?,
-        val requests: List<PackSource>,
-    )
-
-    private fun resolvePackDownloadOutcome(
-        downloader: Downloader,
-        case: JSONObject,
-    ): PackDownloadOutcome {
-        val envelope = ManifestEnvelope.fromJson(case.getJSONObject("envelope"))
-        val requests = mutableListOf<PackSource>()
-        var source =
-            downloader.resolvePackSource(envelope, case.optNullableString("baseBundleId"), case.getInt("missingFileCount"))
-                ?: return PackDownloadOutcome(PackKind.FILES.wire, requests)
-        val statuses = case.getJSONArray("statuses").let { array -> List(array.length()) { array.getInt(it) } }
-        for (status in statuses) {
-            requests += source
-            if (status == 200 || status == 206) return PackDownloadOutcome(source.kind.wire, requests)
-            source =
-                downloader.resolveFallbackPackSource(envelope, source) ?: return PackDownloadOutcome(packKind = null, requests = requests)
-        }
-        throw AssertionError("The case answers fewer requests than the download makes")
-    }
-
     private fun packSource(json: JSONObject) = PackSource(
         url = json.getString("url"),
-        sizeBytes = if (json.isNull("sizeBytes")) null else json.getLong("sizeBytes"),
-        packBytesLimit = json.getLong("packBytesLimit"),
+        sizeBytes = json.getLong("sizeBytes"),
         kind = PackKind.entries.first { it.wire == json.getString("kind") },
     )
 
@@ -411,13 +386,18 @@ class FixtureTest {
         for (case in cases(path = "pack-sources.json", key = "cases")) {
             val name = case.getString("name")
             val configuration = configuration(case, case.getString("appId"))
-            val outcome = resolvePackDownloadOutcome(DownloaderHarness(configuration).downloader, case)
-            assertEquals(
-                name,
-                PackDownloadOutcome(case.optNullableString("packKind"), case.getJSONArray("requests").map(::packSource)),
-                outcome,
-            )
-            for (request in outcome.requests) assertTrue(name, configuration.isUrlOnConfiguredHost(request.url))
+            val downloader = DownloaderHarness(configuration).downloader
+            val envelope = ManifestEnvelope.fromJson(case.getJSONObject("envelope"))
+            val baseBundleId = case.optNullableString("baseBundleId")
+            val missingFileCount = case.getInt("missingFileCount")
+            val requests = case.getJSONArray("requests").map(::packSource)
+            val sources = downloader.resolvePackSources(envelope, baseBundleId, missingFileCount)
+            // A download requests the sources in order until one serves it, so its requests begin the sources and are empty only without them.
+            assertEquals(name, requests, sources.take(requests.size))
+            assertEquals(name, requests.isEmpty(), sources.isEmpty())
+            val deltaRouteUrl = downloader.resolveDeltaRouteUrl(envelope, baseBundleId, missingFileCount)
+            assertEquals(name, case.optNullableString("deltaRouteUrl"), deltaRouteUrl)
+            for (url in sources.map { it.url } + listOfNotNull(deltaRouteUrl)) assertTrue(name, configuration.isUrlOnConfiguredHost(url))
         }
     }
 
