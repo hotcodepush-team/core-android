@@ -65,6 +65,16 @@ class DownloaderTest {
     }
 
     @Test
+    fun shouldFailWithDownloadFailedWhenThePackFileIsGoneBeforeItIsRead() {
+        val harness = DownloaderHarness()
+        val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))
+        val release = harness.publish(bundle.manifest, bundle.pack)
+        val packFile = harness.downloader.resolvePackFile(bundleId = DownloaderHarness.BUNDLE_ID, url = DownloaderHarness.PACK_URL)
+        val failure = runBlocking { runCatching { harness.downloader.downloadRelease(release, baseBundleId = null) { _, _ -> packFile.delete() } }.exceptionOrNull() }
+        assertEquals(FailedReason.DOWNLOAD_FAILED, (failure as? DownloadFailure)?.reason)
+    }
+
+    @Test
     fun shouldTakeTheFullPackWhenAFileTheDeviceHeldVanishesWhileThePackIsRead() {
         val harness = DownloaderHarness()
         val bundle = DownloaderHarness.bundle(mapOf("index.html" to indexHtml, "app.js" to appJs))

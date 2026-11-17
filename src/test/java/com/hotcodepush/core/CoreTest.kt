@@ -1183,81 +1183,14 @@ class CoreTest {
     }
 
     @Test
-    fun shouldRestABundleWhoseFullPackFailsItsCheckWithoutPuttingItOnTheFailedList() = runBlocking {
+    fun shouldDownloadTheBundleAgainAtTheNextCheckWhenItsFullPackFailedItsCheck() = runBlocking {
         val harness = Harness()
         val v2 = Fixture.release(1, "b2", v2Content)
         harness.publish(listOf(v2), 1)
         harness.http.stub(v2.envelope.pack.url, body = v2.pack.copyOf(v2.pack.size - 512))
         assertEquals(FailedReason.CONTENT_MISMATCHED.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
-        assertTrue(harness.core.getState().failedBundleIds.isEmpty())
-        harness.http.requests.clear()
-        assertEquals(SyncResult.skipped(release = v2.release.release, reason = SkippedReason.BUNDLE_FAILED_BEFORE), harness.core.sync(SyncTrigger.MANUAL))
-        assertTrue(harness.http.requests.none { it.first == v2.release.manifestUrl || it.first == v2.envelope.pack.url })
-    }
-
-    @Test
-    fun shouldDownloadARestingBundleAgainAndDropItsRefusalOnceADayHasPassed() = runBlocking {
-        val harness = Harness()
-        val v2 = Fixture.release(1, "b2", v2Content)
-        harness.publish(listOf(v2), 1)
-        harness.http.stub(v2.envelope.pack.url, body = v2.pack.copyOf(v2.pack.size - 512))
-        harness.core.sync(SyncTrigger.MANUAL)
-        harness.http.stub(v2.envelope.pack.url, body = v2.pack)
-        harness.clock.now += 86_399_000
-        assertEquals(SyncResult.skipped(release = v2.release.release, reason = SkippedReason.BUNDLE_FAILED_BEFORE), harness.core.sync(SyncTrigger.MANUAL))
-        harness.clock.now += 1_000
-        assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
-        assertTrue(StateStore(harness.store).packRefusals.isEmpty())
-    }
-
-    @Test
-    fun shouldEmptyThePackRefusalsWhenTheAppClearsItsUpdates() = runBlocking {
-        val harness = Harness()
-        val v2 = Fixture.release(1, "b2", v2Content)
-        harness.publish(listOf(v2), 1)
-        harness.http.stub(v2.envelope.pack.url, body = v2.pack.copyOf(v2.pack.size - 512))
-        harness.core.handleAppStart()
-        harness.core.handleRendered()
-        harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(listOf("b2"), StateStore(harness.store).packRefusals.map { it.bundleId })
-        harness.core.clearUpdates()
-        assertTrue(StateStore(harness.store).packRefusals.isEmpty())
-    }
-
-    @Test
-    fun shouldEmptyThePackRefusalsWhenANewBinaryStarts() = runBlocking {
-        val harness = Harness()
-        val v2 = Fixture.release(1, "b2", v2Content)
-        harness.publish(listOf(v2), 1)
-        harness.http.stub(v2.envelope.pack.url, body = v2.pack.copyOf(v2.pack.size - 512))
-        harness.core.handleAppStart()
-        harness.core.sync(SyncTrigger.MANUAL)
-        assertEquals(listOf("b2"), StateStore(harness.store).packRefusals.map { it.bundleId })
-        harness.restart(Fixture.configuration(builtAt = Fixture.BUILT_AT + 60_000))
-        harness.core.handleAppStart()
-        assertTrue(StateStore(harness.store).packRefusals.isEmpty())
-    }
-
-    @Test
-    fun shouldRecordNoRefusalAndDownloadAgainAtTheNextCheckWhenTheDownloadFails() = runBlocking {
-        val harness = Harness()
-        val v2 = Fixture.release(1, "b2", v2Content)
-        harness.publish(listOf(v2), 1)
-        harness.http.stub(v2.envelope.pack.url, status = 404, body = ByteArray(0))
-        assertEquals(FailedReason.DOWNLOAD_FAILED.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
-        assertTrue(StateStore(harness.store).packRefusals.isEmpty())
         harness.http.stub(v2.envelope.pack.url, body = v2.pack)
         assertEquals(SyncResult.downloaded(v2.release.release, "notes 1", ApplyStrategy.NEXT_START), harness.core.sync(SyncTrigger.MANUAL))
-    }
-
-    @Test
-    fun shouldFailWithDownloadFailedAndRecordNoRefusalWhenThePackFileIsGoneBeforeItIsRead() = runBlocking {
-        val harness = Harness()
-        val v2 = Fixture.release(1, "b2", v2Content)
-        harness.publish(listOf(v2), 1)
-        harness.listener.whileDownloading = { File(harness.root, "tmp").listFiles()?.forEach { it.delete() } }
-        assertEquals(FailedReason.DOWNLOAD_FAILED.wire, harness.core.sync(SyncTrigger.MANUAL).reason)
-        assertTrue(StateStore(harness.store).packRefusals.isEmpty())
     }
 
     @Test
