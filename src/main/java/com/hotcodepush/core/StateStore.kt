@@ -39,6 +39,18 @@ data class CachedIndex(
     }
 }
 
+/** A bundle whose full pack failed its check, and the moment the device refused it. */
+data class PackRefusal(
+    val bundleId: String,
+    val refusedAt: Long,
+) {
+    fun toJson(): JSONObject = JSONObject().put("bundleId", bundleId).put("refusedAt", Iso8601.format(refusedAt))
+
+    companion object {
+        fun fromJson(json: JSONObject) = PackRefusal(json.getString("bundleId"), Iso8601.parse(json.getString("refusedAt")))
+    }
+}
+
 /**
  * The downloaded release waiting to apply, with the moment decided at its download, a per-call override included.
  * The start and the resume read that moment, never the configuration.
@@ -96,6 +108,10 @@ class StateStore(
     var failedBundleIds: List<String>
         get() = readArray("failedBundleIds") { it.toWireStringList() } ?: emptyList()
         set(value) = putRaw(key = "failedBundleIds", value = JSONArray(value).toString())
+
+    var packRefusals: List<PackRefusal>
+        get() = readArray("packRefusals") { array -> array.map(PackRefusal::fromJson) } ?: emptyList()
+        set(value) = putRaw(key = "packRefusals", value = JSONArray(value.map { it.toJson() }).toString())
 
     /** The floor of the binary that last started, to notice a new one. */
     var lastBuiltAt: Long?
@@ -191,6 +207,7 @@ class StateStore(
                 "nextRelease",
                 "fallbackRelease",
                 "failedBundleIds",
+                "packRefusals",
                 "lastBuiltAt",
                 "reportedAt",
                 "acknowledgedReport",

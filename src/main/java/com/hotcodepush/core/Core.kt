@@ -10,6 +10,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.plus
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -59,7 +60,6 @@ class Core(
     private class RunningCycle(val stage: Stage, val result: Deferred<SyncResult>)
 
     private val state = StateStore(store)
-    private val downloader = Downloader(configuration, device.platform, files, embedded, http, temporaryDirectory)
     private val lock = Mutex()
 
     // Keeps the file cleanup apart from a cycle, since a download writes files no kept release lists yet.
@@ -68,6 +68,17 @@ class Core(
 
     // A task the core runs on its own logs its failure and never crashes the app.
     private val failureHandler = CoroutineExceptionHandler { _, failure -> log.record(LogEntry(at = clock.now(), code = SyncStatus.FAILED.wire, message = "a task of the core stopped: $failure")) }
+
+    private val downloader =
+        Downloader(
+            configuration = configuration,
+            platform = device.platform,
+            files = files,
+            embedded = embedded,
+            http = http,
+            temporaryDirectory = temporaryDirectory,
+            scope = scope + failureHandler,
+        )
 
     private var readyTimer: ScheduledTask? = null
     private var isReadyTimerPaused = false
@@ -389,7 +400,8 @@ class Core(
             is CycleIndex.Index -> fetch.index
             is CycleIndex.Failure -> return fetch.result
         }
-        return when (val evaluation = Evaluator.evaluation(index, deviceInfo()).outcome) {
+        lock.withLock { dropExpiredPackRefusals() }
+        return when (val evaluation = Evaluator.evaluation(index, deviceInfo(restingBundleIds = state.packRefusals.map { it.bundleId })).outcome) {
             is Evaluation.UpToDate -> SyncResult.upToDate(release = current)
 
             is Evaluation.Available -> {
@@ -493,9 +505,13 @@ class Core(
         try {
             val outcome = downloader.downloadRelease(target, resolveRunningBundleId()) { progressBytes, downloadSizeBytes -> listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes = downloadSizeBytes, progressBytes = progressBytes, releaseId = target.id)) }
             BundleProjection.project(outcome.manifest, files, embedded, loader.projectionDirectory(target.bundleId))
-            lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, outcome.downloadSizeBytes, outcome.packKind)) }
+            if (outcome.packKind != null) lock.withLock { enqueueDeviceEvent(DeviceEvent.downloaded(target.id, outcome.downloadSizeBytes, outcome.packKind)) }
         } catch (failure: DownloadFailure) {
-            lock.withLock { enqueueDeviceEvent(DeviceEvent.failed(releaseId = target.id, reason = failure.reason.wire)) }
+            lock.withLock {
+                // One download on one network cannot tell a damaged pack from a damaged copy of it, so the bundle rests instead of failing.
+                if (failure is DownloadFailure.ContentMismatched) recordPackRefusal(target.bundleId)
+                enqueueDeviceEvent(DeviceEvent.failed(releaseId = target.id, reason = failure.reason.wire))
+            }
             return SyncResult.failed(release = release, reason = failure.reason, message = failure.message ?: "")
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -530,7 +546,7 @@ class Core(
     }
 
     /**
-     * Returns to the embedded bundle and deletes every downloaded update and the failed list; the device identity stays.
+     * Returns to the embedded bundle and deletes every downloaded update, the failed list and the pack refusals. The device identity stays.
      * Before the app is up in this run, the whole call waits until it is, the deletion included.
      */
     suspend fun clearUpdates() = lock.withLock {
@@ -540,6 +556,7 @@ class Core(
             state.nextRelease = null
             state.fallbackRelease = null
             state.failedBundleIds = emptyList()
+            state.packRefusals = emptyList()
             state.lastRollback = null
             state.pendingRollbackEvent = null
             files.bundleIds().forEach(loader::deleteProjection)
@@ -555,7 +572,7 @@ class Core(
     }
 
     /** Returns everything the debug screen shows: the device, the configuration, the state and this session's log. */
-    fun debugSnapshot(): DebugSnapshot = DebugSnapshot(takenAt = clock.now(), device = getDevice(), configuration = configuration, isDebugBuild = device.isDebugBuild, state = getState(), log = log.entries())
+    fun debugSnapshot(): DebugSnapshot = DebugSnapshot(takenAt = clock.now(), device = getDevice(), configuration = configuration, isDebugBuild = device.isDebugBuild, state = getState(), packRefusals = resolveCountingPackRefusals(), log = log.entries())
 
     fun getState(): GetStateResult = GetStateResult(
         currentRelease = state.currentRelease,
@@ -612,6 +629,7 @@ class Core(
         state.nextRelease = null
         state.fallbackRelease = null
         state.failedBundleIds = emptyList()
+        state.packRefusals = emptyList()
         state.lastRollback = null
         state.pendingRollbackEvent = null
         state.lastBuiltAt = configuration.builtAt
@@ -771,6 +789,16 @@ class Core(
         persistServedBundle(fallback)
     }
 
+    private fun recordPackRefusal(bundleId: String) {
+        state.packRefusals = state.packRefusals + PackRefusal(bundleId = bundleId, refusedAt = clock.now())
+    }
+
+    private fun dropExpiredPackRefusals() {
+        state.packRefusals = resolveCountingPackRefusals()
+    }
+
+    private fun resolveCountingPackRefusals(): List<PackRefusal> = state.packRefusals.filter { clock.now() - it.refusedAt < PACK_REFUSAL_REST_SECONDS * 1_000 }
+
     private fun resolveFallbackRelease(): Release? {
         val fallback = state.fallbackRelease ?: return null
         if (fallback.bundleId in state.failedBundleIds) return null
@@ -924,7 +952,8 @@ class Core(
     private val isDisabledInThisBuild: Boolean
         get() = configuration.embeddedBundleManifest == null || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
 
-    private fun deviceInfo() = DeviceInfo(attributes = state.attributes, binaryBuild = device.binaryBuild, binaryVersion = device.binaryVersion, builtAt = configuration.builtAt, currentRelease = state.currentRelease, deviceId = state.deviceId, failedBundleIds = state.failedBundleIds, fingerprint = configuration.fingerprint, osVersion = device.osVersion, reportedAt = state.reportedAt)
+    // A resting bundle is skipped as a failed one is.
+    private fun deviceInfo(restingBundleIds: List<String>) = DeviceInfo(attributes = state.attributes, binaryBuild = device.binaryBuild, binaryVersion = device.binaryVersion, builtAt = configuration.builtAt, currentRelease = state.currentRelease, deviceId = state.deviceId, failedBundleIds = state.failedBundleIds + restingBundleIds, fingerprint = configuration.fingerprint, osVersion = device.osVersion, reportedAt = state.reportedAt)
 
     private fun recordChecked(release: IndexRelease, index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = null, conditionType: ConditionType? = null) {
         val checked = state.checkedReleaseIds.filter { id -> index.releases.any { it.id == id } }
@@ -1001,6 +1030,8 @@ class Core(
 
         // In seconds, counted from the kept index's fetchedAt.
         private const val CACHED_INDEX_MAX_AGE = 86_400.0
+
+        private const val PACK_REFUSAL_REST_SECONDS = 86_400L
 
         private const val REPORT_UNREADABLE = "report_unreadable"
 

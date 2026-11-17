@@ -1,6 +1,7 @@
 package com.hotcodepush.core
 
 import java.io.ByteArrayInputStream
+import java.io.IOException
 import java.io.InputStream
 import java.io.PushbackInputStream
 import java.util.zip.GZIPInputStream
@@ -23,6 +24,10 @@ sealed interface PackEntry {
 class PackFormatException(
     message: String,
 ) : Exception(message)
+
+class GzipFormatException(
+    cause: IOException,
+) : Exception("The content does not inflate: ${cause.message}", cause)
 
 class GzipSizeException(
     maximumBytes: Long,
@@ -179,7 +184,14 @@ object Gzip {
         val first = input.read()
         if (first < 0) return ByteArrayInputStream(ByteArray(0))
         input.unread(first)
-        return SizeCappedInputStream(GZIPInputStream(input), maximumBytes)
+        return SizeCappedInputStream(inflate { GZIPInputStream(input) }, maximumBytes)
+    }
+
+    // GZIPInputStream reports bytes that do not inflate as an IOException, a plain one on older Android.
+    private inline fun <T> inflate(read: () -> T): T = try {
+        read()
+    } catch (exception: IOException) {
+        throw GzipFormatException(exception)
     }
 
     private class SizeCappedInputStream(
@@ -198,7 +210,7 @@ object Gzip {
             offset: Int,
             length: Int,
         ): Int {
-            val read = input.read(buffer, offset, length)
+            val read = inflate { input.read(buffer, offset, length) }
             if (read > 0) {
                 count += read
                 if (count > maximumBytes) throw GzipSizeException(maximumBytes)

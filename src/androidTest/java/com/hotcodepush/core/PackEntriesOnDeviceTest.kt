@@ -10,7 +10,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 
-// In the fixture, `applied` writes the file without fetching it, `fallback` fetches it, and `ignored` does neither.
+// In the fixture, `applied` writes the file from the delta, `fallback` takes the full pack, and `ignored` never writes the patch's file.
 @RunWith(AndroidJUnit4::class)
 class PackEntriesOnDeviceTest {
     private val fixture =
@@ -43,7 +43,7 @@ class PackEntriesOnDeviceTest {
             val harness = DownloaderHarness()
             holdPatchBases(harness, case, isBaseEmbedded = isBaseEmbedded)
             val manifestFiles = case.getJSONArray("manifestFiles").map(BundleManifest.File::fromJson)
-            for (file in manifestFiles) harness.http.stub(DownloaderHarness.fileUrl(file.sha256), body = contents.getValue(file.sha256))
+            val fullPack = PackWriter.pack(manifestFiles.map { PackedEntry.file(it.sha256, Gzip.compress(contents.getValue(it.sha256))) })
             val patchEntry = case.getJSONObject("patchEntry")
             val toSha256 = patchEntry.getString("toSha256")
             val patch =
@@ -55,16 +55,17 @@ class PackEntriesOnDeviceTest {
             harness.download(
                 harness.publish(
                     DownloaderHarness.manifest(manifestFiles),
+                    fullPack,
                     deltas =
                     mapOf("b1" to PackWriter.pack(listOf(patch))),
                 ),
                 "b1",
             )
-            val isFetched = harness.http.requests.any { it.first == DownloaderHarness.fileUrl(toSha256) }
+            val isFullPackFetched = harness.http.requests.any { it.first == DownloaderHarness.PACK_URL }
             when (case.getString("outcome")) {
-                "applied" -> assertTrue(name, harness.files.hasFile(toSha256) && !isFetched)
-                "fallback" -> assertTrue(name, harness.files.hasFile(toSha256) && isFetched)
-                "ignored" -> assertFalse(name, harness.files.hasFile(toSha256) || isFetched)
+                "applied" -> assertTrue(name, harness.files.hasFile(toSha256) && !isFullPackFetched)
+                "fallback" -> assertTrue(name, harness.files.hasFile(toSha256) && isFullPackFetched)
+                "ignored" -> assertFalse(name, harness.files.hasFile(toSha256))
                 else -> fail("$name: the outcome ${case.getString("outcome")} is unknown")
             }
             val manifest = checkNotNull(harness.files.readManifest(DownloaderHarness.BUNDLE_ID))

@@ -102,8 +102,27 @@ class HttpClientTest {
     @Test
     fun shouldStopADownloadPastItsMaximumAndDeleteTheFile() {
         val client = client { request -> response(request, 200, ByteArray(200_000).toResponseBody()) }
-        assertEquals(FailedReason.DOWNLOAD_FAILED, (download(client, 100_000) as? DownloadFailure)?.reason)
+        assertEquals(FailedReason.CONTENT_MISMATCHED, (download(client, 100_000) as? DownloadFailure)?.reason)
         assertFalse(file.exists())
+    }
+
+    @Test
+    fun shouldSendOneGetAndReadNoBody() {
+        val requested = mutableListOf<String>()
+        val client =
+            client { request ->
+                requested += "${request.method} ${request.url}"
+                response(request, 200, unreadableBody())
+            }
+        runBlocking { client.send(url) }
+        assertEquals(listOf("GET $url"), requested)
+    }
+
+    @Test
+    fun shouldFailWithDownloadFailedAndNoIOExceptionWhenTheFileCannotBeWritten() {
+        file.mkdirs()
+        val client = client { request -> response(request, 200, "abc".toByteArray().toResponseBody()) }
+        assertEquals(FailedReason.DOWNLOAD_FAILED, (download(client, 8) as? DownloadFailure)?.reason)
     }
 
     private fun download(
@@ -132,6 +151,23 @@ class HttpClientTest {
         .message("")
         .body(body)
         .build()
+
+    private fun unreadableBody(): ResponseBody = object : ResponseBody() {
+        override fun contentType(): MediaType? = null
+
+        override fun contentLength(): Long = -1
+
+        override fun source(): BufferedSource = object : Source {
+            override fun read(
+                sink: Buffer,
+                byteCount: Long,
+            ): Long = throw AssertionError("The body was read")
+
+            override fun timeout(): Timeout = Timeout.NONE
+
+            override fun close() {}
+        }.buffer()
+    }
 
     private fun droppedBody(delivered: ByteArray): ResponseBody = object : ResponseBody() {
         override fun contentType(): MediaType? = null

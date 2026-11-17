@@ -7,6 +7,7 @@ data class DebugSnapshot(
     val configuration: Configuration,
     val isDebugBuild: Boolean,
     val state: GetStateResult,
+    val packRefusals: List<PackRefusal>,
     val log: List<LogEntry>,
 )
 
@@ -76,6 +77,7 @@ object DebugReport {
                 DebugRow(label = "Fallback", value = describe(state.fallbackRelease) ?: "the embedded bundle"),
                 DebugRow(label = "Embedded bundle", value = describeEmbeddedBundle(snapshot)),
                 DebugRow(label = "Failed bundles", value = if (state.failedBundleIds.isEmpty()) "none" else state.failedBundleIds.joinToString(", ")),
+                DebugRow(label = "Resting bundles", value = if (snapshot.packRefusals.isEmpty()) "none" else snapshot.packRefusals.joinToString(", ") { it.bundleId }),
             ),
         )
     }

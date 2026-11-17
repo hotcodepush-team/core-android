@@ -77,6 +77,7 @@ class FakeListener : CoreListener {
 
     var updateAvailableFailure: Throwable? = null
     var updateFailedFailure: Throwable? = null
+    var whileDownloading: (() -> Unit)? = null
 
     override fun updateAvailable(event: UpdateAvailableEvent) {
         updateAvailableFailure?.let { throw it }
@@ -94,6 +95,7 @@ class FakeListener : CoreListener {
 
     override fun downloadProgress(event: DownloadProgressEvent) {
         progress += event
+        whileDownloading?.invoke()
     }
 
     override fun updateRolledBack(event: UpdateRolledBackEvent) {

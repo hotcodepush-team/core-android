@@ -56,6 +56,7 @@ class DebugReportTest {
               Fallback: #2 (1.2.0), bundle b2, mandatory
               Embedded bundle: not registered
               Failed bundles: b0, b1
+              Resting bundles: none
 
             Last check
               When: never
@@ -78,7 +79,19 @@ class DebugReportTest {
             Log
               2023-11-14T22:13:20.000Z: applied — release r2 is the running release
         """.trimIndent()
-        assertEquals(expected, DebugReport.text(DebugSnapshot(takenAt = Fixture.BUILT_AT + 1_000, device = device, configuration = Fixture.configuration(), isDebugBuild = true, state = state, log = log)))
+        assertEquals(expected, DebugReport.text(DebugSnapshot(takenAt = Fixture.BUILT_AT + 1_000, device = device, configuration = Fixture.configuration(), isDebugBuild = true, state = state, packRefusals = emptyList(), log = log)))
+    }
+
+    @Test
+    fun shouldShowABundleWhoseFullPackFailedItsCheckAsResting() = runBlocking {
+        val harness = Harness()
+        val v2 = Fixture.release(1, "b2", v2Content)
+        harness.publish(listOf(v2), 1)
+        harness.http.stub(v2.envelope.pack.url, body = v2.pack.copyOf(v2.pack.size - 512))
+        harness.core.handleAppStart()
+        harness.core.sync(SyncTrigger.MANUAL)
+        val text = DebugReport.text(harness.core.debugSnapshot())
+        assertTrue(text, text.contains("Resting bundles: b2"))
     }
 
     @Test
